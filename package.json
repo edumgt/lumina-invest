@@ -1,6 +1,6 @@
 {
   "name": "law-rag-agent",
-  "version": "2.0.3",
+  "version": "2.1.0",
   "private": true,
   "type": "commonjs",
   "main": "dist/src/server.js",
@@ -10,8 +10,14 @@
   "scripts": {
     "build": "tsc",
     "start": "node dist/src/server.js",
+    "start:dev": "PROFILE=dev node dist/src/server.js",
+    "start:prod": "PROFILE=prod node dist/src/server.js",
     "dev": "tsx src/server.ts",
+    "dev:profile:dev": "PROFILE=dev tsx src/server.ts",
+    "dev:profile:prod": "PROFILE=prod tsx src/server.ts",
     "ingest": "tsx src/cli/ingest_demo.ts",
+    "ingest:dev": "PROFILE=dev tsx src/cli/ingest_demo.ts",
+    "ingest:prod": "PROFILE=prod tsx src/cli/ingest_demo.ts",
     "reset-db": "tsx src/cli/reset_db.ts",
     "collect:law": "tsx scripts/collect_lawgo_law.ts",
     "collect:cases": "tsx scripts/collect_lawgo_case.ts",

@@ -10,7 +10,7 @@
  *   npm run ingest:sample
  *   VECTOR_STORE=qdrant QDRANT_URL=http://localhost:6333 npm run ingest:sample
  */
-import "dotenv/config";
+import "../lib/load_env";
 import { execSync } from "child_process";
 import fs from "fs";
 import path from "path";

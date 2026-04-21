@@ -16,7 +16,7 @@
  *   04 → 결정례 (constitutional court decision)
  */
 
-import "dotenv/config";
+import "../src/lib/load_env";
 import fs from "fs";
 import path from "path";
 import { createHash } from "crypto";

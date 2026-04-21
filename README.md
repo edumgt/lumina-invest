@@ -16,9 +16,29 @@
 
 ---
 
+## 이번 작업 반영 사항 (v2.1.0)
+- WSL 개발환경을 기준으로 `nvm` + Node.js 24 사용 흐름을 정리했고, 레포 루트의 `.nvmrc`로 런타임 버전을 고정했습니다.
+- `Sample.zip`을 해제해 `Sample/` 데이터를 확인했고, `data/manifest.json` 기반 문서와 함께 벡터 인덱싱 대상으로 정리했습니다.
+- 법률 질의에 맞게 검색 품질을 높였습니다.
+  - 질의에서 **조문 / 사건번호 / 문서유형 힌트**를 추출
+  - 벡터 유사도만 쓰지 않고 **하이브리드 재정렬** 적용
+  - 인덱싱 시 제목/문서유형/기준일/주요 메타데이터를 임베딩 입력에 함께 반영
+- 인용 블록도 문서유형, 기준일, 핵심 조문/사건번호가 더 잘 드러나도록 보강했습니다.
+- `GET /api/library/search`도 단순 문자열 검색이 아니라 동일한 검색 파이프라인을 사용하도록 맞췄습니다.
+
+---
+
 ## 0) 요구사항
 - **Docker** (풀 스택: app + Qdrant + Ollama)
 - Node.js 24+ (로컬 개발)
+
+권장:
+```bash
+nvm use
+```
+
+이 레포는 루트의 `.nvmrc`로 Node 24 계열을 사용합니다.
+또한 `PROFILE=dev|prod`에 따라 `.env.dev`, `.env.prod`를 자동으로 덮어 읽을 수 있습니다.
 
 ---
 
@@ -68,25 +88,48 @@ docker compose run --rm ingest
 
 ## 2) 로컬 개발 (Docker 없이)
 
-### 2-1. Ollama 실행 (Docker)
+### 2-1. Ollama 실행
+
+방법 A) Linux/WSL 내부에서 Ollama 실행
 ```bash
-docker compose up -d ollama
+ollama serve
 ```
+
+방법 B) Windows Ollama 앱과 연동
+
+WSL에서 Windows Ollama를 붙일 때는 `127.0.0.1` 대신 **Windows 호스트 주소**를 사용해야 합니다.
+예:
+
+```bash
+OLLAMA_BASE_URL=http://172.29.32.1:11434
+```
+
+중요:
+- `127.0.0.1`은 WSL 자신을 의미합니다.
+- Windows Ollama 앱은 보통 WSL 기준 **호스트 게이트웨이 IP**로 접근해야 합니다.
+- 주소는 부팅/네트워크에 따라 달라질 수 있으므로, 환경에 맞는 Windows 호스트 IP를 확인하세요.
 
 ### 2-2. 모델 준비 (1회)
 ```bash
 # LLM (답변용)
-docker exec -it ollama ollama pull llama3.1
+ollama pull llama3.1
 
 # Embedding (검색용)
-docker exec -it ollama ollama pull nomic-embed-text
+ollama pull nomic-embed-text
 ```
 
 ### 2-3. API 서버 실행
 ```bash
+nvm use
 cp .env.example .env
 npm install
 npm run dev
+```
+
+프로파일 기반 실행 예:
+```bash
+npm run dev:profile:dev
+npm run dev:profile:prod
 ```
 
 - 웹: http://localhost:8000
@@ -147,7 +190,14 @@ npm run ingest
 ## 6) 환경변수 (.env)
 `.env.example` 참고
 
+프로파일 로딩 규칙:
+- 기본적으로 `.env`를 먼저 읽습니다.
+- `PROFILE=dev`면 `.env.dev`를 추가로 덮어 읽습니다.
+- `PROFILE=prod`면 `.env.prod`를 추가로 덮어 읽습니다.
+- 즉 공통값은 `.env`, 환경별 값은 `.env.dev` / `.env.prod`에 두는 방식입니다.
+
 - `OLLAMA_BASE_URL` : 기본 `http://127.0.0.1:11434`
+  - WSL에서 Windows Ollama 앱을 붙일 때는 예: `http://172.29.32.1:11434`
 - `LLM_MODEL` : 답변 모델
 - `EMBED_MODEL` : 임베딩 모델
 - `SESSION_SECRET` : 세션 암호화 키
@@ -188,6 +238,11 @@ npm run ingest
 - 기본 벡터 스토어는 **SQLite + 메모리 cosine 계산**입니다 (소규모·로컬 개발에 적합).
 - 문서가 많아지면 `VECTOR_STORE=qdrant`로 전환하세요. Qdrant는 **코사인 유사도 HNSW 인덱스**를 사용하여 수백만 벡터도 고속 검색합니다.
 - Tailwind는 CDN 방식이라 빌드 없이 즉시 동작합니다.
+- WSL에서 Node 버전이 어긋나면 먼저 `nvm use`를 실행하세요.
+- `VECTOR_STORE=qdrant` 사용 시, 앱은 `QDRANT_URL`로 붙고 문서 메타는 계속 SQLite에도 유지됩니다.
+- Windows Ollama 앱을 쓰는 경우, 앱이 실제로 외부 접근 가능한 주소에 바인딩되어 있는지 먼저 확인하세요.
+- `PROFILE=dev`는 WSL agent + Windows Ollama + local/docker Qdrant 같은 개발 구성을 두기 좋습니다.
+- `PROFILE=prod`는 k8s 내부 서비스 DNS(`http://ollama:11434`, `http://qdrant:6333`)를 기준으로 두는 쪽이 안전합니다.
 
 ---
 
@@ -237,6 +292,31 @@ ADMIN_EMAILS=admin@example.com
   - `chat_request`, `retrieve`, `chat_response`, `chat_blocked`, `ingest_demo`
 - Admin은 API로 최근 로그를 확인할 수 있습니다:
   - `GET /api/audit/recent?limit=50` (admin only)
+
+---
+
+## 검색 고도화 (v2.1.0)
+- 질의 분석:
+  - `제 n 조`, `사건번호`, `판결/법령/해석례/결정례` 같은 힌트를 추출합니다.
+- 임베딩 입력 강화:
+  - chunk 본문만 넣지 않고 제목, 문서유형, 기준일, 사건번호/기관명/주요조문을 함께 포함합니다.
+- 하이브리드 재정렬:
+  - 벡터 점수 외에 토큰 겹침, 조문 일치, 사건번호 일치, 문서유형 적합도를 함께 반영합니다.
+- 중복 완화:
+  - 동일 문서에서 과도하게 많은 chunk가 상위권을 차지하지 않도록 결과를 분산합니다.
+- 인용 강화:
+  - 응답 근거 블록에 문서유형, 기준일, 핵심표지를 더 잘 드러내도록 구성했습니다.
+
+---
+
+## 배포 메모 (Kubernetes 전환 시)
+- 기본 권장 구조:
+  - `agent`는 외부 진입점이므로 `Ingress` 또는 `LoadBalancer`로 노출
+  - `qdrant`는 `StatefulSet + PVC + ClusterIP`로 내부 서비스화
+- VIP/MetalLB 사용 시:
+  - 보통 **agent에만 VIP를 부여**하고, `qdrant`는 내부 서비스로 두는 것이 안전하고 단순합니다.
+  - `qdrant`를 외부에 직접 노출해야 하는 특별한 사유가 있을 때만 별도 VIP를 고려하세요.
+- WSL/Windows Ollama 연동은 **로컬 개발용**으로는 가능하지만, k8s 운영 환경에서는 클러스터 내부 또는 Linux 서버 쪽 Ollama 배치를 더 권장합니다.
 
 ---
 

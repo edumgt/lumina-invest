@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import "../src/lib/load_env";
 import pLimit from "p-limit";
 import yargs from "yargs";
 import { hideBin } from "yargs/helpers";

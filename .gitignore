@@ -3,3 +3,6 @@ node_modules
 data/app.db
 data/vectors-cache.json
 dist
+.Identifier
+.codex
+.clude

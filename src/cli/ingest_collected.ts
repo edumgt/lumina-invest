@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import "dotenv/config";
+import "../lib/load_env";
 import { initDb } from "../services/db";
 import { createOllama } from "../lib/ollama";
 import { ingestDirectory } from "../services/ingest.service";

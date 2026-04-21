@@ -3,7 +3,7 @@ import express from "express";
 import session from "express-session";
 import cookieParser from "cookie-parser";
 import morgan from "morgan";
-import "dotenv/config";
+import "./lib/load_env";
 
 import { initDb } from "./services/db";
 import { attachRoles } from "./middlewares/rbac";

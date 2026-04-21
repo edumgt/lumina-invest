@@ -1,4 +1,4 @@
-import "dotenv/config";
+import "../lib/load_env";
 import fs from "fs";
 import path from "path";
 

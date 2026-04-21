@@ -5,6 +5,7 @@ import { retrieve } from "./retrieve.service";
 import { audit } from "./audit.service";
 import type { OllamaClient } from "../lib/ollama";
 import type { AuditParams } from "./audit.service";
+import { analyzeLegalQuery, getDocTypeLabel } from "../lib/legal_search";
 
 function buildSystemPrompt(): string {
   return `
@@ -13,6 +14,7 @@ function buildSystemPrompt(): string {
 원칙:
 - 법률 자문이 아닌 정보 제공 목적임을 항상 고지한다.
 - 반드시 제공된 '근거'를 인용하여 답한다. (근거 없이 단정 금지)
+- 검색된 근거들 사이에 충돌이 있으면 문서유형, 기준일, 사실관계를 비교해서 차이를 설명한다.
 - 관할/시점/사실관계가 불명확하면 추가 질문을 먼저 제시한다.
 - 답변 포맷:
   (1) 핵심 요약 (3~6줄)
@@ -27,9 +29,24 @@ function buildSystemPrompt(): string {
 }
 
 function buildUserPrompt(question: string, citationsText: string): string {
+  const profile = analyzeLegalQuery(question);
+  const queryHints = [
+    profile.desiredDocTypes.length
+      ? `우선 문서유형: ${profile.desiredDocTypes.map(getDocTypeLabel).join(", ")}`
+      : "",
+    profile.articleRefs.length ? `감지 조문: ${profile.articleRefs.join(", ")}` : "",
+    profile.caseNumbers.length ? `감지 사건번호: ${profile.caseNumbers.join(", ")}` : "",
+    profile.wantsLatest ? "최신성 확인 필요" : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+
   return `
 [질문]
 ${question}
+
+[질문 분석]
+${queryHints || "특이 메타데이터 없음"}
 
 [근거(검색결과 인용)]
 ${citationsText}

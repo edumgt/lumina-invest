@@ -8,6 +8,7 @@ import { parseLawMeta, parseCaseMeta } from "./metadata_parser.service";
 import { audit } from "./audit.service";
 import type { OllamaClient } from "../lib/ollama";
 import type { AuditParams } from "./audit.service";
+import { buildChunkEmbeddingInput } from "../lib/legal_search";
 import {
   resolveVectorStoreBackend,
   resolveQdrantUrl,
@@ -208,7 +209,16 @@ export async function ingestDirectory({
     for (let idx = 0; idx < chunks.length; idx++) {
       const c = chunks[idx];
       const contentHash = sha256(`${d.docId}|${d.version}|${idx}|${c}`);
-      const emb = await ollama.embed({ model: embedModel, input: c });
+      const embInput = buildChunkEmbeddingInput(c, {
+        docId: d.docId,
+        docType: d.docType,
+        title: d.title,
+        effectiveDate: d.effectiveDate,
+        jurisdiction: d.jurisdiction,
+        extra: d.extra,
+        parsed,
+      });
+      const emb = await ollama.embed({ model: embedModel, input: embInput });
       // Capture timestamp after the (potentially slow) embed call
       const now = new Date().toISOString();
 
@@ -223,6 +233,7 @@ export async function ingestDirectory({
         allowedRoles: d.allowedRoles,
         docRowId,
         chunkIndex: idx,
+        embeddingInputPreview: embInput.slice(0, 280),
       };
 
       if (qdrant) {

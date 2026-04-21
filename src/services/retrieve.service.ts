@@ -2,6 +2,11 @@ import type { Database } from "better-sqlite3";
 import { cosine } from "../lib/vector";
 import type { OllamaClient } from "../lib/ollama";
 import {
+  analyzeLegalQuery,
+  buildChunkEmbeddingInput,
+  rerankLegalChunks,
+} from "../lib/legal_search";
+import {
   resolveVectorStoreBackend,
   resolveQdrantUrl,
   resolveQdrantCollection,
@@ -100,78 +105,81 @@ export async function retrieve({
   topK?: number;
   userRoles?: string[];
 }): Promise<ScoredChunk[]> {
-  const qEmb = await ollama.embed({ model: embedModel, input: query });
+  const profile = analyzeLegalQuery(query);
+  const queryEmbeddingInput = buildChunkEmbeddingInput(query, {
+    docId: "",
+    docType: profile.desiredDocTypes[0] || "misc",
+    title: "사용자 질의",
+    effectiveDate: null,
+    jurisdiction: "KR",
+    extra: {},
+    parsed: { articles: profile.articleRefs, caseNo: profile.caseNumbers[0] || "" },
+  });
+  const qEmb = await ollama.embed({ model: embedModel, input: queryEmbeddingInput });
 
   const vectorBackend = resolveVectorStoreBackend();
 
   if (vectorBackend === "qdrant") {
-    return retrieveFromQdrant(qEmb, topK, userRoles);
+    return retrieveFromQdrant(qEmb, topK, userRoles, profile);
   }
 
-  return retrieveFromSqlite(db, qEmb, topK, userRoles);
+  return retrieveFromSqlite(db, qEmb, topK, userRoles, profile);
 }
 
 async function retrieveFromQdrant(
   qEmb: number[],
   topK: number,
-  userRoles: string[]
+  userRoles: string[],
+  profile: ReturnType<typeof analyzeLegalQuery>
 ): Promise<ScoredChunk[]> {
   const qdrant = createQdrantStore(resolveQdrantUrl(), resolveQdrantCollection());
   const strategy = (process.env.DOC_VERSION_STRATEGY || "latest").toLowerCase();
-
-  // For "latest" strategy we fetch more candidates and filter client-side,
-  // because Qdrant does not natively know the max version per doc_id.
-  const fetchK = strategy === "latest" ? topK * 5 : topK;
+  const fetchK = Math.max(topK * 8, 24);
 
   const results = await qdrant.search(qEmb, fetchK);
 
-  let candidates = results.filter((r) => {
-    const allowed: string[] = r.payload.allowed_roles || ["user", "admin"];
-    return userRoles.some((role) => allowed.includes(role));
-  });
+  let candidates: ScoredChunk[] = results
+    .filter((r) => {
+      const allowed: string[] = r.payload.allowed_roles || ["user", "admin"];
+      return userRoles.some((role) => allowed.includes(role));
+    })
+    .map((r) => ({
+      id: typeof r.id === "number" ? r.id : 0,
+      source: r.payload.source,
+      docType: r.payload.doc_type,
+      title: r.payload.title ?? null,
+      text: r.payload.text,
+      embedding: [],
+      docId: r.payload.doc_id ?? null,
+      docVersion: r.payload.doc_version,
+      effectiveDate: r.payload.effective_date ?? null,
+      jurisdiction: r.payload.jurisdiction ?? null,
+      allowedRoles: r.payload.allowed_roles || ["user", "admin"],
+      score: r.score,
+    }));
 
   if (strategy === "latest") {
-    // Find max version per doc_id
-    const mv = new Map<string, number>();
-    for (const r of candidates) {
-      const k = r.payload.doc_id || r.payload.source;
-      const cur = mv.get(k);
-      if (cur == null || r.payload.doc_version > cur) mv.set(k, r.payload.doc_version);
-    }
+    const mv = maxVersionByDoc(candidates);
     candidates = candidates.filter((r) => {
-      const k = r.payload.doc_id || r.payload.source;
-      return r.payload.doc_version === mv.get(k);
+      const k = r.docId || r.source;
+      return r.docVersion === mv.get(k);
     });
   }
 
-  return candidates.slice(0, topK).map((r) => ({
-    id: typeof r.id === "number" ? r.id : 0,
-    source: r.payload.source,
-    docType: r.payload.doc_type,
-    title: r.payload.title ?? null,
-    text: r.payload.text,
-    embedding: [],
-    docId: r.payload.doc_id ?? null,
-    docVersion: r.payload.doc_version,
-    effectiveDate: r.payload.effective_date ?? null,
-    jurisdiction: r.payload.jurisdiction ?? null,
-    allowedRoles: r.payload.allowed_roles || ["user", "admin"],
-    score: r.score,
-  }));
+  return rerankLegalChunks(candidates, profile, topK);
 }
 
 function retrieveFromSqlite(
   db: Database,
   qEmb: number[],
   topK: number,
-  userRoles: string[]
+  userRoles: string[],
+  profile: ReturnType<typeof analyzeLegalQuery>
 ): ScoredChunk[] {
   const all = loadAllChunks(db);
 
-  // RBAC filter
   let candidates = all.filter((c) => hasAccess(userRoles, c.allowedRoles));
 
-  // latest vs all
   const strategy = (process.env.DOC_VERSION_STRATEGY || "latest").toLowerCase();
   if (strategy === "latest") {
     const mv = maxVersionByDoc(candidates);
@@ -187,5 +195,5 @@ function retrieveFromSqlite(
   }));
 
   scored.sort((a, b) => b.score - a.score);
-  return scored.slice(0, topK);
+  return rerankLegalChunks(scored.slice(0, Math.max(topK * 8, 24)), profile, topK);
 }
