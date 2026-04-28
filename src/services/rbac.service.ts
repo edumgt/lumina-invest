@@ -1,16 +1,14 @@
-import type { Database } from "better-sqlite3";
+import { User } from "../models/user.model";
 
-export function getUserRoles(db: Database, userId: number): string[] {
-  const rows = db
-    .prepare("SELECT role_name FROM user_roles WHERE user_id = ?")
-    .all(userId) as Array<{ role_name: string }>;
-  return rows.map((r) => r.role_name);
+// ── MongoDB 기반 (Auth/RBAC) ──────────────────────────────
+
+export async function getUserRoles(userId: string): Promise<string[]> {
+  const user = await User.findById(userId).select("roles").lean();
+  return user?.roles ?? ["user"];
 }
 
-export function ensureUserRole(db: Database, userId: number | bigint, roleName: string): void {
-  db.prepare(
-    "INSERT OR IGNORE INTO user_roles (user_id, role_name, created_at) VALUES (?, ?, ?)"
-  ).run(userId, roleName, new Date().toISOString());
+export async function ensureUserRole(userId: string, roleName: string): Promise<void> {
+  await User.updateOne({ _id: userId }, { $addToSet: { roles: roleName } });
 }
 
 export function isAdmin(roles: string[]): boolean {

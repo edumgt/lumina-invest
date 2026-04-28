@@ -3,7 +3,7 @@ import "express-session";
 declare module "express-session" {
   interface SessionData {
     user?: {
-      id: number;
+      id: string;       // MongoDB ObjectId string
       name: string;
       email: string;
       clientId: string;

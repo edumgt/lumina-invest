@@ -1,12 +1,11 @@
 import type { Request, Response, NextFunction } from "express";
-import type { Database } from "better-sqlite3";
 import { getUserRoles } from "../services/rbac.service";
 
-export function attachRoles(db: Database) {
-  return (req: Request, res: Response, next: NextFunction): void => {
+export function attachRoles() {
+  return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     if (!req.session?.user?.id) return next();
     try {
-      const roles = getUserRoles(db, req.session.user.id);
+      const roles = await getUserRoles(req.session.user.id);
       req.session.user.roles = roles;
       next();
     } catch (e) {

@@ -11,7 +11,7 @@ export function createChatRouter({ db }: { db: Database }): express.Router {
   const ollama = createOllama({
     baseUrl: process.env.OLLAMA_BASE_URL || "http://127.0.0.1:11434",
   });
-  const llmModel = process.env.LLM_MODEL || "llama3.1";
+  const llmModel  = process.env.LLM_MODEL  || "llama3.1";
   const embedModel = process.env.EMBED_MODEL || "nomic-embed-text";
   const topK = Number(process.env.TOP_K || 6);
 
@@ -20,7 +20,7 @@ export function createChatRouter({ db }: { db: Database }): express.Router {
       const question = String(req.body?.question || "").trim();
       if (!question) return res.status(400).json({ error: "question is required" });
 
-      const user = req.session.user!;
+      const user  = req.session.user!;
       const roles = user.roles || ["user"];
 
       audit(db, {
@@ -42,15 +42,8 @@ export function createChatRouter({ db }: { db: Database }): express.Router {
       });
 
       db.prepare(
-        "INSERT INTO chats (user_id, client_id, question, answer, citations_json, created_at) VALUES (?, ?, ?, ?, ?, ?)"
-      ).run(
-        user.id,
-        user.clientId,
-        question,
-        answer,
-        JSON.stringify(citations),
-        new Date().toISOString()
-      );
+        "INSERT INTO chats (mongo_user_id, client_id, question, answer, citations_json, created_at) VALUES (?, ?, ?, ?, ?, ?)"
+      ).run(user.id, user.clientId, question, answer, JSON.stringify(citations), new Date().toISOString());
 
       audit(db, {
         userId: user.id,

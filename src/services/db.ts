@@ -163,4 +163,13 @@ function migrate(db: Database.Database): void {
   try {
     db.exec(`CREATE INDEX IF NOT EXISTS idx_audit_user ON audit_events(user_id, created_at)`);
   } catch {}
+
+  // MongoDB 전환: mongo_user_id TEXT 컬럼 추가
+  if (!hasColumn(db, "audit_events", "mongo_user_id"))
+    db.exec(`ALTER TABLE audit_events ADD COLUMN mongo_user_id TEXT`);
+  if (!hasColumn(db, "chats", "mongo_user_id"))
+    db.exec(`ALTER TABLE chats ADD COLUMN mongo_user_id TEXT`);
+  try {
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_audit_mongo_user ON audit_events(mongo_user_id, created_at)`);
+  } catch {}
 }

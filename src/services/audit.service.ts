@@ -1,7 +1,7 @@
 import type { Database } from "better-sqlite3";
 
 export interface AuditParams {
-  userId?: number | null;
+  userId?: string | null;   // MongoDB ObjectId string
   clientId?: string | null;
   eventType: string;
   payload?: Record<string, unknown>;
@@ -9,7 +9,7 @@ export interface AuditParams {
 
 export interface AuditEvent {
   id: number;
-  userId: number | null;
+  mongoUserId: string | null;
   clientId: string | null;
   eventType: string;
   payload: Record<string, unknown>;
@@ -18,7 +18,7 @@ export interface AuditEvent {
 
 interface AuditRow {
   id: number;
-  user_id: number | null;
+  mongo_user_id: string | null;
   client_id: string | null;
   event_type: string;
   payload_json: string;
@@ -28,7 +28,7 @@ interface AuditRow {
 export function audit(db: Database, params: AuditParams): void {
   const { userId = null, clientId = null, eventType, payload = {} } = params;
   db.prepare(
-    "INSERT INTO audit_events (user_id, client_id, event_type, payload_json, created_at) VALUES (?, ?, ?, ?, ?)"
+    "INSERT INTO audit_events (mongo_user_id, client_id, event_type, payload_json, created_at) VALUES (?, ?, ?, ?, ?)"
   ).run(userId, clientId, eventType, JSON.stringify(payload), new Date().toISOString());
 }
 
@@ -36,12 +36,12 @@ export function recentAudits(db: Database, limit = 50): AuditEvent[] {
   return (
     db
       .prepare(
-        "SELECT id, user_id, client_id, event_type, payload_json, created_at FROM audit_events ORDER BY id DESC LIMIT ?"
+        "SELECT id, mongo_user_id, client_id, event_type, payload_json, created_at FROM audit_events ORDER BY id DESC LIMIT ?"
       )
       .all(limit) as AuditRow[]
   ).map((r) => ({
     id: r.id,
-    userId: r.user_id,
+    mongoUserId: r.mongo_user_id,
     clientId: r.client_id,
     eventType: r.event_type,
     payload: JSON.parse(r.payload_json) as Record<string, unknown>,
