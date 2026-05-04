@@ -172,4 +172,8 @@ function migrate(db: Database.Database): void {
   try {
     db.exec(`CREATE INDEX IF NOT EXISTS idx_audit_mongo_user ON audit_events(mongo_user_id, created_at)`);
   } catch {}
+
+  // Agentic AI: steps_json 컬럼 추가
+  if (!hasColumn(db, "chats", "steps_json"))
+    db.exec(`ALTER TABLE chats ADD COLUMN steps_json TEXT`);
 }

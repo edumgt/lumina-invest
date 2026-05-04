@@ -5,6 +5,14 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>App | Law RAG Agent</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    .msg-bubble-user { background: linear-gradient(135deg,#6366f1,#4f46e5); }
+    .steps-panel { display: none; }
+    .steps-panel.open { display: block; }
+    .step-retrieve { border-left: 3px solid #6366f1; }
+    .step-final_answer { border-left: 3px solid #10b981; }
+    .step-clarify { border-left: 3px solid #f59e0b; }
+  </style>
 </head>
 <body class="min-h-screen bg-slate-950 text-slate-100">
   <!-- Top Bar -->
@@ -15,7 +23,7 @@
           ☰
         </button>
         <div class="font-semibold tracking-tight">Law RAG Agent</div>
-        <div class="text-xs text-slate-400 hidden sm:block">법령/판례 중심 RAG + 세션/Client ID</div>
+        <div class="text-xs text-slate-400 hidden sm:block">Agentic AI · 법령/판례 ReAct 에이전트</div>
       </div>
       <div class="flex items-center gap-2">
         <div id="userPill" class="hidden sm:flex items-center gap-2 px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-sm">
@@ -39,7 +47,7 @@
         </nav>
       </div>
       <div class="mt-4 rounded-2xl border border-white/10 bg-white/5 p-4 text-xs text-slate-400 leading-relaxed">
-        답변은 법률 자문이 아닌 정보 제공 목적입니다. 최신성/관할/사실관계를 확인하세요.
+        에이전트가 질문을 분석하고 여러 차례 검색 후 근거 기반 답변을 생성합니다. 답변은 법률 자문이 아닌 정보 제공 목적입니다.
       </div>
     </aside>
 
@@ -61,34 +69,32 @@
     </aside>
 
     <!-- Main -->
-    <main class="flex-1">
+    <main class="flex-1 min-w-0">
       <div data-toast class="hidden mb-4 px-4 py-3 rounded-xl border border-white/10 bg-white/5 text-sm"></div>
 
       <!-- Chat -->
       <section id="view-chat" class="view hidden">
-        <div class="rounded-2xl border border-white/10 bg-white/5 p-5">
-          <div class="flex items-start justify-between gap-4">
+        <div class="rounded-2xl border border-white/10 bg-white/5 p-5 flex flex-col" style="height:calc(100vh - 140px)">
+          <div class="flex items-center justify-between gap-4 pb-4 border-b border-white/10">
             <div>
               <h2 class="text-xl font-semibold">Chat</h2>
-              <p class="mt-1 text-sm text-slate-300">질문 → RAG 검색(법령/판례) → 근거 인용 답변</p>
+              <p class="mt-0.5 text-xs text-slate-400">ReAct 에이전트: 단계적 검색 → 근거 인용 답변</p>
             </div>
-            <div class="text-xs text-slate-400">
-              Tip: 먼저 Ingest에서 데모 문서 인덱싱을 하세요.
-            </div>
+            <button id="clearChatBtn" class="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs text-slate-400">대화 초기화</button>
           </div>
 
-          <div class="mt-5">
-            <textarea id="q" class="w-full min-h-[110px] px-4 py-3 rounded-xl bg-black/30 border border-white/10 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              placeholder="예) 임금체불이 발생했을 때, 근로자가 취할 수 있는 대응 절차와 입증자료 체크리스트를 알려줘."></textarea>
-            <div class="mt-3 flex items-center justify-between">
-              <div class="text-xs text-slate-400">답변은 항상 근거(인용)와 함께 출력됩니다.</div>
-              <button id="askBtn" class="px-4 py-2 rounded-xl bg-indigo-500 hover:bg-indigo-400 text-slate-950 font-semibold">질문하기</button>
-            </div>
-          </div>
+          <!-- Message list -->
+          <div id="chatMessages" class="flex-1 overflow-y-auto py-4 space-y-4 pr-1"></div>
 
-          <div class="mt-6 border-t border-white/10 pt-5">
-            <div class="text-sm text-slate-300">응답</div>
-            <pre id="a" class="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-slate-100 bg-black/30 border border-white/10 rounded-xl p-4 min-h-[140px]"></pre>
+          <!-- Input area -->
+          <div class="pt-4 border-t border-white/10">
+            <div class="flex gap-2 items-end">
+              <textarea id="q" rows="2"
+                class="flex-1 px-4 py-3 rounded-xl bg-black/30 border border-white/10 focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none text-sm"
+                placeholder="예) 임금체불이 발생했을 때, 근로자가 취할 수 있는 대응 절차와 입증자료 체크리스트를 알려줘."></textarea>
+              <button id="askBtn" class="px-5 py-3 rounded-xl bg-indigo-500 hover:bg-indigo-400 text-slate-950 font-semibold text-sm whitespace-nowrap">전송</button>
+            </div>
+            <div class="mt-1.5 text-xs text-slate-500">Enter로 전송 · Shift+Enter로 줄바꿈</div>
           </div>
         </div>
       </section>
@@ -152,7 +158,7 @@
           </div>
 
           <div class="mt-6 rounded-2xl border border-white/10 bg-black/20 p-4 text-xs text-slate-400 leading-relaxed">
-            실무 적용 시에는: (1) 문서 버전/기준일 메타데이터, (2) 관할, (3) 최신성 검증, (4) 감사 로그, (5) 권한(역할) 기반 문서 접근 통제를 추가하세요.
+            Agentic AI: ReAct 루프로 여러 번 검색 후 근거 기반 답변 생성. 실무 적용 시에는 (1) 문서 버전/기준일 메타데이터, (2) 관할, (3) 최신성 검증, (4) 감사 로그, (5) 권한(역할) 기반 문서 접근 통제를 추가하세요.
           </div>
         </div>
       </section>
@@ -223,21 +229,167 @@
       }
     });
 
-    // Chat
+    // ── Chat (Multi-turn Agentic) ─────────────────────────────────
+    const chatMessages = document.getElementById("chatMessages");
+    const qEl = document.getElementById("q");
     const askBtn = document.getElementById("askBtn");
-    const q = document.getElementById("q");
-    const a = document.getElementById("a");
-    askBtn.addEventListener("click", async () => {
-      const question = q.value.trim();
-      if (!question) return setToast("질문을 입력하세요.", "error");
-      a.textContent = "생각 중...";
-      try {
-        const res = await api("/api/chat", { method: "POST", body: { question }});
-        a.textContent = res.answer;
-      } catch (e) {
-        a.textContent = "";
-        setToast(e.message, "error");
+    const MAX_HISTORY_MESSAGES = 20;
+    let conversationHistory = [];
+
+    function escHtml(s) {
+      return String(s || "")
+        .replace(/&/g,"&amp;")
+        .replace(/</g,"&lt;")
+        .replace(/>/g,"&gt;")
+        .replace(/"/g,"&quot;")
+        .replace(/'/g,"&#39;");
+    }
+
+    function renderActionLabel(action) {
+      const map = { retrieve: "🔍 검색", final_answer: "✅ 답변 결정", clarify: "❓ 확인 요청" };
+      return map[action] || action;
+    }
+
+    function renderDocTypeBadge(docType) {
+      const map = { law:"법령", case:"판결문", interpretation:"해석례", decision:"결정례" };
+      return map[docType] ? `<span class="text-indigo-300">[${map[docType]}]</span> ` : "";
+    }
+
+    function appendUserMessage(text) {
+      const div = document.createElement("div");
+      div.className = "flex justify-end";
+      div.innerHTML = `
+        <div class="max-w-[80%] msg-bubble-user rounded-2xl rounded-tr-sm px-4 py-3 text-sm leading-relaxed">
+          ${escHtml(text)}
+        </div>`;
+      chatMessages.appendChild(div);
+      chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+
+    function appendThinkingIndicator() {
+      const div = document.createElement("div");
+      div.id = "thinking-indicator";
+      div.className = "flex justify-start";
+      div.innerHTML = `
+        <div class="max-w-[80%] rounded-2xl rounded-tl-sm px-4 py-3 bg-white/5 border border-white/10 text-sm text-slate-400 animate-pulse">
+          에이전트가 추론 중...
+        </div>`;
+      chatMessages.appendChild(div);
+      chatMessages.scrollTop = chatMessages.scrollHeight;
+      return div;
+    }
+
+    function removeThinkingIndicator() {
+      document.getElementById("thinking-indicator")?.remove();
+    }
+
+    function appendAssistantMessage(answer, steps, citations) {
+      const msgId = "msg-" + Date.now();
+
+      // Build steps HTML
+      let stepsHtml = "";
+      if (steps && steps.length > 0) {
+        const stepItems = steps.map((s, i) => {
+          const argsText = s.action === "retrieve"
+            ? `검색어: <span class="text-indigo-300">${escHtml(s.args.query || "")}</span>${s.args.docType ? ` ${renderDocTypeBadge(s.args.docType)}` : ""}`
+            : (s.action === "clarify" ? escHtml(s.args.question || "") : "");
+          const obsHtml = s.observation
+            ? `<div class="mt-2 text-xs text-slate-500 bg-black/20 rounded-lg p-2 max-h-32 overflow-y-auto whitespace-pre-wrap">${escHtml(s.observation.slice(0, 400))}${s.observation.length > 400 ? "..." : ""}</div>`
+            : "";
+          return `
+            <div class="step-${escHtml(s.action)} pl-3 py-1.5 mb-2 last:mb-0">
+              <div class="text-xs font-medium text-slate-300">${escHtml(String(i+1))}. ${renderActionLabel(s.action)}</div>
+              ${argsText ? `<div class="text-xs text-slate-400 mt-0.5">${argsText}</div>` : ""}
+              <div class="text-xs text-slate-500 mt-0.5 italic">${escHtml(s.thought)}</div>
+              ${obsHtml}
+            </div>`;
+        }).join("");
+        stepsHtml = `
+          <div class="mt-3 border-t border-white/10 pt-2">
+            <button class="steps-toggle text-xs text-slate-500 hover:text-slate-300 flex items-center gap-1" data-target="${msgId}-steps">
+              <span class="toggle-icon">▶</span> 추론 과정 (${steps.length}단계)
+            </button>
+            <div id="${msgId}-steps" class="steps-panel mt-2 space-y-1">${stepItems}</div>
+          </div>`;
       }
+
+      // Build citations HTML
+      let citHtml = "";
+      if (citations && citations.length > 0) {
+        const citItems = citations.slice(0, 5).map((c, i) => {
+          const label = c.docId ? `${c.docId}@v${c.docVersion || 1}` : c.source;
+          return `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-white/5 border border-white/10 text-xs text-slate-400" title="${escHtml(c.source)}">[C${i+1}] ${escHtml(label)}</span>`;
+        }).join(" ");
+        citHtml = `<div class="mt-2 flex flex-wrap gap-1">${citItems}</div>`;
+      }
+
+      const div = document.createElement("div");
+      div.className = "flex justify-start";
+      div.innerHTML = `
+        <div class="max-w-[88%] rounded-2xl rounded-tl-sm px-4 py-3 bg-white/5 border border-white/10">
+          <pre class="text-sm leading-relaxed whitespace-pre-wrap text-slate-100">${escHtml(answer)}</pre>
+          ${citHtml}
+          ${stepsHtml}
+        </div>`;
+
+      chatMessages.appendChild(div);
+      chatMessages.scrollTop = chatMessages.scrollHeight;
+
+      // Wire up steps toggle
+      div.querySelectorAll(".steps-toggle").forEach(btn => {
+        btn.addEventListener("click", () => {
+          const panel = document.getElementById(btn.dataset.target);
+          const icon = btn.querySelector(".toggle-icon");
+          if (panel) {
+            panel.classList.toggle("open");
+            if (icon) icon.textContent = panel.classList.contains("open") ? "▼" : "▶";
+          }
+        });
+      });
+    }
+
+    async function sendQuestion() {
+      const question = qEl.value.trim();
+      if (!question) return setToast("질문을 입력하세요.", "error");
+      if (askBtn.disabled) return;
+
+      qEl.value = "";
+      askBtn.disabled = true;
+      appendUserMessage(question);
+      const indicator = appendThinkingIndicator();
+
+      try {
+        const res = await api("/api/chat", {
+          method: "POST",
+          body: { question, history: conversationHistory },
+        });
+        removeThinkingIndicator();
+
+        conversationHistory.push({ role: "user", content: question });
+        conversationHistory.push({ role: "assistant", content: res.answer });
+        // Keep history to last MAX_HISTORY_MESSAGES messages to avoid token overflow
+        if (conversationHistory.length > MAX_HISTORY_MESSAGES) conversationHistory = conversationHistory.slice(-MAX_HISTORY_MESSAGES);
+
+        appendAssistantMessage(res.answer, res.steps, res.citations);
+      } catch (e) {
+        removeThinkingIndicator();
+        setToast(e.message, "error");
+        appendAssistantMessage("오류가 발생했습니다: " + e.message, [], []);
+      } finally {
+        askBtn.disabled = false;
+        qEl.focus();
+      }
+    }
+
+    askBtn.addEventListener("click", sendQuestion);
+    qEl.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendQuestion(); }
+    });
+
+    document.getElementById("clearChatBtn").addEventListener("click", () => {
+      conversationHistory = [];
+      chatMessages.innerHTML = "";
+      setToast("대화가 초기화되었습니다.", "ok");
     });
 
     // Ingest
@@ -277,8 +429,8 @@
           const div = document.createElement("div");
           div.className = "rounded-2xl border border-white/10 bg-black/20 p-4";
           div.innerHTML = `
-            <div class="text-xs text-slate-400">${(item.docId ? (item.docId + "@v" + (item.docVersion||1) + (item.effectiveDate ? (" • 기준일 " + item.effectiveDate) : "")) : item.source)}</div>
-            <div class="mt-2 text-sm whitespace-pre-wrap leading-relaxed">${item.text}</div>
+            <div class="text-xs text-slate-400">${escHtml(item.docId ? (item.docId + "@v" + (item.docVersion||1) + (item.effectiveDate ? (" • 기준일 " + item.effectiveDate) : "")) : item.source)}</div>
+            <div class="mt-2 text-sm whitespace-pre-wrap leading-relaxed">${escHtml(item.text)}</div>
           `;
           libRes.appendChild(div);
         }
