@@ -7,6 +7,11 @@ from app.lib.session import get_current_user
 from app.lib.ollama import get_ollama
 from app.services.financial_ingest import run_full_ingest
 from app.services.crawl import run_auto_crawl, crawl_url, _chunk_text, _store_qdrant
+from app.services.translation_ingest import (
+    run_translation_ingest,
+    translation_search,
+    TRANSLATION_COLLECTION,
+)
 
 router = APIRouter(prefix="/api")
 
@@ -91,6 +96,56 @@ async def ingest_local_docs(
             total += len(chunks)
 
     return {"ok": True, "total_chunks": total, "log": log}
+
+
+class TranslationIngestBody(BaseModel):
+    data_type: str = "labeled"       # "labeled" | "source" | "all"
+    categories: list[str] = []       # [] = 전체. e.g. ["news","report"]
+    languages: list[str] = []        # [] = 전체. e.g. ["en","ja"]
+    max_docs: int = 0                # 0 = 무제한
+
+
+@router.post("/ingest/translation-data")
+async def ingest_translation_data(
+    body: TranslationIngestBody,
+    user=Depends(get_current_user),
+):
+    """data/1.데이터 다국어 번역 ZIP → Qdrant translation_docs 컬렉션 인제스트."""
+    ollama = get_ollama()
+    log: list[str] = []
+    result = await run_translation_ingest(
+        ollama,
+        log,
+        data_type=body.data_type,
+        categories=body.categories or None,
+        languages=body.languages or None,
+        max_docs=body.max_docs,
+    )
+    return {"ok": True, "result": result, "log": log}
+
+
+class TranslationSearchBody(BaseModel):
+    query: str
+    top_k: int = 5
+    category: str | None = None
+    target_language: str | None = None
+
+
+@router.post("/ingest/translation-search")
+async def search_translation(
+    body: TranslationSearchBody,
+    user=Depends(get_current_user),
+):
+    """translation_docs 컬렉션에서 한국어 쿼리로 유사 문서 검색."""
+    ollama = get_ollama()
+    hits = await translation_search(
+        body.query,
+        ollama,
+        top_k=body.top_k,
+        category=body.category,
+        target_language=body.target_language,
+    )
+    return {"ok": True, "hits": hits, "collection": TRANSLATION_COLLECTION}
 
 
 @router.get("/ingest/crawl/list")

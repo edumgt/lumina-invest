@@ -23,6 +23,7 @@ build/
 data/09*/
 data/10*/
 data/12*/
+data/1*/
 data/app.db
 data/vectors-cache.json
 
