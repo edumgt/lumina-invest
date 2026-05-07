@@ -49,3 +49,10 @@ async def ensure_indexes() -> None:
     await db.crawled_docs.create_index("url", unique=True)
     # 감사 로그
     await db.audit_events.create_index([("user_id", 1), ("created_at", -1)])
+    # 금융 데이터 컬렉션 (SQLite에서 이관)
+    await db.personal_cb_stats.create_index("stdt")
+    await db.personal_cb_stats.create_index([("gender", 1), ("age_band", 1)])
+    await db.corporate_cb_stats.create_index("bs_dt")
+    await db.corporate_cb_stats.create_index([("sic_cd", 1), ("wg_gb", 1)])
+    await db.bank_products.create_index("base_rate")
+    await db.fund_products.create_index("main_type")

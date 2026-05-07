@@ -5,10 +5,9 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
-from app.database.sqlite import init_db
 from app.database.mongo import connect_mongo, close_mongo, ensure_indexes
 from app.lib.session import connect_redis, close_redis
-from app.routes import health, auth, chat, ingest, stocks, library, admin, system, quant
+from app.routes import health, auth, chat, ingest, stocks, library, admin, system, quant, ml, macro
 
 
 @asynccontextmanager
@@ -23,7 +22,6 @@ async def lifespan(app: FastAPI):
         await ensure_indexes()
     except Exception as e:
         print(f"[WARN] MongoDB 연결 실패 (인증 비활성): {e}")
-    await init_db()
     print("[fin-agent] 서버 시작 완료")
     yield
     # 종료
@@ -48,6 +46,8 @@ app.include_router(library.router)
 app.include_router(admin.router)
 app.include_router(system.router)
 app.include_router(quant.router)
+app.include_router(ml.router)
+app.include_router(macro.router)
 
 # 정적 파일 (프론트엔드)
 _public = os.path.join(os.path.dirname(__file__), "..", "public")

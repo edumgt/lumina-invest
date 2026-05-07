@@ -2,7 +2,6 @@ import os
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
-from app.database.sqlite import get_db
 from app.database.mongo import get_mdb
 from app.lib.session import get_current_user
 from app.lib.ollama import get_ollama
@@ -15,10 +14,10 @@ router = APIRouter(prefix="/api")
 @router.post("/ingest/financial")
 async def ingest_financial(
     user=Depends(get_current_user),
-    db=Depends(get_db),
+    mdb=Depends(get_mdb),
 ):
     log: list[str] = []
-    result = await run_full_ingest(db, log)
+    result = await run_full_ingest(mdb, log)
     return {"ok": True, "result": result, "log": log}
 
 

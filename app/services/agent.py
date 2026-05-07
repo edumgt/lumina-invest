@@ -1,7 +1,7 @@
 """금융 AI 에이전트 - ReAct 루프 기반."""
 import json
 from typing import Any
-import aiosqlite
+from motor.motor_asyncio import AsyncIOMotorDatabase
 from app.lib.ollama import OllamaClient
 from app.lib.guardrails import check_guardrails
 from app.lib.financial_tools import (
@@ -77,7 +77,7 @@ def _parse_action(raw: str) -> dict | None:
 
 
 async def run_agent(
-    db: aiosqlite.Connection,
+    db: AsyncIOMotorDatabase,
     ollama: OllamaClient,
     llm_model: str,
     question: str,

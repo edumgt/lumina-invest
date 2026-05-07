@@ -4,7 +4,6 @@ import os
 
 class Settings(BaseSettings):
     PORT: int = 8000
-    SQLITE_PATH: str = "./data/app.db"
     SESSION_SECRET: str = "change-me-super-secret"
     SESSION_TTL: int = 604800  # 7 days
 

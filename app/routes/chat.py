@@ -5,7 +5,6 @@ import httpx
 from app.database.mongo import get_mdb
 from app.lib.session import get_current_user
 from app.lib.ollama import get_ollama
-from app.database.sqlite import get_db
 from app.services.agent import run_agent
 from app.services.crawl import qdrant_search
 from app.config import settings
@@ -24,7 +23,6 @@ async def chat(
     body: ChatBody,
     user=Depends(get_current_user),
     mdb=Depends(get_mdb),
-    db=Depends(get_db),
 ):
     ollama = get_ollama()
 
@@ -41,7 +39,7 @@ async def chat(
 
     try:
         result = await run_agent(
-            db, ollama, settings.LLM_MODEL, body.question, body.history,
+            mdb, ollama, settings.LLM_MODEL, body.question, body.history,
             rag_context=rag_context,
         )
     except httpx.HTTPStatusError as e:
