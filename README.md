@@ -446,16 +446,16 @@ COPY ./qdrant_storage /qdrant/storage
 ### 2. 로그인 화면 (캡처 세트 01)
 ![로그인](screenshots/cap01_login.png)
 
-### 3. 회원가입 화면
+### 3. 회원가입 화면 (캡처 세트 02)
 ![회원가입](screenshots/cap02_register.png)
 
 ### 4. 퀀트 화면 (캡처 세트 02)
 ![퀀트 초기](screenshots/cap02_quant.png)
 
-### 5. 앱 메인 화면
+### 5. 앱 메인 화면 (캡처 세트 03)
 ![앱 메인](screenshots/cap03_app_main.png)
 
-### 6. 미국 주식 화면
+### 6. 미국 주식 화면 (캡처 세트 03)
 ![미국 주식](screenshots/cap03_us_stocks.png)
 
 ### 7. 기업 분석 화면 (캡처 세트 04)
@@ -467,7 +467,7 @@ COPY ./qdrant_storage /qdrant/storage
 ### 9. 기업 분석 화면 (캡처 세트 05)
 ![기업 분석 추가](screenshots/cap05_company.png)
 
-### 10. 트레이딩 화면
+### 10. 트레이딩 화면 (캡처 세트 05)
 ![트레이딩](screenshots/cap05_trading.png)
 
 ### 11. Agent 최종 화면
