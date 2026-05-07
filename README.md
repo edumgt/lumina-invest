@@ -440,16 +440,16 @@ COPY ./qdrant_storage /qdrant/storage
 
 > Playwright로 캡처한 주요 화면입니다 (한글 폰트 적용, API Mock 기반).
 
-### 1. Agent 홈 화면
+### 1. Agent 홈 화면 (캡처 세트 01)
 ![Agent 홈](screenshots/cap01_agent_home.png)
 
-### 2. 로그인 화면
+### 2. 로그인 화면 (캡처 세트 01)
 ![로그인](screenshots/cap01_login.png)
 
 ### 3. 회원가입 화면
 ![회원가입](screenshots/cap02_register.png)
 
-### 4. 퀀트 화면 (초기 캡처)
+### 4. 퀀트 화면 (캡처 세트 02)
 ![퀀트 초기](screenshots/cap02_quant.png)
 
 ### 5. 앱 메인 화면
@@ -458,13 +458,13 @@ COPY ./qdrant_storage /qdrant/storage
 ### 6. 미국 주식 화면
 ![미국 주식](screenshots/cap03_us_stocks.png)
 
-### 7. 기업 분석 화면 (초기 캡처)
+### 7. 기업 분석 화면 (캡처 세트 04)
 ![기업 분석 초기](screenshots/cap04_company.png)
 
-### 8. 퀀트 화면 (추가 캡처)
+### 8. 퀀트 화면 (캡처 세트 04)
 ![퀀트 추가](screenshots/cap04_quant.png)
 
-### 9. 기업 분석 화면 (추가 캡처)
+### 9. 기업 분석 화면 (캡처 세트 05)
 ![기업 분석 추가](screenshots/cap05_company.png)
 
 ### 10. 트레이딩 화면
