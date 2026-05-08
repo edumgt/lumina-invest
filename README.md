@@ -448,50 +448,50 @@ COPY ./qdrant_storage /qdrant/storage
 
 > Playwright로 캡처한 주요 화면입니다 (한글 폰트 적용, API Mock 기반).
 
-### 1. 메인 랜딩
-![메인](screenshots/01_landing.png)
+### 1. Agent 홈 화면 (캡처 세트 01)
+![Agent 홈](screenshots/cap01_agent_home.png)
 
-### 2. 회원가입
-![회원가입](screenshots/02_register.png)
+### 2. 로그인 화면 (캡처 세트 01)
+![로그인](screenshots/cap01_login.png)
 
-### 3. 로그인
-![로그인](screenshots/03_login.png)
+### 3. 회원가입 화면 (캡처 세트 02)
+![회원가입](screenshots/cap02_register.png)
 
-### 4. AI 금융 채팅 (ReAct Agent 답변)
-![챗](screenshots/04_agent_chat.png)
+### 4. 퀀트 화면 (캡처 세트 02)
+![퀀트 초기](screenshots/cap02_quant.png)
 
-### 5. CB 분석 대시보드
-![CB분석](screenshots/05_cb_analysis.png)
+### 5. 앱 메인 화면 (캡처 세트 03)
+![앱 메인](screenshots/cap03_app_main.png)
 
-### 6. 크롤링 현황 (GitHub docs → Qdrant RAG)
-![크롤링](screenshots/06_crawl.png)
+### 6. 미국 주식 화면 (캡처 세트 03)
+![미국 주식](screenshots/cap03_us_stocks.png)
 
-### 7. 주가 캔들차트 (TradingView)
-![주가](screenshots/07_stock_chart.png)
+### 7. 기업 분석 화면 (캡처 세트 04)
+![기업 분석 초기](screenshots/cap04_company.png)
 
-### 8. 포트폴리오 관리
-![포트폴리오](screenshots/08_portfolio.png)
+### 8. 퀀트 화면 (캡처 세트 04)
+![퀀트 추가](screenshots/cap04_quant.png)
 
-### 9. 주문/매매 내역
-![주문](screenshots/09_orders.png)
+### 9. 기업 분석 화면 (캡처 세트 05)
+![기업 분석 추가](screenshots/cap05_company.png)
 
-### 10. 퀀트 시그널 대시보드 (RSI·SMA·볼린저)
-![퀀트](screenshots/10_quant_signals.png)
+### 10. 트레이딩 화면 (캡처 세트 05)
+![트레이딩](screenshots/cap05_trading.png)
 
-### 11. 10분 자동매매 Agentic AI 로그
-![자동매매](screenshots/11_auto_trade.png)
+### 11. Agent 최종 화면
+![Agent 최종](screenshots/final01_agent.png)
 
-### 12. 퀀트 백테스트 (10년 데이터)
-![백테스트](screenshots/12_backtest.png)
+### 12. 주식 APEX 최종 화면
+![주식 APEX](screenshots/final02_stock_apex.png)
 
-### 13. GNB/LNB 구조 + 푸터 (에듀엠지티)
-![GNB](screenshots/13_gnb_overview.png)
+### 13. 퀀트 APEX 최종 화면
+![퀀트 APEX](screenshots/final03_quant_apex.png)
 
-### 14. 시스템 관리 대시보드 (CPU·메모리·Docker 컨테이너)
-![시스템](screenshots/14_system_dashboard.png)
+### 14. 미국 주식 APEX 최종 화면
+![미국 주식 APEX](screenshots/final04_us_apex.png)
 
-### 15. 증권사 Open API 설정 (KIS/eBest)
-![증권사API](screenshots/15_broker_api_settings.png)
+### 15. 기업 분석 최종 화면
+![기업 분석 최종](screenshots/final05_company.png)
 
 ---
 
@@ -551,4 +551,3 @@ AI 및 퀀트 모델링을 위한 기초 수학-통계
 - 트레이딩뷰 플랫폼으로 성과 확인 및 코딩 실습(PineScript) 
 - 파이썬 프로그래밍을 통한 성과 검증 
 - 증권사 연동(API 활용)을 통한 자동화 모델 구현
-
