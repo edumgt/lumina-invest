@@ -67,13 +67,8 @@ async def crawl_naver(
     ollama = get_ollama()
     log: list[str] = []
     chunks = await crawl_naver_stock(body.code, mdb, ollama, log)
-    safe_log = []
-    for line in log:
-        if line.strip().startswith("[ERROR]"):
-            safe_log.append("[ERROR] 크롤링 처리 중 오류가 발생했습니다.")
-        else:
-            safe_log.append(line)
-    return {"ok": True, "chunks": chunks, "log": safe_log}
+    message = "네이버 주식 크롤링이 완료되었습니다." if chunks > 0 else "네이버 주식 크롤링 결과가 없습니다."
+    return {"ok": True, "chunks": chunks, "message": message}
 
 
 @router.post("/ingest/local-docs")

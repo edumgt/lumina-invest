@@ -2760,7 +2760,7 @@ document.getElementById("naver-crawl-btn").addEventListener("click", async () =>
   log.textContent = "네이버 주식 크롤링 중...";
   try {
     const res = await api("/api/ingest/crawl/naver", { method: "POST", body: { code } });
-    log.textContent = res.log.join("\n");
+    log.textContent = res.message || "완료";
     setToast(`${res.chunks}청크 저장 완료`, "ok");
     loadCrawlList();
   } catch (e) {
