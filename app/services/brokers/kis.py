@@ -129,6 +129,7 @@ class KISClient(BrokerClient):
             total_buy  = float(s2.get("pchs_amt_smtl_amt", 0)),
             total_gain = float(s2.get("evlu_pfls_smtl_amt", 0)),
             holdings   = holdings,
+            cash       = float(s2.get("dnca_tot_amt", 0)),  # 예수금
         )
 
     async def place_order(

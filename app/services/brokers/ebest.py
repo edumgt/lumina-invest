@@ -116,6 +116,7 @@ class EBestClient(BrokerClient):
             total_buy  = float(s.get("PchsAmt",    0)),
             total_gain = float(s.get("EvalPnlAmt", 0)),
             holdings   = holdings,
+            cash       = float(s.get("MnyOrdAbleAmt", 0)),  # 주문가능금액(예수금)
         )
 
     async def place_order(

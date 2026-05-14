@@ -53,6 +53,7 @@ class MockBrokerClient(BrokerClient):
             total_buy  = 1_455_000,
             total_gain = 100_000,
             holdings   = holdings,
+            cash       = 5_000_000,  # 모의 예수금
         )
 
     async def place_order(self, account_no, symbol, side, quantity, price) -> dict:

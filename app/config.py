@@ -30,6 +30,10 @@ class Settings(BaseSettings):
     COOKIE_SECURE: bool = False
     COOKIE_SAMESITE: str = "lax"
 
+    # 텔레그램 알림
+    TELEGRAM_BOT_TOKEN: str = ""
+    TELEGRAM_CHAT_ID: str = ""
+
     class Config:
         env_file = os.getenv("ENV_FILE", ".env.dev")
         extra = "ignore"
