@@ -617,6 +617,22 @@
           실제 API 키를 입력하면 실시간 시세·계좌·주문을 사용합니다. 비워두면 Mockup 데이터로 동작합니다.
         </p>
         <div class="space-y-4">
+          <div class="grid md:grid-cols-2 gap-3">
+            <div>
+              <label class="text-sm text-slate-400 block mb-1">투자 모드</label>
+              <select id="quant-mode" class="input">
+                <option value="paper">모의투자 (Paper)</option>
+                <option value="live">실전투자 (Live)</option>
+              </select>
+            </div>
+            <div>
+              <label class="text-sm text-slate-400 block mb-1">종목 선택 방식</label>
+              <select id="quant-symbol-source" class="input">
+                <option value="ai">AI 추천 종목</option>
+                <option value="manual">직접 종목 선택</option>
+              </select>
+            </div>
+          </div>
           <div>
             <label class="text-sm text-slate-400 block mb-1">증권사 선택</label>
             <select id="broker-type" class="input w-52">
@@ -646,6 +662,34 @@
                 <input id="broker-paper" type="checkbox" checked class="w-4 h-4 rounded" />
                 <span class="text-slate-300">모의투자 (Paper Trading)</span>
               </label>
+            </div>
+          </div>
+          <div id="quant-manual-symbols-wrap" class="hidden">
+            <label class="text-xs text-slate-400 block mb-2">직접 선택 종목</label>
+            <div class="grid grid-cols-2 md:grid-cols-3 gap-2 text-sm">
+              <label class="flex items-center gap-2"><input type="checkbox" class="quant-symbol w-4 h-4" value="005930.KS" /><span>삼성전자</span></label>
+              <label class="flex items-center gap-2"><input type="checkbox" class="quant-symbol w-4 h-4" value="000660.KS" /><span>SK하이닉스</span></label>
+              <label class="flex items-center gap-2"><input type="checkbox" class="quant-symbol w-4 h-4" value="035420.KS" /><span>NAVER</span></label>
+              <label class="flex items-center gap-2"><input type="checkbox" class="quant-symbol w-4 h-4" value="005380.KS" /><span>현대차</span></label>
+              <label class="flex items-center gap-2"><input type="checkbox" class="quant-symbol w-4 h-4" value="051910.KS" /><span>LG화학</span></label>
+            </div>
+          </div>
+          <div class="grid md:grid-cols-2 gap-3">
+            <div>
+              <label class="text-xs text-slate-400 block mb-1">AI 추천 종목 수 (1~5)</label>
+              <input id="quant-ai-top-n" type="number" min="1" max="5" class="input" value="3" />
+            </div>
+            <div>
+              <label class="text-xs text-slate-400 block mb-1">1회 투자금 (원)</label>
+              <input id="quant-per-trade-budget" type="number" min="10000" step="10000" class="input" value="1000000" />
+            </div>
+            <div>
+              <label class="text-xs text-slate-400 block mb-1">매수 비중 (%)</label>
+              <input id="quant-buy-ratio" type="number" min="10" max="100" step="5" class="input" value="100" />
+            </div>
+            <div>
+              <label class="text-xs text-slate-400 block mb-1">매도 비중 (%)</label>
+              <input id="quant-sell-ratio" type="number" min="10" max="100" step="5" class="input" value="50" />
             </div>
           </div>
           <div class="flex gap-2">
@@ -3137,21 +3181,51 @@ document.getElementById("bt-load").addEventListener("click", async () => {
 // ── 설정 (증권사 Open API) ────────────────────────────────────────
 async function loadSettings() {
   try {
-    const cfg = await api("/api/broker/settings");
+    const cfg = await api("/api/quant/settings");
+    document.getElementById("quant-mode").value = cfg.mode || "paper";
+    document.getElementById("quant-symbol-source").value = cfg.symbol_source || "ai";
     document.getElementById("broker-type").value   = cfg.broker || "mock";
     document.getElementById("broker-app-key").value = cfg.app_key || "";
     document.getElementById("broker-account").value = cfg.account_no || "";
     document.getElementById("broker-paper").checked = cfg.paper !== false;
+    document.getElementById("quant-ai-top-n").value = cfg.ai_top_n || 3;
+    document.getElementById("quant-per-trade-budget").value = cfg.per_trade_budget || 1000000;
+    document.getElementById("quant-buy-ratio").value = Math.round((cfg.buy_ratio ?? 1) * 100);
+    document.getElementById("quant-sell-ratio").value = Math.round((cfg.sell_ratio ?? 0.5) * 100);
+    const selected = new Set(cfg.selected_symbols || []);
+    document.querySelectorAll(".quant-symbol").forEach((el) => {
+      el.checked = selected.has(el.value);
+    });
+    toggleManualSymbols();
     document.getElementById("broker-status").textContent =
       cfg.connected ? `✅ 연결됨 (${cfg.broker})` : "⚠️ API 키 미설정 – Mockup 모드";
   } catch {}
 }
 
+function toggleManualSymbols() {
+  const source = document.getElementById("quant-symbol-source")?.value || "ai";
+  const wrap = document.getElementById("quant-manual-symbols-wrap");
+  if (!wrap) return;
+  if (source === "manual") wrap.classList.remove("hidden");
+  else wrap.classList.add("hidden");
+}
+document.getElementById("quant-symbol-source")?.addEventListener("change", toggleManualSymbols);
+
 document.getElementById("broker-save")?.addEventListener("click", async () => {
   try {
-    await api("/api/broker/settings", {
+    const selectedSymbols = [...document.querySelectorAll(".quant-symbol:checked")].map((el) => el.value);
+    const buyRatio = Math.max(10, Math.min(100, Number(document.getElementById("quant-buy-ratio").value || 100))) / 100;
+    const sellRatio = Math.max(10, Math.min(100, Number(document.getElementById("quant-sell-ratio").value || 50))) / 100;
+    await api("/api/quant/settings", {
       method: "POST",
       body: {
+        mode:       document.getElementById("quant-mode").value,
+        symbol_source: document.getElementById("quant-symbol-source").value,
+        selected_symbols: selectedSymbols,
+        ai_top_n: Number(document.getElementById("quant-ai-top-n").value || 3),
+        per_trade_budget: Number(document.getElementById("quant-per-trade-budget").value || 1000000),
+        buy_ratio:  buyRatio,
+        sell_ratio: sellRatio,
         broker:     document.getElementById("broker-type").value,
         app_key:    document.getElementById("broker-app-key").value,
         app_secret: document.getElementById("broker-app-secret").value,

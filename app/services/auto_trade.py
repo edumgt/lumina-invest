@@ -12,6 +12,7 @@ logger = logging.getLogger(__name__)
 _auto_trade_task: asyncio.Task | None = None
 _trade_log: list[dict] = []
 _is_running = False
+_auto_trade_user_id = "quant_system"
 _INTERVAL_SEC = 600
 _INITIAL_CAPITAL = 10_000_000
 
@@ -19,6 +20,7 @@ _INITIAL_CAPITAL = 10_000_000
 def get_status() -> dict:
     return {
         "running":      _is_running,
+        "user_id":      _auto_trade_user_id,
         "interval_sec": _INTERVAL_SEC,
         "log":          _trade_log[-50:],
     }
@@ -166,66 +168,121 @@ async def _run_quant_cycle(user_id: str = "quant_system") -> None:
         upsert=True,
     )
 
+    doc = await mdb.broker_settings.find_one({"user_id": user_id}) or {}
+    mode = doc.get("quant_mode", "paper")
+    if mode not in ("paper", "live"):
+        mode = "paper" if doc.get("paper", True) else "live"
+    symbol_source = doc.get("quant_symbol_source", "ai")
+    if symbol_source not in ("ai", "manual"):
+        symbol_source = "ai"
+    selected_symbols = doc.get("quant_selected_symbols", [])
+    if not isinstance(selected_symbols, list):
+        selected_symbols = []
+    ai_top_n = max(1, min(int(doc.get("quant_ai_top_n", 3)), len(QUANT_STOCKS)))
+    per_trade_budget = float(doc.get("quant_per_trade_budget", 1_000_000))
+    per_trade_budget = max(10_000.0, min(per_trade_budget, 10_000_000.0))
+    buy_ratio = float(doc.get("quant_buy_ratio", 1.0))
+    buy_ratio = max(0.1, min(buy_ratio, 1.0))
+    sell_ratio = float(doc.get("quant_sell_ratio", 0.5))
+    sell_ratio = max(0.1, min(sell_ratio, 1.0))
+
     price_map: dict[str, float] = {}
+    indicator_map: dict[str, dict] = {}
+    stock_map = {s["symbol"]: s for s in QUANT_STOCKS}
 
     for stock in QUANT_STOCKS:
         try:
             indicators = await get_quant_indicators(stock["symbol"], "2y")
+            indicator_map[stock["symbol"]] = indicators
             signal = indicators.get("signal", {})
             price = indicators.get("current_price")
             if not price:
                 continue
             price_map[stock["symbol"]] = float(price)
 
-            action = signal.get("action", "관망")
-            reasons = signal.get("reasons", [])
-            score = signal.get("score", 0)
+        except Exception:
+            logger.exception("자동매매 지표 계산 실패: %s", stock["symbol"])
+            cycle_log["signals"].append({"symbol": stock["symbol"], "error": "지표 계산 실패"})
 
-            cycle_log["signals"].append({
-                "symbol": stock["symbol"], "name": stock["name"],
-                "price": price, "action": action, "score": score,
-            })
+    if symbol_source == "manual":
+        target_symbols = [s for s in selected_symbols if s in stock_map]
+        if not target_symbols:
+            target_symbols = [s["symbol"] for s in QUANT_STOCKS[:ai_top_n]]
+    else:
+        ranked = []
+        for stock in QUANT_STOCKS:
+            indicators = indicator_map.get(stock["symbol"], {})
+            sig = indicators.get("signal", {})
+            score = sig.get("score", 0)
+            ranked.append((stock["symbol"], score))
+        ranked.sort(key=lambda item: item[1], reverse=True)
+        target_symbols = [sym for sym, _ in ranked[:ai_top_n]]
 
-            if action in ("강력 매수", "매수"):
-                qty = max(1, int(1_000_000 / price))
+    cycle_log["settings"] = {
+        "mode": mode,
+        "symbol_source": symbol_source,
+        "symbols": target_symbols,
+        "per_trade_budget": per_trade_budget,
+        "buy_ratio": buy_ratio,
+        "sell_ratio": sell_ratio,
+    }
+
+    for symbol in target_symbols:
+        stock = stock_map.get(symbol)
+        if not stock:
+            continue
+        indicators = indicator_map.get(symbol) or {}
+        signal = indicators.get("signal", {})
+        price = indicators.get("current_price")
+        if not price:
+            continue
+
+        action = signal.get("action", "관망")
+        reasons = signal.get("reasons", [])
+        score = signal.get("score", 0)
+        cycle_log["signals"].append({
+            "symbol": stock["symbol"], "name": stock["name"],
+            "price": price, "action": action, "score": score,
+        })
+
+        if action in ("강력 매수", "매수"):
+            budget = per_trade_budget * buy_ratio
+            qty = max(1, int(budget / price))
+            trade = await _execute_virtual_trade(
+                mdb, user_id, stock["symbol"], stock["name"],
+                "buy", price, qty, f"[{mode}] " + " | ".join(reasons),
+            )
+            cycle_log["trades"].append({**trade, "type": "auto"})
+            if trade.get("status") == "filled":
+                await notification.notify_auto_trade_executed(
+                    symbol   = stock["symbol"],
+                    name     = stock["name"],
+                    action   = "buy",
+                    quantity = trade.get("quantity", qty),
+                    price    = price,
+                    reason   = " | ".join(reasons),
+                )
+
+        elif action in ("강력 매도", "매도"):
+            existing = await mdb.portfolio.find_one(
+                {"user_id": user_id, "symbol": stock["symbol"]}
+            )
+            if existing and existing["quantity"] > 0:
+                qty = max(1, int(existing["quantity"] * sell_ratio))
                 trade = await _execute_virtual_trade(
                     mdb, user_id, stock["symbol"], stock["name"],
-                    "buy", price, qty, " | ".join(reasons),
+                    "sell", price, qty, f"[{mode}] " + " | ".join(reasons),
                 )
                 cycle_log["trades"].append({**trade, "type": "auto"})
                 if trade.get("status") == "filled":
                     await notification.notify_auto_trade_executed(
                         symbol   = stock["symbol"],
                         name     = stock["name"],
-                        action   = "buy",
+                        action   = "sell",
                         quantity = trade.get("quantity", qty),
                         price    = price,
                         reason   = " | ".join(reasons),
                     )
-
-            elif action in ("강력 매도", "매도"):
-                existing = await mdb.portfolio.find_one(
-                    {"user_id": user_id, "symbol": stock["symbol"]}
-                )
-                if existing and existing["quantity"] > 0:
-                    qty = max(1, existing["quantity"] // 2)
-                    trade = await _execute_virtual_trade(
-                        mdb, user_id, stock["symbol"], stock["name"],
-                        "sell", price, qty, " | ".join(reasons),
-                    )
-                    cycle_log["trades"].append({**trade, "type": "auto"})
-                    if trade.get("status") == "filled":
-                        await notification.notify_auto_trade_executed(
-                            symbol   = stock["symbol"],
-                            name     = stock["name"],
-                            action   = "sell",
-                            quantity = trade.get("quantity", qty),
-                            price    = price,
-                            reason   = " | ".join(reasons),
-                        )
-
-        except Exception as e:
-            cycle_log["signals"].append({"symbol": stock["symbol"], "error": str(e)})
 
     account = await mdb.quant_virtual_accounts.find_one({"user_id": user_id}) or {}
     cash_balance = float(account.get("cash_balance", _INITIAL_CAPITAL))
@@ -256,12 +313,12 @@ async def _run_quant_cycle(user_id: str = "quant_system") -> None:
         _trade_log = _trade_log[-100:]
 
 
-async def _auto_trade_loop() -> None:
+async def _auto_trade_loop(user_id: str) -> None:
     global _is_running
     _is_running = True
     try:
         while True:
-            await _run_quant_cycle()
+            await _run_quant_cycle(user_id)
             await asyncio.sleep(_INTERVAL_SEC)
     except asyncio.CancelledError:
         pass
@@ -269,11 +326,12 @@ async def _auto_trade_loop() -> None:
         _is_running = False
 
 
-def start_auto_trade() -> bool:
-    global _auto_trade_task, _is_running
+def start_auto_trade(user_id: str = "quant_system") -> bool:
+    global _auto_trade_task, _is_running, _auto_trade_user_id
     if _auto_trade_task and not _auto_trade_task.done():
         return False
-    _auto_trade_task = asyncio.create_task(_auto_trade_loop())
+    _auto_trade_user_id = user_id or "quant_system"
+    _auto_trade_task = asyncio.create_task(_auto_trade_loop(_auto_trade_user_id))
     asyncio.create_task(notification.notify_auto_trade_started())
     return True
 
