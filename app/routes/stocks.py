@@ -1,4 +1,5 @@
 import json
+import logging
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, Query, HTTPException
 from pydantic import BaseModel
@@ -11,6 +12,7 @@ from app.services.stock import (
 from app.services import auto_trade
 from app.services.quant_pipeline import backtest_custom_indicator
 from app.services.brokers.factory import get_broker_client
+from app.services import notification
 
 router = APIRouter(prefix="/api")
 
@@ -364,11 +366,51 @@ async def broker_order(
     client = await _get_broker_client(user, mdb)
     doc = await mdb.broker_settings.find_one({"user_id": user["id"]}) or {}
     account_no = doc.get("account_no", "")
+
+    # ── 매수 주문 시 예수금 사전 확인 ──────────────────────────────────────
+    if body.side == "buy":
+        bal_err: Exception | None = None
+        try:
+            bal = await client.get_balance(account_no)
+        except Exception as e:
+            # 잔고 조회 실패 시 주문은 계속 진행 (경고 로그만)
+            logging.getLogger(__name__).warning("잔고 조회 실패 (주문 진행): %s", e)
+            bal_err = e
+
+        if bal_err is None:
+            required = body.price * body.quantity
+            if bal.cash < required:
+                await notification.notify_insufficient_funds(
+                    symbol    = body.symbol,
+                    side      = body.side,
+                    quantity  = body.quantity,
+                    price     = body.price,
+                    required  = required,
+                    available = bal.cash,
+                )
+                raise HTTPException(
+                    422,
+                    f"예수금 부족: 필요 {required:,.0f}원 / 가용 {bal.cash:,.0f}원",
+                )
+
     try:
         result = await client.place_order(account_no, body.symbol, body.side,
                                           body.quantity, body.price)
+        await notification.notify_order_placed(
+            symbol   = body.symbol,
+            side     = body.side,
+            quantity = body.quantity,
+            price    = body.price,
+        )
         return {"ok": True, "result": result}
     except Exception as e:
+        await notification.notify_order_error(
+            symbol   = body.symbol,
+            side     = body.side,
+            quantity = body.quantity,
+            price    = body.price,
+            error    = str(e),
+        )
         raise HTTPException(502, f"증권사 API 주문 오류: {e}")
 
 

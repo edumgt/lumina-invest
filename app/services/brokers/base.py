@@ -42,6 +42,7 @@ class AccountBalance:
     total_buy: float
     total_gain: float
     holdings: list[BalanceItem]
+    cash: float = 0.0  # 예수금 (주문 가능 현금)
 
 
 class BrokerClient(ABC):

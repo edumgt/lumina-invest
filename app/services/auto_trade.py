@@ -1,9 +1,13 @@
 """10분 주기 자동매매 Agentic AI - MongoDB 기반."""
 import asyncio
+import logging
 from datetime import datetime, timezone
 from app.services.stock import get_quant_indicators, QUANT_STOCKS
 from app.database.mongo import get_mongo_db
 from app.config import settings
+from app.services import notification
+
+logger = logging.getLogger(__name__)
 
 _auto_trade_task: asyncio.Task | None = None
 _trade_log: list[dict] = []
@@ -117,6 +121,14 @@ async def _run_quant_cycle(user_id: str = "quant_system") -> None:
                     "buy", price, qty, " | ".join(reasons),
                 )
                 cycle_log["trades"].append({**trade, "type": "auto"})
+                await notification.notify_auto_trade_executed(
+                    symbol   = stock["symbol"],
+                    name     = stock["name"],
+                    action   = "buy",
+                    quantity = qty,
+                    price    = price,
+                    reason   = " | ".join(reasons),
+                )
 
             elif action in ("강력 매도", "매도"):
                 existing = await mdb.portfolio.find_one(
@@ -129,6 +141,14 @@ async def _run_quant_cycle(user_id: str = "quant_system") -> None:
                         "sell", price, qty, " | ".join(reasons),
                     )
                     cycle_log["trades"].append({**trade, "type": "auto"})
+                    await notification.notify_auto_trade_executed(
+                        symbol   = stock["symbol"],
+                        name     = stock["name"],
+                        action   = "sell",
+                        quantity = qty,
+                        price    = price,
+                        reason   = " | ".join(reasons),
+                    )
 
         except Exception as e:
             cycle_log["signals"].append({"symbol": stock["symbol"], "error": str(e)})
@@ -156,6 +176,7 @@ def start_auto_trade() -> bool:
     if _auto_trade_task and not _auto_trade_task.done():
         return False
     _auto_trade_task = asyncio.create_task(_auto_trade_loop())
+    asyncio.create_task(notification.notify_auto_trade_started())
     return True
 
 
@@ -163,5 +184,6 @@ def stop_auto_trade() -> bool:
     global _auto_trade_task
     if _auto_trade_task and not _auto_trade_task.done():
         _auto_trade_task.cancel()
+        asyncio.create_task(notification.notify_auto_trade_stopped())
         return True
     return False
