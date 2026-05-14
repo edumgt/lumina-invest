@@ -246,6 +246,24 @@ class BrokerSettingsBody(BaseModel):
     paper: bool = Field(default=True, alias="paper_trading")
 
 
+class QuantSettingsBody(BaseModel):
+    """퀀트 자동매매 설정 저장용 입력 모델."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    mode: str = Field(default="paper", description="paper | live")
+    broker: str = DEFAULT_BROKER
+    app_key: str = ""
+    app_secret: str = ""
+    account_no: str = ""
+    symbol_source: str = Field(default="ai", description="ai | manual")
+    selected_symbols: list[str] = Field(default_factory=list)
+    ai_top_n: int = Field(default=3, ge=1, le=5)
+    per_trade_budget: float = Field(default=1_000_000, ge=10_000, le=10_000_000)
+    buy_ratio: float = Field(default=1.0, ge=0.1, le=1.0)
+    sell_ratio: float = Field(default=0.5, ge=0.1, le=1.0)
+
+
 @router.get("/broker/catalog")
 async def broker_catalog():
     return {"brokers": get_broker_catalog()}
@@ -302,6 +320,93 @@ async def get_broker_settings(
         "paper":      doc.get("paper", True),
         "brokers": catalog,
     }
+
+
+@router.get("/quant/settings")
+async def get_quant_settings(
+    user=Depends(get_current_user),
+    mdb=Depends(get_mdb),
+):
+    catalog = get_broker_catalog()
+    stocks = QUANT_STOCKS
+    doc = await mdb.broker_settings.find_one({"user_id": user["id"]}) or {}
+    selected = doc.get("quant_selected_symbols", [])
+    if not isinstance(selected, list):
+        selected = []
+
+    mode = "paper"
+    if doc.get("quant_mode") in ("paper", "live"):
+        mode = doc["quant_mode"]
+    elif doc.get("paper") is False:
+        mode = "live"
+
+    source = doc.get("quant_symbol_source", "ai")
+    if source not in ("ai", "manual"):
+        source = "ai"
+
+    key = doc.get("app_key", "")
+    masked = key[:4] + "****" if key else ""
+
+    return {
+        "mode": mode,
+        "broker": doc.get("broker", DEFAULT_BROKER),
+        "connected": bool(key),
+        "app_key": masked,
+        "account_no": doc.get("account_no", ""),
+        "paper": mode == "paper",
+        "symbol_source": source,
+        "selected_symbols": selected,
+        "ai_top_n": int(doc.get("quant_ai_top_n", 3)),
+        "per_trade_budget": float(doc.get("quant_per_trade_budget", 1_000_000)),
+        "buy_ratio": float(doc.get("quant_buy_ratio", 1.0)),
+        "sell_ratio": float(doc.get("quant_sell_ratio", 0.5)),
+        "brokers": catalog,
+        "stocks": stocks,
+    }
+
+
+@router.post("/quant/settings")
+async def save_quant_settings(
+    body: QuantSettingsBody,
+    user=Depends(get_current_user),
+    mdb=Depends(get_mdb),
+):
+    broker = (body.broker or DEFAULT_BROKER).strip().lower()
+    if broker not in get_broker_codes():
+        raise HTTPException(422, f"지원하지 않는 broker: {broker}")
+
+    mode = (body.mode or "paper").strip().lower()
+    if mode not in ("paper", "live"):
+        raise HTTPException(422, "mode는 paper 또는 live 이어야 합니다.")
+
+    symbol_source = (body.symbol_source or "ai").strip().lower()
+    if symbol_source not in ("ai", "manual"):
+        raise HTTPException(422, "symbol_source는 ai 또는 manual 이어야 합니다.")
+
+    valid_symbols = {s["symbol"] for s in QUANT_STOCKS}
+    selected = [s for s in (body.selected_symbols or []) if s in valid_symbols]
+
+    now = datetime.now(timezone.utc).isoformat()
+    await mdb.broker_settings.update_one(
+        {"user_id": user["id"]},
+        {"$set": {
+            "broker": broker,
+            "app_key": body.app_key,
+            "app_secret": body.app_secret,
+            "account_no": body.account_no,
+            "paper": mode == "paper",
+            "quant_mode": mode,
+            "quant_symbol_source": symbol_source,
+            "quant_selected_symbols": selected,
+            "quant_ai_top_n": body.ai_top_n,
+            "quant_per_trade_budget": body.per_trade_budget,
+            "quant_buy_ratio": body.buy_ratio,
+            "quant_sell_ratio": body.sell_ratio,
+            "updated_at": now,
+        }},
+        upsert=True,
+    )
+    return {"ok": True}
 
 
 async def _get_broker_client(user: dict, mdb):
@@ -461,7 +566,7 @@ async def broker_test(
 
 @router.post("/auto-trade/start")
 async def start_auto_trade(user=Depends(get_current_user)):
-    started = auto_trade.start_auto_trade()
+    started = auto_trade.start_auto_trade(user.get("id", "quant_system"))
     return {"ok": True, "started": started}
 
 
@@ -479,7 +584,7 @@ async def auto_trade_status(user=Depends(get_current_user)):
 @router.post("/quant/auto/start")
 async def quant_auto_start(user=Depends(get_current_user)):
     """기존 프론트 호환 경로."""
-    started = auto_trade.start_auto_trade()
+    started = auto_trade.start_auto_trade(user.get("id", "quant_system"))
     return {"ok": True, "started": started}
 
 
