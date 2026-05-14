@@ -60,7 +60,8 @@ async def get_notification_settings(
     doc = await mdb.notification_settings.find_one({"user_id": user["id"]}) or {}
 
     def mask(v: str) -> str:
-        return v[:4] + "****" if v and len(v) > 4 else ("****" if v else "")
+        """보안을 위해 비밀값은 설정 여부만 알 수 있도록 고정 마스크로 반환."""
+        return "****" if v else ""
 
     return {
         "channels":          doc.get("channels", []),
@@ -98,8 +99,8 @@ async def save_notification_settings(
     existing = await mdb.notification_settings.find_one({"user_id": user["id"]}) or {}
 
     def keep_secret(new_val: str, field: str) -> str:
-        """마스킹된 값(****) 또는 빈 값이면 기존 값을 유지."""
-        if not new_val or "****" in new_val:
+        """값이 마스크 플레이스홀더("****")이거나 빈 문자열이면 기존 저장값을 유지한다."""
+        if not new_val or new_val == "****":
             return existing.get(field, "")
         return new_val
 

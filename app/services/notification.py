@@ -191,6 +191,8 @@ async def send_sms(
     if not (api_key and api_secret and from_no and to_no):
         logger.debug("SMS 설정 없음 – 건너뜀")
         return False
+    if len(message) > 80:
+        logger.warning("SMS 메시지가 80자를 초과하여 잘립니다 (%d자 → 80자)", len(message))
     try:
         async with httpx.AsyncClient(timeout=10) as cli:
             r = await cli.post(
