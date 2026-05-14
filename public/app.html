@@ -501,8 +501,11 @@
               <input id="ord-qty" class="input" type="number" placeholder="수량" />
               <select id="ord-broker" class="input">
                 <option value="virtual">가상 매매 (Mock)</option>
-                <option value="kiwoom">키움증권 (Mockup)</option>
-                <option value="toss">토스증권 (Mockup)</option>
+                <option value="kis">한국투자증권 (KIS)</option>
+                <option value="kiwoom">키움증권</option>
+                <option value="daishin">대신증권</option>
+                <option value="meritz">메리츠증권</option>
+                <option value="shinhan">신한투자증권</option>
               </select>
               <div class="flex gap-2">
                 <button id="ord-buy" class="btn-green flex-1">매수</button>
@@ -513,13 +516,13 @@
           <!-- 키움/토스 API 연동 -->
           <div class="rounded-xl border border-white/10 bg-black/20 p-4">
             <h3 class="font-semibold mb-3">증권사 API 연동 (Mockup)</h3>
-            <div id="broker-status" class="space-y-2 text-sm text-slate-400 mb-3"></div>
+            <div id="trading-broker-status" class="space-y-2 text-sm text-slate-400 mb-3"></div>
             <div class="space-y-2">
               <input id="kiwoom-key" class="input" placeholder="키움증권 App Key" />
               <input id="kiwoom-secret" class="input" type="password" placeholder="키움증권 Secret" />
               <input id="toss-key" class="input" placeholder="토스증권 App Key" />
               <input id="toss-secret" class="input" type="password" placeholder="토스증권 Secret" />
-              <button id="broker-save" class="btn-primary w-full">설정 저장</button>
+              <button id="trading-broker-save" class="btn-primary w-full">설정 저장</button>
             </div>
             <div class="mt-2 text-xs text-slate-500">* Mockup: 실제 API 연결 없이 시뮬레이션만 동작합니다.</div>
           </div>
@@ -619,7 +622,10 @@
             <select id="broker-type" class="input w-52">
               <option value="mock">Mockup (테스트)</option>
               <option value="kis">한국투자증권 (KIS)</option>
-              <option value="ebest">LS증권 (eBest)</option>
+              <option value="kiwoom">키움증권</option>
+              <option value="daishin">대신증권</option>
+              <option value="meritz">메리츠증권 (출시 예정)</option>
+              <option value="shinhan">신한투자증권</option>
             </select>
           </div>
           <div class="grid md:grid-cols-2 gap-3">
@@ -1183,7 +1189,10 @@
             <select id="iapi-broker-type" class="input w-52 mt-1">
               <option value="mock">Mockup (테스트)</option>
               <option value="kis">한국투자증권 (KIS)</option>
-              <option value="ebest">LS증권 (eBest)</option>
+              <option value="kiwoom">키움증권</option>
+              <option value="daishin">대신증권</option>
+              <option value="meritz">메리츠증권 (출시 예정)</option>
+              <option value="shinhan">신한투자증권</option>
             </select>
           </div>
           <div class="grid md:grid-cols-2 gap-3">
@@ -2281,9 +2290,9 @@ document.getElementById("ibt-run-btn")?.addEventListener("click", loadIndicatorB
 async function loadIndicatorApiSettings() {
   try {
     const data = await api("/api/broker/settings");
-    if (data?.broker_type) {
+    if (data?.broker) {
       const t = document.getElementById("iapi-broker-type");
-      if (t) t.value = data.broker_type;
+      if (t) t.value = data.broker;
     }
     const status = document.getElementById("iapi-status");
     if (status) status.textContent = data?.connected ? "✅ 연결됨" : "연결되지 않음";
@@ -2292,11 +2301,11 @@ async function loadIndicatorApiSettings() {
 
 document.getElementById("iapi-save-btn")?.addEventListener("click", async () => {
   const body = {
-    broker_type: document.getElementById("iapi-broker-type").value,
+    broker: document.getElementById("iapi-broker-type").value,
     app_key:     document.getElementById("iapi-app-key").value,
     app_secret:  document.getElementById("iapi-app-secret").value,
     account_no:  document.getElementById("iapi-account").value,
-    paper_trading: document.getElementById("iapi-paper").checked,
+    paper: document.getElementById("iapi-paper").checked,
   };
   try {
     await api("/api/broker/settings", { method:"POST", body });
@@ -2933,19 +2942,32 @@ async function loadOrderHistory() {
 async function loadBrokerStatus() {
   try {
     const s = await api("/api/broker/settings");
-    document.getElementById("broker-status").innerHTML = `
-      <div>키움증권: <span class="${s.kiwoom_connected ? "text-emerald-400" : "text-red-400"}">${s.kiwoom_connected ? "연동됨 (" + s.kiwoom_app_key + ")" : "미연동"}</span></div>
-      <div>토스증권: <span class="${s.toss_connected ? "text-emerald-400" : "text-red-400"}">${s.toss_connected ? "연동됨 (" + s.toss_app_key + ")" : "미연동"}</span></div>
+    const el = document.getElementById("trading-broker-status");
+    if (!el) return;
+    el.innerHTML = `
+      <div>선택 브로커: <span class="text-slate-200">${escHtml(s.broker || "mock")}</span></div>
+      <div>연결 상태: <span class="${s.connected ? "text-emerald-400" : "text-red-400"}">${s.connected ? "연동됨" : "미연동"}</span></div>
     `;
   } catch {}
 }
-document.getElementById("broker-save").addEventListener("click", async () => {
+document.getElementById("trading-broker-save")?.addEventListener("click", async () => {
   try {
+    const selected = document.getElementById("ord-broker")?.value || "mock";
+    const broker = selected === "virtual" ? "mock" : selected;
+    const appKey = document.getElementById("kiwoom-key")?.value
+      || document.getElementById("broker-app-key")?.value
+      || "";
+    const appSecret = document.getElementById("kiwoom-secret")?.value
+      || document.getElementById("broker-app-secret")?.value
+      || "";
+    const accountNo = document.getElementById("broker-account")?.value || "";
+    const paper = document.getElementById("broker-paper")?.checked ?? true;
     await api("/api/broker/settings", { method: "POST", body: {
-      kiwoom_app_key: document.getElementById("kiwoom-key").value,
-      kiwoom_secret: document.getElementById("kiwoom-secret").value,
-      toss_app_key: document.getElementById("toss-key").value,
-      toss_secret: document.getElementById("toss-secret").value,
+      broker,
+      app_key: appKey,
+      app_secret: appSecret,
+      account_no: accountNo,
+      paper,
     }});
     setToast("설정 저장 완료", "ok");
     loadBrokerStatus();
