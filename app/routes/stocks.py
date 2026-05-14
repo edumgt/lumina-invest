@@ -2,7 +2,7 @@ import json
 import logging
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, Query, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, ConfigDict
 from app.database.mongo import get_mdb
 from app.lib.session import get_current_user
 from app.services.stock import (
@@ -12,6 +12,7 @@ from app.services.stock import (
 from app.services import auto_trade
 from app.services.quant_pipeline import backtest_custom_indicator
 from app.services.brokers.factory import get_broker_client
+from app.services.brokers.catalog import get_broker_catalog, get_broker_codes
 from app.services import notification
 
 router = APIRouter(prefix="/api")
@@ -227,11 +228,18 @@ async def order_history(
 # ── 증권사 API 설정 (MongoDB) ─────────────────────────────────────────
 
 class BrokerSettingsBody(BaseModel):
-    broker: str = "mock"
+    model_config = ConfigDict(populate_by_name=True, extra="ignore")
+
+    broker: str = Field(default="mock", alias="broker_type")
     app_key: str = ""
     app_secret: str = ""
     account_no: str = ""
-    paper: bool = True
+    paper: bool = Field(default=True, alias="paper_trading")
+
+
+@router.get("/broker/catalog")
+async def broker_catalog():
+    return {"brokers": get_broker_catalog()}
 
 
 @router.post("/broker/settings")
@@ -240,11 +248,15 @@ async def save_broker_settings(
     user=Depends(get_current_user),
     mdb=Depends(get_mdb),
 ):
+    broker = (body.broker or "mock").strip().lower()
+    if broker not in get_broker_codes():
+        raise HTTPException(422, f"지원하지 않는 broker: {broker}")
+
     now = datetime.now(timezone.utc).isoformat()
     await mdb.broker_settings.update_one(
         {"user_id": user["id"]},
         {"$set": {
-            "broker":     body.broker,
+            "broker":     broker,
             "app_key":    body.app_key,
             "app_secret": body.app_secret,
             "account_no": body.account_no,
@@ -261,17 +273,29 @@ async def get_broker_settings(
     user=Depends(get_current_user),
     mdb=Depends(get_mdb),
 ):
+    catalog = get_broker_catalog()
     doc = await mdb.broker_settings.find_one({"user_id": user["id"]})
     if not doc:
-        return {"broker": "mock", "connected": False, "account_no": "", "paper": True}
+        return {
+            "broker": "mock",
+            "broker_type": "mock",
+            "connected": False,
+            "account_no": "",
+            "paper": True,
+            "paper_trading": True,
+            "brokers": catalog,
+        }
     key = doc.get("app_key", "")
     masked = key[:4] + "****" if key else ""
     return {
         "broker":     doc.get("broker", "mock"),
+        "broker_type": doc.get("broker", "mock"),
         "connected":  bool(key),
         "app_key":    masked,
         "account_no": doc.get("account_no", ""),
         "paper":      doc.get("paper", True),
+        "paper_trading": doc.get("paper", True),
+        "brokers": catalog,
     }
 
 
