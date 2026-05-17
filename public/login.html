@@ -3,45 +3,138 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>로그인 | 금융 AI Agent</title>
+  <title>로그인 | Lumina Invest</title>
   <link rel="icon" href="/favicon.ico" />
-  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
   <style>
-    input, textarea, select { color: #f1f5f9 !important; }
-    input::placeholder, textarea::placeholder { color: #64748b; }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      min-height: 100vh;
+      background: #f4f6fa;
+      color: #0f172a;
+      font-family: 'Pretendard', -apple-system, sans-serif;
+      font-size: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background-image:
+        radial-gradient(ellipse at 20% 50%, rgba(37,99,235,0.05) 0%, transparent 50%),
+        radial-gradient(ellipse at 80% 20%, rgba(217,119,6,0.04) 0%, transparent 40%);
+    }
+    .login-wrap {
+      width: 100%;
+      max-width: 400px;
+      padding: 24px;
+    }
+    .brand {
+      text-align: center;
+      margin-bottom: 36px;
+    }
+    .brand-icon {
+      width: 52px;
+      height: 52px;
+      margin: 0 auto 14px;
+      background: linear-gradient(135deg, #4a90e2, #f0b429);
+      border-radius: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 22px;
+      color: #fff;
+      box-shadow: 0 0 24px rgba(74,144,226,0.35);
+    }
+    .brand-name {
+      font-size: 22px;
+      font-weight: 700;
+      color: #fff;
+      letter-spacing: -0.5px;
+    }
+    .brand-name { color: #0f172a; }
+    .brand-sub {
+      font-size: 13px;
+      color: #64748b;
+      margin-top: 4px;
+    }
+    .card {
+      background: #ffffff;
+      border: 1px solid #dde2ec;
+      border-radius: 14px;
+      padding: 32px;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.08);
+    }
+    .card-title {
+      font-size: 18px;
+      font-weight: 600;
+      color: #0f172a;
+      margin-bottom: 24px;
+    }
+    .form-group { margin-bottom: 16px; }
+    .form-label { display: block; font-size: 13px; color: #64748b; margin-bottom: 6px; }
+    .form-input {
+      width: 100%;
+      padding: 10px 14px;
+      background: #f4f6fa;
+      border: 1px solid #dde2ec;
+      border-radius: 8px;
+      color: #0f172a !important;
+      font-size: 15px;
+      font-family: inherit;
+      outline: none;
+      transition: border-color .15s, box-shadow .15s;
+    }
+    .form-input:focus { border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37,99,235,0.10); }
+    .form-input::placeholder { color: #94a3b8 !important; }
+    .btn-submit {
+      width: 100%;
+      padding: 12px;
+      background: #2563eb;
+      color: #fff;
+      font-size: 15px;
+      font-weight: 600;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      margin-top: 8px;
+      transition: background .15s, box-shadow .15s;
+      font-family: inherit;
+    }
+    .btn-submit:hover { background: #1d4ed8; box-shadow: 0 4px 16px rgba(37,99,235,0.25); }
+    .form-footer {
+      margin-top: 20px;
+      text-align: center;
+      font-size: 14px;
+      color: #64748b;
+    }
+    .form-footer a { color: #2563eb; text-decoration: none; }
+    .form-footer a:hover { text-decoration: underline; }
   </style>
 </head>
-<body class="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center">
-  <div class="w-full max-w-md px-6 py-12">
-    <div class="text-center mb-8">
-      <div class="text-3xl font-bold text-indigo-400">💹 금융 AI Agent</div>
-      <div class="mt-2 text-sm text-slate-400">AI 기반 금융 분석 · 주가 · 퀀트 매매 플랫폼</div>
+<body>
+  <div class="login-wrap">
+    <div class="brand">
+      <div class="brand-icon"><i class="fa-solid fa-chart-mixed"></i></div>
+      <div class="brand-name">Lumina Invest</div>
+      <div class="brand-sub">AI 기반 금융 분석 · 퀀트 매매 플랫폼</div>
     </div>
 
-    <!-- Toast는 common.js setToast()가 body에 동적 생성 -->
-
-    <div class="rounded-2xl border border-white/10 bg-white/5 p-8">
-      <h1 class="text-xl font-semibold mb-6">로그인</h1>
-      <form id="f" class="space-y-4">
-        <div>
-          <label class="text-sm text-slate-400">이메일</label>
-          <input name="email" type="email" required
-            class="mt-2 w-full px-4 py-3 rounded-xl bg-black/30 border border-white/10 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-100"
-            placeholder="you@example.com" />
+    <div class="card">
+      <div class="card-title">로그인</div>
+      <form id="f">
+        <div class="form-group">
+          <label class="form-label">이메일</label>
+          <input name="email" type="email" class="form-input" placeholder="you@example.com" required />
         </div>
-        <div>
-          <label class="text-sm text-slate-400">비밀번호</label>
-          <input name="password" type="password" required
-            class="mt-2 w-full px-4 py-3 rounded-xl bg-black/30 border border-white/10 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-100"
-            placeholder="••••••••" />
+        <div class="form-group">
+          <label class="form-label">비밀번호</label>
+          <input name="password" type="password" class="form-input" placeholder="••••••••" required />
         </div>
-        <button type="submit"
-          class="w-full py-3 rounded-xl bg-indigo-500 hover:bg-indigo-400 text-white font-semibold transition">
-          로그인
+        <button type="submit" class="btn-submit">
+          <i class="fa-solid fa-arrow-right-to-bracket" style="margin-right:6px;"></i>로그인
         </button>
       </form>
-      <div class="mt-6 text-center text-sm text-slate-400">
-        계정이 없나요? <a class="text-indigo-400 hover:text-indigo-300" href="/register.html">회원가입</a>
+      <div class="form-footer">
+        계정이 없나요? <a href="/register.html">회원가입</a>
       </div>
     </div>
   </div>

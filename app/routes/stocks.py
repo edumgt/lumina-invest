@@ -14,6 +14,8 @@ from app.services.quant_pipeline import backtest_custom_indicator
 from app.services.brokers.factory import get_broker_client
 from app.services.brokers.catalog import get_broker_catalog, get_broker_codes
 from app.services import notification
+from app.services.data_cache import cache_get, cache_set
+from app.services.sync_scheduler import KEY_MARKET_INDICES
 
 router = APIRouter(prefix="/api")
 DEFAULT_BROKER = "mock"
@@ -21,7 +23,13 @@ DEFAULT_BROKER = "mock"
 
 @router.get("/stocks/market")
 async def market_summary():
-    return {"indices": await get_market_summary()}
+    cached = await cache_get(KEY_MARKET_INDICES, max_age_hours=2)
+    if cached is not None:
+        return {"indices": cached, "from_cache": True}
+    indices = await get_market_summary()
+    if indices:
+        await cache_set(KEY_MARKET_INDICES, indices)
+    return {"indices": indices, "from_cache": False}
 
 
 @router.get("/stocks/quote")
@@ -35,7 +43,15 @@ async def stock_candles(
     period: str = Query("1y"),
     interval: str = Query("1d"),
 ):
-    return await get_candles(symbol, period=period, interval=interval)
+    cache_key = f"candles:{symbol}:{period}:{interval}"
+    cached = await cache_get(cache_key, max_age_hours=6)
+    if cached is not None:
+        cached["from_cache"] = True
+        return cached
+    data = await get_candles(symbol, period=period, interval=interval)
+    if data.get("candles"):
+        await cache_set(cache_key, data)
+    return data
 
 
 @router.get("/stocks/quant/indicators")
@@ -43,7 +59,15 @@ async def quant_indicators(
     symbol: str = Query(...),
     period: str = Query("2y"),
 ):
-    return await get_quant_indicators(symbol, period=period)
+    cache_key = f"indicators:{symbol}:{period}"
+    cached = await cache_get(cache_key, max_age_hours=6)
+    if cached is not None:
+        cached["from_cache"] = True
+        return cached
+    data = await get_quant_indicators(symbol, period=period)
+    if not data.get("error"):
+        await cache_set(cache_key, data)
+    return data
 
 
 @router.get("/stocks/quant/list")

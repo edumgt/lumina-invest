@@ -3,46 +3,119 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>금융 AI Agent</title>
+  <title>Lumina Invest — AI 금융 플랫폼</title>
   <link rel="icon" href="/favicon.ico" />
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/apexcharts@3.49.2/dist/apexcharts.min.js"></script>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
   <style>
-    /* ── Design Tokens (TradingView Light) ── */
+    /* ═══════════════════════════════════════════════════
+       Lumina Invest — Design System
+       Clean Light Trading Platform
+    ═══════════════════════════════════════════════════ */
     :root {
-      --bg:        #f0f3fa;
-      --surf:      #ffffff;
-      --surf2:     #f5f6fa;
-      --surf3:     #ebedf3;
-      --border:    #e0e3eb;
-      --border2:   #c8ccd8;
-      --accent:    #2962ff;
-      --accent-h:  #1e4fd8;
-      --text:      #131722;
-      --text-dim:  #434651;
-      --text-mute: #787b86;
-      --green:     #089981;
-      --green-bg:  rgba(8,153,129,0.10);
-      --green-bd:  rgba(8,153,129,0.28);
-      --red:       #f23645;
-      --red-bg:    rgba(242,54,69,0.10);
-      --red-bd:    rgba(242,54,69,0.28);
+      --bg:         #f4f6fa;
+      --surf:       #ffffff;
+      --surf2:      #f0f3f8;
+      --surf3:      #e8ecf3;
+      --border:     #dde2ec;
+      --border2:    #c5cdd e;
+      --accent:     #2563eb;
+      --accent-h:   #1d4ed8;
+      --accent-glow:rgba(37,99,235,0.12);
+      --brand:      #d97706;
+      --brand-dim:  rgba(217,119,6,0.10);
+      --text:       #0f172a;
+      --text-dim:   #334155;
+      --text-mute:  #94a3b8;
+      --green:      #059669;
+      --green-bg:   rgba(5,150,105,0.08);
+      --green-bd:   rgba(5,150,105,0.25);
+      --red:        #dc2626;
+      --red-bg:     rgba(220,38,38,0.08);
+      --red-bd:     rgba(220,38,38,0.25);
+      --gnb-h:      52px;
+      --lnb-w:      220px;
     }
 
-    /* ── Reset / Base ── */
     *, *::before, *::after { box-sizing: border-box; }
-    body { background: var(--bg); color: var(--text); font-size: 13px; line-height: 1.55; font-family: 'Pretendard', -apple-system, 'Apple SD Gothic Neo', sans-serif; }
+    html { scroll-behavior: smooth; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-size: 15.6px;
+      line-height: 1.6;
+      font-family: 'Pretendard', -apple-system, 'Apple SD Gothic Neo', sans-serif;
+      min-height: 100vh;
+    }
 
-    /* ── GNB ── */
-    .gnb-item {
-      height: 46px;
+    /* ── GNB ─────────────────────────────────────────── */
+    #gnb {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      height: var(--gnb-h);
+      background: #ffffff;
+      border-bottom: 1px solid var(--border);
+      box-shadow: 0 1px 6px rgba(0,0,0,0.08);
+      display: flex;
+      align-items: stretch;
+    }
+    .gnb-logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
       padding: 0 20px;
+      border-right: 1px solid var(--border);
+      text-decoration: none;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .gnb-logo-icon {
+      width: 30px;
+      height: 30px;
+      background: linear-gradient(135deg, #2563eb, #d97706);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      color: #fff;
+      box-shadow: 0 2px 8px rgba(37,99,235,0.25);
+    }
+    .gnb-logo-text {
+      display: flex;
+      flex-direction: column;
+      line-height: 1.2;
+    }
+    .gnb-logo-text strong {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text);
+      letter-spacing: -0.3px;
+    }
+    .gnb-logo-text span {
+      font-size: 9px;
+      font-weight: 600;
+      color: var(--brand);
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+    .gnb-tabs {
+      display: flex;
+      align-items: stretch;
+      flex: 1;
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+    .gnb-tabs::-webkit-scrollbar { display: none; }
+    .gnb-item {
       display: inline-flex;
       align-items: center;
-      gap: 7px;
-      font-size: 13px;
+      gap: 6px;
+      padding: 0 16px;
+      font-size: 13.5px;
       font-weight: 500;
       color: var(--text-dim);
       border: none;
@@ -51,57 +124,193 @@
       cursor: pointer;
       white-space: nowrap;
       transition: color .15s, border-color .15s, background .15s;
+      height: 100%;
     }
     .gnb-item:hover { color: var(--text); background: var(--surf2); }
-    .gnb-item.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+    .gnb-item.active {
+      color: var(--accent);
+      border-bottom-color: var(--accent);
+      font-weight: 600;
+      background: var(--accent-glow);
+    }
+    .gnb-item i { font-size: 11px; opacity: 0.85; }
+    .gnb-right {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 0 14px;
+      border-left: 1px solid var(--border);
+      flex-shrink: 0;
+    }
 
-    /* ── LNB (right sidebar) ── */
+    /* ── Market Ticker ───────────────────────────────── */
+    #market-ticker {
+      display: flex;
+      gap: 16px;
+      font-size: 11px;
+      align-items: center;
+    }
+    .ticker-item { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.2; }
+    .ticker-name { color: var(--text-mute); font-size: 9px; letter-spacing: .05em; }
+    .ticker-val  { font-weight: 600; font-size: 11.5px; }
+
+    /* ── Sync status badge ───────────────────────────── */
+    #sync-badge {
+      display: flex; align-items: center; gap: 4px;
+      font-size: 10px; color: var(--text-mute); cursor: pointer;
+      padding: 3px 7px; border-radius: 20px;
+      border: 1px solid var(--border);
+      transition: background .15s, color .15s;
+      white-space: nowrap;
+    }
+    #sync-badge:hover { background: var(--surf2); color: var(--text-dim); }
+    #sync-badge .sync-dot {
+      width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0;
+    }
+    #sync-badge.online  .sync-dot { background: var(--green); }
+    #sync-badge.offline .sync-dot { background: var(--red); }
+    #sync-badge.syncing .sync-dot { background: var(--brand); animation: pulse 1s ease-in-out infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+    /* ── User area ───────────────────────────────────── */
+    .gnb-user {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      color: var(--text-dim);
+    }
+    .gnb-avatar {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--accent), var(--brand));
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      color: #fff;
+      font-weight: 700;
+    }
+
+    /* ── Main wrapper ────────────────────────────────── */
+    #app-wrapper {
+      display: flex;
+      height: calc(100vh - var(--gnb-h));
+      overflow: hidden;
+    }
+
+    /* ── LNB (Left Sidebar) ──────────────────────────── */
+    #lnb {
+      width: var(--lnb-w);
+      flex-shrink: 0;
+      background: #ffffff;
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      transition: width .22s cubic-bezier(.4,0,.2,1);
+    }
+    #lnb.collapsed { width: 54px; }
+    .lnb-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 14px 10px;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
     .lnb-section-title {
-      padding: 14px 14px 6px;
       font-size: 10px;
       font-weight: 700;
-      color: var(--text-mute);
+      color: var(--brand);
       letter-spacing: .12em;
       text-transform: uppercase;
-      border-bottom: 1px solid var(--border);
-      margin-bottom: 4px;
+      white-space: nowrap;
+      overflow: hidden;
+    }
+    #lnb.collapsed .lnb-section-title { display: none; }
+    .lnb-toggle {
+      background: none;
+      border: none;
+      color: var(--text-mute);
+      cursor: pointer;
+      padding: 2px 4px;
+      border-radius: 4px;
+      font-size: 12px;
+      flex-shrink: 0;
+      transition: color .15s, background .15s;
+    }
+    .lnb-toggle:hover { color: var(--text); background: var(--surf2); }
+    .lnb-nav {
+      flex: 1;
+      overflow-y: auto;
+      overflow-x: hidden;
+      padding: 8px 6px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      scrollbar-width: thin;
+      scrollbar-color: var(--border2) transparent;
     }
     .lnb-item {
       display: flex;
       align-items: center;
-      gap: 9px;
-      padding: 8px 12px;
-      border-radius: 6px 0 0 6px;
-      margin-left: 6px;
+      gap: 10px;
+      padding: 8px 10px;
+      border-radius: 7px;
       font-size: 12.5px;
       color: var(--text-dim);
       cursor: pointer;
-      border-right: 2px solid transparent;
+      border: 1px solid transparent;
       transition: background .12s, color .12s, border-color .12s;
+      white-space: nowrap;
+      overflow: hidden;
     }
     .lnb-item:hover { background: var(--surf2); color: var(--text); }
     .lnb-item.active {
-      background: rgba(41,98,255,0.08);
+      background: var(--accent-glow);
       color: var(--accent);
       font-weight: 600;
-      border-right-color: var(--accent);
+      border-color: rgba(74,144,226,0.25);
+    }
+    .lnb-item i {
+      width: 18px;
+      text-align: center;
+      font-size: 13px;
+      flex-shrink: 0;
+    }
+    .lnb-item span { overflow: hidden; text-overflow: ellipsis; }
+    #lnb.collapsed .lnb-item span { display: none; }
+    #lnb.collapsed .lnb-item { justify-content: center; padding: 9px 0; border-radius: 8px; }
+    #lnb.collapsed .lnb-item i { width: auto; font-size: 14px; }
+
+    /* ── Main Content ────────────────────────────────── */
+    #main-content {
+      flex: 1;
+      overflow-y: auto;
+      overflow-x: hidden;
+      padding: 20px 22px;
+      background: var(--bg);
+      scrollbar-width: thin;
+      scrollbar-color: var(--border2) transparent;
     }
 
-    /* ── Cards ── */
+    /* ── Cards ─────────────────────────────────────────*/
     .card {
       background: var(--surf);
       border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 18px;
-      box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+      border-radius: 10px;
+      padding: 20px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
     }
 
-    /* ── Form Controls ── */
+    /* ── Form Controls ───────────────────────────────── */
     .input {
       width: 100%;
       padding: 7px 11px;
       border-radius: 6px;
-      background: var(--surf);
+      background: var(--surf2);
       border: 1px solid var(--border);
       color: var(--text) !important;
       font-size: 13px;
@@ -109,12 +318,12 @@
       transition: border-color .15s, box-shadow .15s;
       appearance: none;
     }
-    .input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(41,98,255,0.15); }
-    input, textarea, select { color: var(--text) !important; background: var(--surf); }
+    .input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+    input, textarea, select { color: var(--text) !important; background: var(--surf2); }
     input::placeholder, textarea::placeholder { color: var(--text-mute) !important; }
     select option { background: var(--surf); color: var(--text); }
 
-    /* ── Buttons ── */
+    /* ── Buttons ─────────────────────────────────────── */
     .btn-primary {
       padding: 7px 16px;
       border-radius: 6px;
@@ -124,15 +333,15 @@
       font-weight: 600;
       border: none;
       cursor: pointer;
-      transition: background .15s;
+      transition: background .15s, box-shadow .15s;
       white-space: nowrap;
     }
-    .btn-primary:hover { background: var(--accent-h); }
+    .btn-primary:hover { background: var(--accent-h); box-shadow: 0 0 12px var(--accent-glow); }
 
     .btn-secondary {
       padding: 7px 14px;
       border-radius: 6px;
-      background: var(--surf);
+      background: var(--surf2);
       color: var(--text-dim);
       font-size: 13px;
       font-weight: 500;
@@ -141,7 +350,7 @@
       transition: background .15s, color .15s;
       white-space: nowrap;
     }
-    .btn-secondary:hover { background: var(--surf2); color: var(--text); }
+    .btn-secondary:hover { background: var(--surf3); color: var(--text); }
 
     .btn-green {
       padding: 7px 16px;
@@ -155,7 +364,7 @@
       transition: opacity .15s;
       white-space: nowrap;
     }
-    .btn-green:hover { opacity: .88; }
+    .btn-green:hover { opacity: .85; }
 
     .btn-red {
       padding: 7px 16px;
@@ -169,99 +378,146 @@
       transition: opacity .15s;
       white-space: nowrap;
     }
-    .btn-red:hover { opacity: .88; }
+    .btn-red:hover { opacity: .85; }
 
-    /* ── Badges ── */
-    .badge-buy  { display:inline-block; padding:2px 7px; border-radius:3px; font-size:11px; font-weight:700; background:var(--green-bg); color:var(--green); }
-    .badge-sell { display:inline-block; padding:2px 7px; border-radius:3px; font-size:11px; font-weight:700; background:var(--red-bg);   color:var(--red); }
-    .badge-hold { display:inline-block; padding:2px 7px; border-radius:3px; font-size:11px; font-weight:700; background:var(--surf3);    color:var(--text-mute); }
+    /* ── Badges ─────────────────────────────────────── */
+    .badge-buy  { display:inline-block; padding:2px 8px; border-radius:4px; font-size:11px; font-weight:700; background:var(--green-bg); color:var(--green); border:1px solid var(--green-bd); }
+    .badge-sell { display:inline-block; padding:2px 8px; border-radius:4px; font-size:11px; font-weight:700; background:var(--red-bg);   color:var(--red);   border:1px solid var(--red-bd); }
+    .badge-hold { display:inline-block; padding:2px 8px; border-radius:4px; font-size:11px; font-weight:700; background:var(--surf3);    color:var(--text-mute); }
 
-    /* ── Misc ── */
+    /* ── Views ──────────────────────────────────────── */
     .view { display: none; }
     .view.active { display: block; }
-    pre { white-space: pre-wrap; word-break: break-word; font-family: 'JetBrains Mono', monospace; font-size: 12px; }
+    pre { white-space: pre-wrap; word-break: break-word; font-family: 'JetBrains Mono', 'Courier New', monospace; font-size: 13px; background: #f0f3f8; color: #334155; border-radius: 6px; padding: 12px; border: 1px solid var(--border); }
     #chart-container, #quant-chart-container, #us-chart-container { width: 100%; height: 420px; }
-    .step-retrieve     { border-left: 3px solid #2962ff; padding-left: 10px; }
-    .step-final_answer { border-left: 3px solid #089981; padding-left: 10px; }
-    .step-clarify      { border-left: 3px solid #f59e0b; padding-left: 10px; }
+    .step-retrieve     { border-left: 3px solid var(--accent); padding-left: 10px; }
+    .step-final_answer { border-left: 3px solid var(--green); padding-left: 10px; }
+    .step-clarify      { border-left: 3px solid var(--brand); padding-left: 10px; }
 
-    /* ── Scrollbar ── */
-    ::-webkit-scrollbar { width: 5px; height: 5px; }
-    ::-webkit-scrollbar-track { background: var(--surf2); }
-    ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+    /* ── Scrollbar ──────────────────────────────────── */
+    ::-webkit-scrollbar { width: 4px; height: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 4px; }
     ::-webkit-scrollbar-thumb:hover { background: var(--accent); }
 
-    /* ── Table ── */
+    /* ── Table ──────────────────────────────────────── */
     table { width: 100%; border-collapse: collapse; }
-    th { color: var(--text-mute); font-size: 11px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; padding: 7px 8px; border-bottom: 1px solid var(--border); text-align: left; }
+    th { color: var(--text-mute); font-size: 10.5px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; padding: 8px; border-bottom: 1px solid var(--border); text-align: left; }
     td { padding: 9px 8px; border-bottom: 1px solid var(--border); font-size: 13px; color: var(--text); }
     tr:hover td { background: var(--surf2); }
 
-    /* ── Sub-panel (inner card bg) ── */
-    .panel { background: var(--surf2); border: 1px solid var(--border); border-radius: 6px; padding: 14px; }
+    /* ── Sub-panel ──────────────────────────────────── */
+    .panel { background: var(--surf2); border: 1px solid var(--border); border-radius: 8px; padding: 14px; }
+
+    /* ── Chat bubbles ───────────────────────────────── */
+    .chat-bubble-user {
+      background: var(--accent);
+      color: #fff;
+      border-radius: 12px 12px 2px 12px;
+      padding: 10px 14px;
+      max-width: 70%;
+      margin-left: auto;
+    }
+    .chat-bubble-ai {
+      background: var(--surf2);
+      border: 1px solid var(--border);
+      border-radius: 12px 12px 12px 2px;
+      padding: 10px 14px;
+      max-width: 80%;
+    }
+
+    /* ── Footer ─────────────────────────────────────── */
+    #app-footer {
+      background: #ffffff;
+      border-top: 1px solid var(--border);
+      padding: 10px 20px;
+      font-size: 11px;
+      color: var(--text-mute);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+
+    /* ── Mobile ─────────────────────────────────────── */
+    @media (max-width: 768px) {
+      #lnb { display: none; }
+      #lnb.mobile-open { display: flex; position: fixed; top: var(--gnb-h); left: 0; bottom: 0; z-index: 99; }
+      #main-content { padding: 14px; }
+    }
   </style>
 </head>
-<body class="min-h-screen flex flex-col">
+<body>
 
-<!-- ══ GNB (Global Navigation Bar) ══════════════════════════════════ -->
-<header class="sticky top-0 z-50" style="background:var(--surf); border-bottom:1px solid var(--border); box-shadow:0 1px 3px rgba(0,0,0,0.08);">
-  <div class="max-w-[1800px] mx-auto px-4 flex items-center" style="height:46px; gap:0;">
-    <!-- 로고 -->
-    <a href="/" class="flex items-center gap-2 font-bold shrink-0" style="color:var(--accent); font-size:15px; text-decoration:none; padding:0 20px 0 4px; border-right:1px solid var(--border); height:46px;">
-      <i class="fa-solid fa-chart-mixed"></i> 금융 AI Agent
-    </a>
-    <!-- GNB 메뉴 -->
-    <nav class="hidden md:flex items-center flex-1" style="height:46px; padding-left:4px;">
-      <button class="gnb-item" data-gnb="agent"><i class="fa-solid fa-robot fa-sm"></i> 로보 어드바이저</button>
-      <button class="gnb-item" data-gnb="crawl"><i class="fa-solid fa-spider fa-sm"></i> 크롤링</button>
-      <button class="gnb-item" data-gnb="trading"><i class="fa-solid fa-chart-line fa-sm"></i> 직접매매</button>
-      <button class="gnb-item" data-gnb="quant"><i class="fa-solid fa-bolt fa-sm"></i> 퀀트자동매매</button>
-      <button class="gnb-item" data-gnb="us"><i class="fa-solid fa-flag-usa fa-sm"></i> 미국주식</button>
-      <button class="gnb-item" data-gnb="company"><i class="fa-solid fa-chart-pie fa-sm"></i> 투자 인디케이터</button>
-      <button class="gnb-item" data-gnb="ml"><i class="fa-solid fa-microchip fa-sm"></i> ML·딥러닝</button>
-      <button class="gnb-item" data-gnb="invest"><i class="fa-solid fa-magnifying-glass-dollar fa-sm"></i> 투자분석 기초</button>
-      <button class="gnb-item" data-gnb="finance"><i class="fa-solid fa-coins fa-sm"></i> 금융 필수 지식</button>
-      <button class="gnb-item" data-gnb="sysadmin"><i class="fa-solid fa-gear fa-sm"></i> 시스템관리</button>
-    </nav>
-    <!-- 우측: 시세 + 사용자 -->
-    <div class="hidden md:flex items-center shrink-0" style="gap:16px; padding-left:12px; border-left:1px solid var(--border); height:46px;">
-      <div id="market-ticker" style="display:flex; gap:20px; font-size:11.5px; color:var(--text-mute);"></div>
-      <div class="flex items-center gap-2" style="font-size:12px; color:var(--text-dim);">
-        <i class="fa-solid fa-circle-user" style="color:var(--accent);"></i>
-        <span id="user-name"></span>
-      </div>
-      <button id="logout-btn" class="btn-secondary" style="padding:5px 12px; font-size:12px;">로그아웃</button>
+<!-- ══ GNB ══════════════════════════════════════════════════════════ -->
+<header id="gnb">
+  <!-- 로고 -->
+  <a href="/" class="gnb-logo">
+    <div class="gnb-logo-icon"><i class="fa-solid fa-chart-mixed"></i></div>
+    <div class="gnb-logo-text">
+      <strong>Lumina Invest</strong>
+      <span>AI Financial Platform</span>
     </div>
-    <!-- 햄버거 (모바일) -->
-    <button id="hamburger-btn" class="md:hidden ml-auto p-2" style="color:var(--text-dim);" aria-label="메뉴">
+  </a>
+
+  <!-- GNB 탭 (스크롤 가능) -->
+  <div class="gnb-tabs">
+    <button class="gnb-item" data-gnb="agent"><i class="fa-solid fa-robot"></i> 로보 어드바이저</button>
+    <button class="gnb-item" data-gnb="crawl"><i class="fa-solid fa-spider"></i> 크롤링</button>
+    <button class="gnb-item" data-gnb="trading"><i class="fa-solid fa-chart-line"></i> 직접매매</button>
+    <button class="gnb-item" data-gnb="quant"><i class="fa-solid fa-bolt"></i> 퀀트자동매매</button>
+    <button class="gnb-item" data-gnb="us"><i class="fa-solid fa-flag-usa"></i> 미국주식</button>
+    <button class="gnb-item" data-gnb="company"><i class="fa-solid fa-chart-pie"></i> 투자 인디케이터</button>
+    <button class="gnb-item" data-gnb="ml"><i class="fa-solid fa-microchip"></i> ML·딥러닝</button>
+    <button class="gnb-item" data-gnb="invest"><i class="fa-solid fa-magnifying-glass-dollar"></i> 투자분석</button>
+    <button class="gnb-item" data-gnb="finance"><i class="fa-solid fa-coins"></i> 금융 지식</button>
+    <button class="gnb-item" data-gnb="sysadmin"><i class="fa-solid fa-gear"></i> 시스템</button>
+  </div>
+
+  <!-- 우측: 시세 + 사용자 -->
+  <div class="gnb-right">
+    <div id="market-ticker"></div>
+    <!-- 데이터 동기화 상태 -->
+    <div id="sync-badge" class="offline" title="클릭하여 즉시 동기화" onclick="triggerSync()">
+      <span class="sync-dot"></span>
+      <span id="sync-badge-text">오프라인</span>
+    </div>
+    <div class="gnb-user">
+      <div class="gnb-avatar" id="user-avatar">U</div>
+      <span id="user-name" style="font-size:12px; color:var(--text-dim);"></span>
+    </div>
+    <button id="logout-btn" class="btn-secondary" style="padding:5px 12px; font-size:11.5px;">
+      <i class="fa-solid fa-arrow-right-from-bracket" style="margin-right:4px;"></i>로그아웃
+    </button>
+    <!-- 모바일 햄버거 -->
+    <button id="hamburger-btn" class="btn-secondary" style="padding:5px 9px; display:none;" aria-label="메뉴">
       <i class="fa-solid fa-bars"></i>
     </button>
-  </div>
-  <!-- 모바일 드롭다운 -->
-  <div id="mobile-menu" class="hidden md:hidden px-4 pb-3" style="border-top:1px solid var(--border); background:var(--surf);">
-    <nav class="flex flex-col pt-2">
-      <button class="gnb-item text-left" data-gnb="agent"><i class="fa-solid fa-robot fa-sm"></i> 로보 어드바이저</button>
-      <button class="gnb-item text-left" data-gnb="crawl"><i class="fa-solid fa-spider fa-sm"></i> 크롤링</button>
-      <button class="gnb-item text-left" data-gnb="trading"><i class="fa-solid fa-chart-line fa-sm"></i> 직접매매</button>
-      <button class="gnb-item text-left" data-gnb="quant"><i class="fa-solid fa-bolt fa-sm"></i> 퀀트자동매매</button>
-      <button class="gnb-item text-left" data-gnb="us"><i class="fa-solid fa-flag-usa fa-sm"></i> 미국주식</button>
-      <button class="gnb-item text-left" data-gnb="company"><i class="fa-solid fa-chart-pie fa-sm"></i> 투자 인디케이터</button>
-      <button class="gnb-item text-left" data-gnb="ml"><i class="fa-solid fa-microchip fa-sm"></i> ML·딥러닝</button>
-      <button class="gnb-item text-left" data-gnb="invest"><i class="fa-solid fa-magnifying-glass-dollar fa-sm"></i> 투자분석 기초</button>
-      <button class="gnb-item text-left" data-gnb="finance"><i class="fa-solid fa-coins fa-sm"></i> 금융 필수 지식</button>
-      <button class="gnb-item text-left" data-gnb="sysadmin"><i class="fa-solid fa-gear fa-sm"></i> 시스템관리</button>
-    </nav>
   </div>
 </header>
 
 <!-- Toast는 common.js setToast()가 동적으로 생성 (#_toast_el) -->
 
-<!-- ══ Main Layout ════════════════════════════════════════════════== -->
-<div class="flex flex-1 max-w-[1800px] mx-auto w-full" style="gap:0;">
+<!-- ══ App Shell ═══════════════════════════════════════════════════ -->
+<div id="app-shell" style="display:flex; flex-direction:column; height:calc(100vh - var(--gnb-h));">
 
-  <!-- Content -->
-  <main class="flex-1 min-w-0" style="padding:18px 20px; background:var(--bg);">
-    <div class="space-y-4">
+  <div id="app-wrapper">
+    <!-- ── LNB (Left sidebar) ── -->
+    <aside id="lnb">
+      <div class="lnb-header">
+        <div id="lnb-section-title" class="lnb-section-title"></div>
+        <button class="lnb-toggle" id="lnb-toggle-btn" title="사이드바 접기/펼치기">
+          <i class="fa-solid fa-chevron-left" id="lnb-toggle-icon"></i>
+        </button>
+      </div>
+      <nav id="lnb-nav" class="lnb-nav"></nav>
+    </aside>
+
+    <!-- ── Main Content ── -->
+    <main id="main-content">
+      <div class="space-y-4">
 
     <!-- ══ 1. 로보 어드바이저 ══════════════════════════════════════ -->
     <!-- 1-1. AI 투자 상담 -->
@@ -1929,32 +2185,37 @@ RC_i = wi × (Σw)_i / √(w'Σw)
       </div>
     </div>
 
-    </div>
-  </main>
-
-  <!-- LNB (Right sidebar) -->
-  <aside id="lnb" class="shrink-0 hidden md:flex flex-col" style="width:200px; background:var(--surf); border-left:1px solid var(--border); min-height:calc(100vh - 46px);">
-    <div class="sticky" style="top:46px;">
-      <div id="lnb-section-title" class="lnb-section-title"></div>
-      <nav id="lnb-nav" style="padding:4px 0 12px; display:flex; flex-direction:column; gap:1px;">
-        <!-- Populated by JS -->
-      </nav>
-    </div>
-  </aside>
-</div>
-
-<!-- ══ Footer ═══════════════════════════════════════════════════════ -->
-<footer style="background:var(--surf); border-top:1px solid var(--border); padding:11px 0;">
-  <div class="max-w-[1800px] mx-auto px-4 flex flex-col md:flex-row items-center justify-between gap-2" style="font-size:11.5px; color:var(--text-mute);">
-    <div class="flex items-center gap-2">
-      <span style="color:var(--accent); font-weight:600;"><i class="fa-solid fa-chart-mixed"></i> 금융 AI Agent</span>
-      <span style="color:var(--border2);">|</span>
-      <span>Python / FastAPI · Ollama · Qdrant · Redis · MongoDB</span>
-    </div>
-    <div>&copy; <span id="footer-year"></span> <strong style="color:var(--text-dim);">(주)에듀엠지티</strong>. All rights reserved.</div>
-    <div><i class="fa-solid fa-triangle-exclamation" style="color:#f59e0b;"></i> 투자 자문이 아닌 정보 제공 목적입니다.</div>
+      </div>
+    </main>
   </div>
-</footer>
+
+  <!-- ══ Footer ══════════════════════════════════════════════════════ -->
+  <footer id="app-footer">
+    <div style="display:flex; align-items:center; gap:8px;">
+      <span style="color:var(--brand); font-weight:700;"><i class="fa-solid fa-chart-mixed"></i> Lumina Invest</span>
+      <span style="color:var(--border2);">·</span>
+      <span>FastAPI · Ollama · Qdrant · Redis · MongoDB</span>
+    </div>
+    <div style="display:flex; align-items:center; gap:10px; color:var(--text-mute);">
+      <strong style="color:var(--text-dim);">(주)에듀엠지티</strong>
+      <span style="color:var(--border2);">·</span>
+      <a href="mailto:info@edumgt.co.kr" style="color:var(--text-mute); text-decoration:none; transition:color .15s;" onmouseover="this.style.color='var(--accent)'" onmouseout="this.style.color='var(--text-mute)'">
+        <i class="fa-solid fa-envelope" style="margin-right:3px; font-size:10px;"></i>info@edumgt.co.kr
+      </a>
+      <span style="color:var(--border2);">·</span>
+      <a href="https://www.edumgt.co.kr" target="_blank" rel="noopener" style="color:var(--text-mute); text-decoration:none; transition:color .15s;" onmouseover="this.style.color='var(--accent)'" onmouseout="this.style.color='var(--text-mute)'">
+        <i class="fa-solid fa-globe" style="margin-right:3px; font-size:10px;"></i>www.edumgt.co.kr
+      </a>
+      <span style="color:var(--border2);">·</span>
+      <span>&copy; <span id="footer-year"></span> All rights reserved.</span>
+    </div>
+    <div style="display:flex; align-items:center; gap:5px; color:var(--brand);">
+      <i class="fa-solid fa-triangle-exclamation"></i>
+      <span style="color:var(--text-mute);">투자 자문이 아닌 정보 제공 목적입니다.</span>
+    </div>
+  </footer>
+
+</div><!-- #app-shell -->
 
 <script type="module">
 import { api, getMe, setToast, escHtml, fmt, fmtPct, colorPct } from "/js/common.js";
@@ -2066,10 +2327,11 @@ function renderLnb(gnbKey) {
   const nav = document.getElementById("lnb-nav");
   const titleEl = document.getElementById("lnb-section-title");
   const menu = GNB_MENUS[gnbKey];
-  if (titleEl) titleEl.innerHTML = menu.label;
+  // Section title: strip HTML tags for text-only display
+  if (titleEl) titleEl.textContent = menu.label.replace(/<[^>]+>/g, "").trim();
   nav.innerHTML = menu.items.map(it => `
-    <div class="lnb-item ${it.key === currentView ? "active" : ""}" data-view="${it.key}">
-      <i class="${it.icon}" style="width:16px;text-align:center;font-size:13px;"></i>
+    <div class="lnb-item ${it.key === currentView ? "active" : ""}" data-view="${it.key}" title="${it.label}">
+      <i class="${it.icon}"></i>
       <span>${it.label}</span>
     </div>
   `).join("");
@@ -2077,6 +2339,15 @@ function renderLnb(gnbKey) {
     el.addEventListener("click", () => navigate(el.dataset.view));
   });
 }
+
+// LNB 토글 (접기/펼치기)
+document.getElementById("lnb-toggle-btn")?.addEventListener("click", () => {
+  const lnb = document.getElementById("lnb");
+  const icon = document.getElementById("lnb-toggle-icon");
+  lnb.classList.toggle("collapsed");
+  const isCollapsed = lnb.classList.contains("collapsed");
+  icon.className = isCollapsed ? "fa-solid fa-chevron-right" : "fa-solid fa-chevron-left";
+});
 
 function navigate(viewKey) {
   // Find gnb section for this view
@@ -2523,7 +2794,11 @@ async function boot() {
   try {
     const { user } = await getMe();
     document.getElementById("user-name").textContent = user.name;
+    const avatar = document.getElementById("user-avatar");
+    if (avatar) avatar.textContent = (user.name || "U").charAt(0).toUpperCase();
     loadMarketTicker();
+    loadSyncStatus();
+    setInterval(loadSyncStatus, 60_000);   // refresh sync badge every minute
     const hash = location.hash.replace("#", "");
     navigate(hash && document.querySelector(`[data-view="${hash}"]`) ? hash : "agent-chat");
   } catch {
@@ -2541,14 +2816,70 @@ async function loadMarketTicker() {
   try {
     const { indices } = await api("/api/stocks/market");
     const el = document.getElementById("market-ticker");
-    el.classList.remove("hidden");
     el.innerHTML = indices.map(idx => {
       const pct = idx.change_pct;
       const sign = pct >= 0 ? "+" : "";
-      const cls = pct >= 0 ? "text-emerald-400" : "text-red-400";
-      return `<span>${idx.name}: <span class="${cls}">${fmt(idx.price)} (${sign}${pct?.toFixed(2)}%)</span></span>`;
-    }).join(" | ");
+      const color = pct >= 0 ? "var(--green)" : "var(--red)";
+      return `
+        <div class="ticker-item">
+          <span class="ticker-name">${escHtml(idx.name)}</span>
+          <span class="ticker-val" style="color:${color};">${fmt(idx.price)} <small style="font-weight:400;">${sign}${pct?.toFixed(2)}%</small></span>
+        </div>`;
+    }).join("");
   } catch {}
+}
+
+// ── Sync Status Badge ──────────────────────────────────────────────
+async function loadSyncStatus() {
+  const badge = document.getElementById("sync-badge");
+  const txt   = document.getElementById("sync-badge-text");
+  if (!badge || !txt) return;
+  try {
+    const st = await api("/api/system/sync-status");
+    const sch = st.scheduler || {};
+    if (sch.syncing) {
+      badge.className = "syncing";
+      txt.textContent = "동기화 중…";
+    } else if (st.online) {
+      badge.className = "online";
+      const lastSync = sch.last_sync ? new Date(sch.last_sync) : null;
+      if (lastSync) {
+        const mins = Math.round((Date.now() - lastSync) / 60000);
+        txt.textContent = mins < 60
+          ? `${mins}분 전 동기화`
+          : `${Math.round(mins/60)}시간 전 동기화`;
+      } else {
+        txt.textContent = "온라인";
+      }
+    } else {
+      badge.className = "offline";
+      const cache = st.cache || {};
+      const anyFresh = Object.values(cache).some(v => v && v.age_minutes < 120);
+      txt.textContent = anyFresh ? "캐시 사용 중" : "오프라인";
+    }
+  } catch {
+    badge.className = "offline";
+    txt.textContent = "오프라인";
+  }
+}
+
+async function triggerSync() {
+  const badge = document.getElementById("sync-badge");
+  const txt   = document.getElementById("sync-badge-text");
+  if (!badge || badge.className === "syncing") return;
+  badge.className = "syncing";
+  txt.textContent = "동기화 중…";
+  try {
+    const result = await api("/api/system/sync", { method: "POST" });
+    if (result.ok) {
+      setToast("데이터 동기화 완료", "success");
+    } else {
+      setToast(result.reason === "offline" ? "인터넷 연결 없음 — 동기화 불가" : "동기화 실패", "error");
+    }
+  } catch {
+    setToast("동기화 요청 실패", "error");
+  }
+  await loadSyncStatus();
 }
 
 // ── 기업분석 (Mockup) ────────────────────────────────────────────
@@ -3537,10 +3868,19 @@ function mockUsMarket() {
 let usChartInstance = null;
 let usOrders = JSON.parse(sessionStorage.getItem("us_orders") || "[]");
 
-function loadUsDashboard() {
+async function loadUsDashboard() {
   const marketEl = document.getElementById("us-market-cards");
   const sigEl    = document.getElementById("us-signal-cards");
-  const indices  = mockUsMarket();
+
+  // Try real data (cache-first via backend)
+  let liveStocks = null;
+  try {
+    const resp = await api("/api/macro/us-stocks");
+    liveStocks = resp.stocks || null;
+  } catch {}
+
+  // Market index cards: use live data for S&P/NASDAQ indices from macro or mockup
+  const indices = mockUsMarket();
   marketEl.innerHTML = indices.map(idx => {
     const cls = idx.change_pct >= 0 ? "var(--green)" : "var(--red)";
     const sign = idx.change_pct >= 0 ? "+" : "";
@@ -3551,21 +3891,29 @@ function loadUsDashboard() {
     </div>`;
   }).join("");
 
-  sigEl.innerHTML = US_STOCKS.map(s => {
-    const d = mockUsPrice(s.symbol);
+  // Stock cards: real data when available, mockup otherwise
+  const stocks = liveStocks || US_STOCKS.map(s => ({ ...mockUsPrice(s.symbol), name: s.name }));
+  const fromCache = liveStocks !== null;
+  sigEl.innerHTML = stocks.map(s => {
     const score = Math.floor(Math.random()*10-5);
     const action = score >= 3 ? "BUY" : score <= -3 ? "SELL" : "HOLD";
     const acColor = action==="BUY" ? "var(--green)" : action==="SELL" ? "var(--red)" : "var(--text-dim)";
-    const sign = d.change_pct >= 0 ? "+" : "";
-    const pctColor = d.change_pct >= 0 ? "var(--green)" : "var(--red)";
+    const pct = s.change_p ?? s.change_pct ?? 0;
+    const sign = pct >= 0 ? "+" : "";
+    const pctColor = pct >= 0 ? "var(--green)" : "var(--red)";
     return `<div class="card" style="padding:12px;">
       <div class="font-bold text-sm">${escHtml(s.symbol)}</div>
-      <div class="text-xs" style="color:var(--text-dim);">${escHtml(s.name)}</div>
-      <div class="font-semibold mt-2">$${fmt(d.price,2)}</div>
-      <div class="text-xs mt-1" style="color:${pctColor};">${sign}${d.change_pct}%</div>
+      <div class="text-xs" style="color:var(--text-dim);">${escHtml(s.name || "")}</div>
+      <div class="font-semibold mt-2">$${fmt(s.price,2)}</div>
+      <div class="text-xs mt-1" style="color:${pctColor};">${sign}${(+pct).toFixed(2)}%</div>
       <div class="text-xs font-bold mt-2" style="color:${acColor};">${action}</div>
     </div>`;
   }).join("");
+
+  if (fromCache) {
+    const note = liveStocks?.[0]?.from_cache ? " (캐시)" : "";
+    sigEl.insertAdjacentHTML("beforeend", `<div class="text-xs" style="color:var(--text-mute);grid-column:1/-1;text-align:right;">실시간 데이터${note} · Yahoo Finance</div>`);
+  }
 }
 
 function loadUsChart() {
@@ -3757,10 +4105,10 @@ async function loadSystemDashboard() {
 
 document.getElementById("sys-refresh")?.addEventListener("click", loadSystemDashboard);
 
-// ── 햄버거 메뉴 ───────────────────────────────────────────────────
+// ── 햄버거 메뉴 (모바일) ─────────────────────────────────────────
 document.getElementById("hamburger-btn")?.addEventListener("click", () => {
-  const menu = document.getElementById("mobile-menu");
-  menu.classList.toggle("hidden");
+  const lnb = document.getElementById("lnb");
+  lnb?.classList.toggle("mobile-open");
 });
 
 // ── Footer 연도 ───────────────────────────────────────────────────

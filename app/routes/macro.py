@@ -2,35 +2,13 @@
 from fastapi import APIRouter, Depends, Query
 from app.lib.session import get_current_user
 from app.services.stock import get_candles, _yahoo_chart
+from app.services.data_cache import cache_get, cache_set
+from app.services.sync_scheduler import (
+    KEY_MACRO_INDICATORS, KEY_SECTOR_ETFS, KEY_US_STOCKS,
+    MACRO_SYMBOLS, SECTOR_ETFS, US_STOCKS,
+)
 
 router = APIRouter(prefix="/api/macro")
-
-# 거시경제 지표 종목 코드 (Yahoo Finance)
-MACRO_SYMBOLS = [
-    {"symbol": "^TNX",    "name": "미 국채 10년 금리",  "unit": "%"},
-    {"symbol": "^IRX",    "name": "미 국채 3개월 금리", "unit": "%"},
-    {"symbol": "CL=F",    "name": "WTI 원유",           "unit": "USD/bbl"},
-    {"symbol": "GC=F",    "name": "금 선물",            "unit": "USD/oz"},
-    {"symbol": "KRW=X",   "name": "USD/KRW 환율",       "unit": "KRW"},
-    {"symbol": "DX-Y.NYB","name": "달러 인덱스(DXY)",   "unit": ""},
-    {"symbol": "^VIX",    "name": "VIX 공포지수",       "unit": ""},
-    {"symbol": "^GSPC",   "name": "S&P 500",            "unit": ""},
-    {"symbol": "^KS11",   "name": "KOSPI",              "unit": ""},
-]
-
-SECTOR_ETFS = [
-    {"symbol": "XLK",  "name": "기술",     "sector": "Technology"},
-    {"symbol": "XLF",  "name": "금융",     "sector": "Financials"},
-    {"symbol": "XLE",  "name": "에너지",   "sector": "Energy"},
-    {"symbol": "XLV",  "name": "헬스케어", "sector": "Health Care"},
-    {"symbol": "XLI",  "name": "산업재",   "sector": "Industrials"},
-    {"symbol": "XLY",  "name": "소비재",   "sector": "Consumer Disc."},
-    {"symbol": "XLP",  "name": "필수소비", "sector": "Consumer Staples"},
-    {"symbol": "XLB",  "name": "소재",     "sector": "Materials"},
-    {"symbol": "XLRE", "name": "리츠",     "sector": "Real Estate"},
-    {"symbol": "XLU",  "name": "유틸리티", "sector": "Utilities"},
-    {"symbol": "XLC",  "name": "통신",     "sector": "Communication"},
-]
 
 
 async def _get_latest(symbol: str, unit: str) -> dict:
@@ -53,29 +31,48 @@ async def _get_latest(symbol: str, unit: str) -> dict:
 
 @router.get("/indicators")
 async def macro_indicators(_user=Depends(get_current_user)):
-    """거시경제 지표 현황 (금리·물가·유가·환율·주가지수)."""
+    """거시경제 지표 현황 (금리·물가·유가·환율·주가지수). MongoDB cache-first."""
     import asyncio
+    cached = await cache_get(KEY_MACRO_INDICATORS, max_age_hours=2)
+    if cached is not None:
+        return {"indicators": cached, "from_cache": True}
+
     tasks = [_get_latest(m["symbol"], m["unit"]) for m in MACRO_SYMBOLS]
     results = await asyncio.gather(*tasks)
-    enriched = []
-    for m, r in zip(MACRO_SYMBOLS, results):
-        enriched.append({**m, **r})
-    return {"indicators": enriched}
+    enriched = [{**m, **r} for m, r in zip(MACRO_SYMBOLS, results)]
+    await cache_set(KEY_MACRO_INDICATORS, enriched)
+    return {"indicators": enriched, "from_cache": False}
 
 
 @router.get("/industry")
 async def macro_industry(_user=Depends(get_current_user)):
-    """미국 섹터 ETF 기반 산업 분석."""
+    """미국 섹터 ETF 기반 산업 분석. MongoDB cache-first."""
     import asyncio
+    cached = await cache_get(KEY_SECTOR_ETFS, max_age_hours=2)
+    if cached is not None:
+        return {"sectors": cached, "from_cache": True}
+
     tasks = [_get_latest(s["symbol"], "") for s in SECTOR_ETFS]
     results = await asyncio.gather(*tasks)
-    enriched = []
-    for s, r in zip(SECTOR_ETFS, results):
-        enriched.append({**s, **r})
-
-    # 수익률 순위
+    enriched = [{**s, **r} for s, r in zip(SECTOR_ETFS, results)]
     enriched.sort(key=lambda x: x.get("change_p", 0), reverse=True)
-    return {"sectors": enriched}
+    await cache_set(KEY_SECTOR_ETFS, enriched)
+    return {"sectors": enriched, "from_cache": False}
+
+
+@router.get("/us-stocks")
+async def macro_us_stocks(_user=Depends(get_current_user)):
+    """미국 주요 종목 시세. MongoDB cache-first."""
+    import asyncio
+    cached = await cache_get(KEY_US_STOCKS, max_age_hours=2)
+    if cached is not None:
+        return {"stocks": cached, "from_cache": True}
+
+    tasks = [_get_latest(s["symbol"], "USD") for s in US_STOCKS]
+    results = await asyncio.gather(*tasks)
+    enriched = [{**s, **r} for s, r in zip(US_STOCKS, results)]
+    await cache_set(KEY_US_STOCKS, enriched)
+    return {"stocks": enriched, "from_cache": False}
 
 
 @router.get("/fundamental")

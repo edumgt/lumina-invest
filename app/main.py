@@ -8,6 +8,8 @@ from fastapi.responses import FileResponse
 from app.database.mongo import connect_mongo, close_mongo, ensure_indexes
 from app.lib.session import connect_redis, close_redis
 from app.routes import health, auth, chat, ingest, stocks, library, admin, system, quant, ml, macro, documents, notification
+from app.services.data_cache import ensure_cache_index
+from app.services.sync_scheduler import start_sync_scheduler, stop_sync_scheduler
 
 
 @asynccontextmanager
@@ -20,11 +22,14 @@ async def lifespan(app: FastAPI):
     try:
         await connect_mongo()
         await ensure_indexes()
+        await ensure_cache_index()
     except Exception as e:
         print(f"[WARN] MongoDB 연결 실패 (인증 비활성): {e}")
+    start_sync_scheduler()
     print("[fin-agent] 서버 시작 완료")
     yield
     # 종료
+    stop_sync_scheduler()
     await close_redis()
     await close_mongo()
 

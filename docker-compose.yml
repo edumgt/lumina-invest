@@ -6,7 +6,7 @@ services:
     image: mongo:8.2.5
     container_name: mongo
     ports:
-      - "27017:27017"
+      - "27018:27017"
     environment:
       MONGO_INITDB_ROOT_USERNAME: fin_user
       MONGO_INITDB_ROOT_PASSWORD: fin_pass
@@ -30,8 +30,11 @@ services:
 
   # ─────────────────────────────
   # Ollama – local LLM / embeddings
+  # 호스트에 Ollama가 이미 실행 중이면 이 서비스는 건너뜁니다.
+  # 사용: docker compose --profile local-ollama up
   # ─────────────────────────────
   ollama:
+    profiles: [local-ollama]
     image: ollama/ollama:latest
     container_name: ollama
     volumes:
@@ -42,8 +45,11 @@ services:
 
   # ─────────────────────────────
   # Qdrant – vector database
+  # 호스트에 Qdrant가 이미 실행 중이면 이 서비스는 건너뜁니다.
+  # 사용: docker compose --profile local-qdrant up
   # ─────────────────────────────
   qdrant:
+    profiles: [local-qdrant]
     image: qdrant/qdrant:latest
     container_name: qdrant
     ports:
@@ -55,8 +61,10 @@ services:
 
   # ─────────────────────────────
   # Model pull (one-shot init)
+  # local-ollama 프로필 활성화 시에만 실행됩니다.
   # ─────────────────────────────
   model-pull:
+    profiles: [local-ollama]
     image: ollama/ollama:latest
     container_name: model-pull
     depends_on:
@@ -86,18 +94,17 @@ services:
       - "8000:8000"
     env_file: .env
     environment:
-      - OLLAMA_BASE_URL=http://ollama:11434
-      - QDRANT_URL=http://qdrant:6333
+      # OLLAMA_BASE_URL, QDRANT_URL 은 .env 에서 직접 관리 (쉘 오염 방지)
       - MONGO_URI=mongodb://fin_user:fin_pass@mongo:27017/fin_ai?authSource=admin
       - REDIS_URL=redis://redis:6379
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - app_data:/app/data
       - ./data:/app/data/csv:ro
     depends_on:
       - mongo
       - redis
-      - ollama
-      - qdrant
     restart: unless-stopped
 
   # ─────────────────────────────
@@ -111,18 +118,16 @@ services:
     container_name: fin-ai-ingest
     env_file: .env
     environment:
-      - OLLAMA_BASE_URL=http://ollama:11434
-      - QDRANT_URL=http://qdrant:6333
       - MONGO_URI=mongodb://fin_user:fin_pass@mongo:27017/fin_ai?authSource=admin
       - REDIS_URL=redis://redis:6379
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - app_data:/app/data
       - ./data:/app/data/csv:ro
     depends_on:
       - mongo
       - redis
-      - ollama
-      - qdrant
     entrypoint: ["python", "-m", "app.services.financial_ingest"]
     restart: "no"
 
