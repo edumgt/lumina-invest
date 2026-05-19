@@ -7,7 +7,12 @@
   <link rel="icon" href="/favicon.ico" />
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/apexcharts@3.49.2/dist/apexcharts.min.js"></script>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" />
+  <link rel="stylesheet" as="style" onload="this.rel='stylesheet'"
+        href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
+  <noscript>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
+  </noscript>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
   <style>
     /* ═══════════════════════════════════════════════════
@@ -44,9 +49,14 @@
     body {
       background: var(--bg);
       color: var(--text);
-      font-size: 15.6px;
-      line-height: 1.6;
-      font-family: 'Pretendard', -apple-system, 'Apple SD Gothic Neo', sans-serif;
+      font-size: 16px;
+      line-height: 1.65;
+      font-family: 'Pretendard Variable', 'Pretendard', -apple-system, 'Apple SD Gothic Neo', sans-serif;
+      font-feature-settings: "kern" 1;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      text-rendering: optimizeLegibility;
+      word-break: keep-all;
       min-height: 100vh;
     }
 
@@ -409,6 +419,90 @@
     /* ── Sub-panel ──────────────────────────────────── */
     .panel { background: var(--surf2); border: 1px solid var(--border); border-radius: 8px; padding: 14px; }
 
+    /* ── 종목 검색 모달 ─────────────────────────────── */
+    #stock-search-modal {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      background: rgba(15,23,42,0.45);
+      backdrop-filter: blur(2px);
+      align-items: flex-start;
+      justify-content: center;
+      padding-top: 80px;
+    }
+    #stock-search-modal.open { display: flex; }
+    .ssm-box {
+      background: var(--surf);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      width: 100%;
+      max-width: 520px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.18);
+      overflow: hidden;
+    }
+    .ssm-header {
+      padding: 18px 20px 14px;
+      border-bottom: 1px solid var(--border);
+    }
+    .ssm-header h3 { font-size: 15px; font-weight: 700; margin-bottom: 10px; color: var(--text); }
+    .ssm-search-wrap { display: flex; gap: 8px; align-items: center; }
+    .ssm-input {
+      flex: 1;
+      padding: 9px 13px;
+      border-radius: 8px;
+      background: var(--surf2);
+      border: 1.5px solid var(--border);
+      color: var(--text);
+      font-size: 14px;
+      outline: none;
+      transition: border-color .15s, box-shadow .15s;
+    }
+    .ssm-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+    .ssm-results { max-height: 340px; overflow-y: auto; }
+    .ssm-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 11px 20px;
+      cursor: pointer;
+      border-bottom: 1px solid var(--border);
+      transition: background .1s;
+    }
+    .ssm-item:last-child { border-bottom: none; }
+    .ssm-item:hover { background: var(--surf2); }
+    .ssm-item-name { font-size: 14px; font-weight: 600; color: var(--text); }
+    .ssm-item-meta { font-size: 12px; color: var(--text-mute); margin-top: 1px; }
+    .ssm-item-ticker {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--accent);
+      background: var(--accent-glow);
+      padding: 3px 8px;
+      border-radius: 5px;
+      white-space: nowrap;
+    }
+    .ssm-empty { padding: 28px 20px; text-align: center; color: var(--text-mute); font-size: 13px; }
+    .ssm-loading { padding: 24px 20px; text-align: center; color: var(--text-mute); font-size: 13px; }
+    .ssm-symbol-btn {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 7px 11px;
+      border-radius: 6px;
+      background: var(--surf2);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-size: 13px;
+      cursor: pointer;
+      min-width: 180px;
+      transition: border-color .15s, box-shadow .15s;
+      text-align: left;
+    }
+    .ssm-symbol-btn:hover { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-glow); }
+    .ssm-symbol-btn .ssm-btn-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .ssm-symbol-btn .ssm-btn-ticker { font-size: 11px; color: var(--text-mute); }
+
     /* ── Chat bubbles ───────────────────────────────── */
     .chat-bubble-user {
       background: var(--accent);
@@ -707,7 +801,12 @@
       <div class="card">
         <div class="flex items-center gap-3 mb-4 flex-wrap">
           <h2 class="text-lg font-semibold">📊 주가 차트</h2>
-          <input id="chart-symbol" class="input w-36" value="005930.KS" placeholder="종목코드.KS" />
+          <input type="hidden" id="chart-symbol" value="005930.KS" />
+          <button id="chart-symbol-btn" class="ssm-symbol-btn" style="min-width:200px;">
+            <i class="fa-solid fa-magnifying-glass" style="color:var(--accent);font-size:12px;"></i>
+            <span class="ssm-btn-label">삼성전자</span>
+            <span class="ssm-btn-ticker">005930.KS</span>
+          </button>
           <select id="chart-period" class="input w-28">
             <option value="1mo">1개월</option>
             <option value="3mo">3개월</option>
@@ -808,13 +907,12 @@
         <!-- 퀀트 차트 -->
         <div class="card">
           <div class="flex gap-2 items-center mb-3">
-            <select id="quant-symbol" class="input w-44">
-              <option value="005930.KS">삼성전자</option>
-              <option value="000660.KS">SK하이닉스</option>
-              <option value="035420.KS">NAVER</option>
-              <option value="005380.KS">현대자동차</option>
-              <option value="051910.KS">LG화학</option>
-            </select>
+            <input type="hidden" id="quant-symbol" value="005930.KS" />
+            <button id="quant-symbol-btn" class="ssm-symbol-btn">
+              <i class="fa-solid fa-magnifying-glass" style="color:var(--accent);font-size:12px;"></i>
+              <span class="ssm-btn-label">삼성전자</span>
+              <span class="ssm-btn-ticker">005930.KS</span>
+            </button>
             <button id="quant-chart-load" class="btn-primary text-xs">차트 로드</button>
           </div>
           <div id="quant-chart-container"></div>
@@ -4394,6 +4492,110 @@ document.getElementById("seas-run-btn")?.addEventListener("click", async () => {
 });
 
 boot();
+
+// ── 종목 검색 모달 ────────────────────────────────────────────────
+(function () {
+  let _resolve = null;
+  let _debounceTimer = null;
+
+  const modal = document.getElementById("stock-search-modal");
+  const inputEl = document.getElementById("ssm-query");
+  const resultsEl = document.getElementById("ssm-results");
+
+  function openModal(callback) {
+    _resolve = callback;
+    inputEl.value = "";
+    resultsEl.innerHTML = `<div class="ssm-empty">종목명 또는 코드를 입력하세요</div>`;
+    modal.classList.add("open");
+    setTimeout(() => inputEl.focus(), 60);
+  }
+
+  function closeModal() {
+    modal.classList.remove("open");
+    _resolve = null;
+  }
+
+  function selectItem(symbol, name) {
+    if (_resolve) _resolve({ symbol, name });
+    closeModal();
+  }
+
+  async function doSearch(q) {
+    if (!q.trim()) {
+      resultsEl.innerHTML = `<div class="ssm-empty">종목명 또는 코드를 입력하세요</div>`;
+      return;
+    }
+    resultsEl.innerHTML = `<div class="ssm-loading">검색 중…</div>`;
+    try {
+      const data = await api(`/api/stocks/search?q=${encodeURIComponent(q)}`);
+      if (!data.results?.length) {
+        resultsEl.innerHTML = `<div class="ssm-empty">검색 결과가 없습니다</div>`;
+        return;
+      }
+      resultsEl.innerHTML = data.results.map(r => `
+        <div class="ssm-item" data-symbol="${escHtml(r.symbol)}" data-name="${escHtml(r.name)}">
+          <div>
+            <div class="ssm-item-name">${escHtml(r.name)}</div>
+            <div class="ssm-item-meta">${escHtml(r.exchange)} · ${escHtml(r.type)}</div>
+          </div>
+          <span class="ssm-item-ticker">${escHtml(r.symbol)}</span>
+        </div>
+      `).join("");
+      resultsEl.querySelectorAll(".ssm-item").forEach(el => {
+        el.addEventListener("click", () => selectItem(el.dataset.symbol, el.dataset.name));
+      });
+    } catch (e) {
+      resultsEl.innerHTML = `<div class="ssm-empty" style="color:var(--red);">오류: ${escHtml(e.message)}</div>`;
+    }
+  }
+
+  inputEl.addEventListener("input", () => {
+    clearTimeout(_debounceTimer);
+    _debounceTimer = setTimeout(() => doSearch(inputEl.value), 320);
+  });
+  inputEl.addEventListener("keydown", e => { if (e.key === "Escape") closeModal(); });
+
+  modal.addEventListener("click", e => { if (e.target === modal) closeModal(); });
+  document.getElementById("ssm-close").addEventListener("click", closeModal);
+
+  // 퀀트 대시보드 차트 종목 버튼
+  document.getElementById("quant-symbol-btn").addEventListener("click", () => {
+    openModal(({ symbol, name }) => {
+      document.getElementById("quant-symbol").value = symbol;
+      const btn = document.getElementById("quant-symbol-btn");
+      btn.querySelector(".ssm-btn-label").textContent = name;
+      btn.querySelector(".ssm-btn-ticker").textContent = symbol;
+    });
+  });
+
+  // 주가 차트 종목 버튼
+  document.getElementById("chart-symbol-btn").addEventListener("click", () => {
+    openModal(({ symbol, name }) => {
+      document.getElementById("chart-symbol").value = symbol;
+      const btn = document.getElementById("chart-symbol-btn");
+      btn.querySelector(".ssm-btn-label").textContent = name;
+      btn.querySelector(".ssm-btn-ticker").textContent = symbol;
+    });
+  });
+})();
 </script>
+
+<!-- 종목 검색 모달 -->
+<div id="stock-search-modal" role="dialog" aria-modal="true" aria-label="종목 검색">
+  <div class="ssm-box">
+    <div class="ssm-header">
+      <div class="flex items-center justify-between mb-3">
+        <h3>종목 검색</h3>
+        <button id="ssm-close" style="background:none;border:none;cursor:pointer;color:var(--text-mute);font-size:18px;">✕</button>
+      </div>
+      <div class="ssm-search-wrap">
+        <input id="ssm-query" class="ssm-input" type="text" placeholder="종목명 또는 코드 입력 (예: 삼성, AAPL)" autocomplete="off" />
+      </div>
+    </div>
+    <div id="ssm-results" class="ssm-results">
+      <div class="ssm-empty">종목명 또는 코드를 입력하세요</div>
+    </div>
+  </div>
+</div>
 </body>
 </html>

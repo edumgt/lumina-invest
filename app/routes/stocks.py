@@ -1,5 +1,6 @@
 import json
 import logging
+import httpx
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, Query, HTTPException
 from pydantic import BaseModel, Field, ConfigDict
@@ -73,6 +74,40 @@ async def quant_indicators(
 @router.get("/stocks/quant/list")
 async def quant_stock_list():
     return {"stocks": QUANT_STOCKS}
+
+
+@router.get("/stocks/search")
+async def stock_search(q: str = Query(..., min_length=1)):
+    """Yahoo Finance 자동완성 API로 종목 검색 (종목명 + 티커)."""
+    url = "https://query1.finance.yahoo.com/v1/finance/search"
+    params = {
+        "q": q,
+        "lang": "ko-KR",
+        "region": "KR",
+        "quotesCount": 10,
+        "newsCount": 0,
+        "listsCount": 0,
+    }
+    headers = {"User-Agent": "Mozilla/5.0 (compatible; FinAgent/1.0)"}
+    try:
+        async with httpx.AsyncClient(timeout=8.0, headers=headers) as client:
+            resp = await client.get(url, params=params)
+            resp.raise_for_status()
+            data = resp.json()
+        quotes = data.get("quotes", [])
+        results = [
+            {
+                "symbol": item.get("symbol", ""),
+                "name": item.get("longname") or item.get("shortname") or item.get("symbol", ""),
+                "exchange": item.get("exchDisp", ""),
+                "type": item.get("typeDisp", ""),
+            }
+            for item in quotes
+            if item.get("symbol")
+        ]
+        return {"results": results}
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"종목 검색 실패: {exc}") from exc
 
 
 @router.get("/stocks/signals")
