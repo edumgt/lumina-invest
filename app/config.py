@@ -25,6 +25,10 @@ class Settings(BaseSettings):
     DATA_DIR: str = "./data"
     TOP_K: int = 6
 
+    NEO4J_URI: str = "bolt://localhost:7687"
+    NEO4J_USER: str = "neo4j"
+    NEO4J_PASSWORD: str = "finagent123"
+
     ADMIN_EMAILS: str = ""
     TRUST_PROXY: bool = False
     COOKIE_SECURE: bool = False

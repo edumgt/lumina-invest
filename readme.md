@@ -572,3 +572,28 @@ COPY ./qdrant_storage /qdrant/storage
 - 트레이딩뷰 플랫폼으로 성과 확인 및 코딩 실습(PineScript) 
 - 파이썬 프로그래밍을 통한 성과 검증 
 - 증권사 연동(API 활용)을 통한 자동화 모델 구현
+
+
+---
+
+# 📘 Neo4j 정리
+
+## 1. 개요
+
+**Neo4j**는 그래프 기반 데이터베이스(Graph Database)로,  
+데이터 간의 **관계(Relationship)**를 중심으로 저장하고 조회하는 DB이다.
+
+기존의 RDB(MySQL, Oracle 등)가 테이블 기반이라면,  
+Neo4j는 **노드(Node)와 관계(Relationship)** 기반으로 데이터를 표현한다.
+
+---
+
+## 2. 핵심 개념
+
+### 2.1 Node (노드)
+
+- 데이터를 표현하는 기본 단위
+- 사람, 상품, 장소 등 객체를 의미
+
+```cypher
+(:Person {name: "Kim", age: 30})
