@@ -40,8 +40,8 @@
       --red:        #dc2626;
       --red-bg:     rgba(220,38,38,0.08);
       --red-bd:     rgba(220,38,38,0.25);
-      --gnb-h:      52px;
-      --lnb-w:      220px;
+      --gnb-h:      56px;
+      --lnb-w:      240px;
     }
 
     *, *::before, *::after { box-sizing: border-box; }
@@ -49,7 +49,7 @@
     body {
       background: var(--bg);
       color: var(--text);
-      font-size: 16px;
+      font-size: 18px;
       line-height: 1.65;
       font-family: 'Pretendard Variable', 'Pretendard', -apple-system, 'Apple SD Gothic Neo', sans-serif;
       font-feature-settings: "kern" 1;
@@ -100,13 +100,13 @@
       line-height: 1.2;
     }
     .gnb-logo-text strong {
-      font-size: 14px;
+      font-size: 15px;
       font-weight: 700;
       color: var(--text);
       letter-spacing: -0.3px;
     }
     .gnb-logo-text span {
-      font-size: 9px;
+      font-size: 10px;
       font-weight: 600;
       color: var(--brand);
       letter-spacing: 0.12em;
@@ -125,7 +125,7 @@
       align-items: center;
       gap: 6px;
       padding: 0 16px;
-      font-size: 13.5px;
+      font-size: 15px;
       font-weight: 500;
       color: var(--text-dim);
       border: none;
@@ -143,7 +143,7 @@
       font-weight: 600;
       background: var(--accent-glow);
     }
-    .gnb-item i { font-size: 11px; opacity: 0.85; }
+    .gnb-item i { font-size: 13px; opacity: 0.85; }
     .gnb-right {
       display: flex;
       align-items: center;
@@ -157,17 +157,17 @@
     #market-ticker {
       display: flex;
       gap: 16px;
-      font-size: 11px;
+      font-size: 12px;
       align-items: center;
     }
     .ticker-item { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.2; }
-    .ticker-name { color: var(--text-mute); font-size: 9px; letter-spacing: .05em; }
-    .ticker-val  { font-weight: 600; font-size: 11.5px; }
+    .ticker-name { color: var(--text-mute); font-size: 11px; letter-spacing: .05em; }
+    .ticker-val  { font-weight: 600; font-size: 13px; }
 
     /* ── Sync status badge ───────────────────────────── */
     #sync-badge {
       display: flex; align-items: center; gap: 4px;
-      font-size: 10px; color: var(--text-mute); cursor: pointer;
+      font-size: 11px; color: var(--text-mute); cursor: pointer;
       padding: 3px 7px; border-radius: 20px;
       border: 1px solid var(--border);
       transition: background .15s, color .15s;
@@ -187,18 +187,18 @@
       display: flex;
       align-items: center;
       gap: 8px;
-      font-size: 12px;
+      font-size: 14px;
       color: var(--text-dim);
     }
     .gnb-avatar {
-      width: 28px;
-      height: 28px;
+      width: 30px;
+      height: 30px;
       border-radius: 50%;
       background: linear-gradient(135deg, var(--accent), var(--brand));
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 12px;
+      font-size: 13px;
       color: #fff;
       font-weight: 700;
     }
@@ -231,7 +231,7 @@
       flex-shrink: 0;
     }
     .lnb-section-title {
-      font-size: 10px;
+      font-size: 11px;
       font-weight: 700;
       color: var(--brand);
       letter-spacing: .12em;
@@ -267,9 +267,9 @@
       display: flex;
       align-items: center;
       gap: 10px;
-      padding: 8px 10px;
+      padding: 9px 10px;
       border-radius: 7px;
-      font-size: 12.5px;
+      font-size: 14.5px;
       color: var(--text-dim);
       cursor: pointer;
       border: 1px solid transparent;
@@ -287,13 +287,13 @@
     .lnb-item i {
       width: 18px;
       text-align: center;
-      font-size: 13px;
+      font-size: 14px;
       flex-shrink: 0;
     }
     .lnb-item span { overflow: hidden; text-overflow: ellipsis; }
     #lnb.collapsed .lnb-item span { display: none; }
     #lnb.collapsed .lnb-item { justify-content: center; padding: 9px 0; border-radius: 8px; }
-    #lnb.collapsed .lnb-item i { width: auto; font-size: 14px; }
+    #lnb.collapsed .lnb-item i { width: auto; font-size: 16px; }
 
     /* ── Main Content ────────────────────────────────── */
     #main-content {
@@ -318,12 +318,12 @@
     /* ── Form Controls ───────────────────────────────── */
     .input {
       width: 100%;
-      padding: 7px 11px;
+      padding: 8px 12px;
       border-radius: 6px;
       background: var(--surf2);
       border: 1px solid var(--border);
       color: var(--text) !important;
-      font-size: 13px;
+      font-size: 15px;
       outline: none;
       transition: border-color .15s, box-shadow .15s;
       appearance: none;
@@ -335,11 +335,11 @@
 
     /* ── Buttons ─────────────────────────────────────── */
     .btn-primary {
-      padding: 7px 16px;
+      padding: 8px 16px;
       border-radius: 6px;
       background: var(--accent);
       color: #fff;
-      font-size: 13px;
+      font-size: 15px;
       font-weight: 600;
       border: none;
       cursor: pointer;
@@ -349,11 +349,11 @@
     .btn-primary:hover { background: var(--accent-h); box-shadow: 0 0 12px var(--accent-glow); }
 
     .btn-secondary {
-      padding: 7px 14px;
+      padding: 8px 14px;
       border-radius: 6px;
       background: var(--surf2);
       color: var(--text-dim);
-      font-size: 13px;
+      font-size: 15px;
       font-weight: 500;
       border: 1px solid var(--border);
       cursor: pointer;
@@ -363,11 +363,11 @@
     .btn-secondary:hover { background: var(--surf3); color: var(--text); }
 
     .btn-green {
-      padding: 7px 16px;
+      padding: 8px 16px;
       border-radius: 6px;
       background: var(--green);
       color: #fff;
-      font-size: 13px;
+      font-size: 15px;
       font-weight: 600;
       border: none;
       cursor: pointer;
@@ -377,11 +377,11 @@
     .btn-green:hover { opacity: .85; }
 
     .btn-red {
-      padding: 7px 16px;
+      padding: 8px 16px;
       border-radius: 6px;
       background: var(--red);
       color: #fff;
-      font-size: 13px;
+      font-size: 15px;
       font-weight: 600;
       border: none;
       cursor: pointer;
@@ -391,14 +391,14 @@
     .btn-red:hover { opacity: .85; }
 
     /* ── Badges ─────────────────────────────────────── */
-    .badge-buy  { display:inline-block; padding:2px 8px; border-radius:4px; font-size:11px; font-weight:700; background:var(--green-bg); color:var(--green); border:1px solid var(--green-bd); }
-    .badge-sell { display:inline-block; padding:2px 8px; border-radius:4px; font-size:11px; font-weight:700; background:var(--red-bg);   color:var(--red);   border:1px solid var(--red-bd); }
-    .badge-hold { display:inline-block; padding:2px 8px; border-radius:4px; font-size:11px; font-weight:700; background:var(--surf3);    color:var(--text-mute); }
+    .badge-buy  { display:inline-block; padding:3px 9px; border-radius:4px; font-size:13px; font-weight:700; background:var(--green-bg); color:var(--green); border:1px solid var(--green-bd); }
+    .badge-sell { display:inline-block; padding:3px 9px; border-radius:4px; font-size:13px; font-weight:700; background:var(--red-bg);   color:var(--red);   border:1px solid var(--red-bd); }
+    .badge-hold { display:inline-block; padding:3px 9px; border-radius:4px; font-size:13px; font-weight:700; background:var(--surf3);    color:var(--text-mute); }
 
     /* ── Views ──────────────────────────────────────── */
     .view { display: none; }
     .view.active { display: block; }
-    pre { white-space: pre-wrap; word-break: break-word; font-family: 'JetBrains Mono', 'Courier New', monospace; font-size: 13px; background: #f0f3f8; color: #334155; border-radius: 6px; padding: 12px; border: 1px solid var(--border); }
+    pre { white-space: pre-wrap; word-break: break-word; font-family: 'JetBrains Mono', 'Courier New', monospace; font-size: 14px; background: #f0f3f8; color: #334155; border-radius: 6px; padding: 12px; border: 1px solid var(--border); }
     #chart-container, #quant-chart-container, #us-chart-container { width: 100%; height: 420px; }
     .step-retrieve     { border-left: 3px solid var(--accent); padding-left: 10px; }
     .step-final_answer { border-left: 3px solid var(--green); padding-left: 10px; }
@@ -412,8 +412,8 @@
 
     /* ── Table ──────────────────────────────────────── */
     table { width: 100%; border-collapse: collapse; }
-    th { color: var(--text-mute); font-size: 10.5px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; padding: 8px; border-bottom: 1px solid var(--border); text-align: left; }
-    td { padding: 9px 8px; border-bottom: 1px solid var(--border); font-size: 13px; color: var(--text); }
+    th { color: var(--text-mute); font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; padding: 9px 8px; border-bottom: 1px solid var(--border); text-align: left; }
+    td { padding: 10px 8px; border-bottom: 1px solid var(--border); font-size: 15px; color: var(--text); }
     tr:hover td { background: var(--surf2); }
 
     /* ── Sub-panel ──────────────────────────────────── */
@@ -445,7 +445,7 @@
       padding: 18px 20px 14px;
       border-bottom: 1px solid var(--border);
     }
-    .ssm-header h3 { font-size: 15px; font-weight: 700; margin-bottom: 10px; color: var(--text); }
+    .ssm-header h3 { font-size: 17px; font-weight: 700; margin-bottom: 10px; color: var(--text); }
     .ssm-search-wrap { display: flex; gap: 8px; align-items: center; }
     .ssm-input {
       flex: 1;
@@ -454,7 +454,7 @@
       background: var(--surf2);
       border: 1.5px solid var(--border);
       color: var(--text);
-      font-size: 14px;
+      font-size: 16px;
       outline: none;
       transition: border-color .15s, box-shadow .15s;
     }
@@ -471,10 +471,10 @@
     }
     .ssm-item:last-child { border-bottom: none; }
     .ssm-item:hover { background: var(--surf2); }
-    .ssm-item-name { font-size: 14px; font-weight: 600; color: var(--text); }
-    .ssm-item-meta { font-size: 12px; color: var(--text-mute); margin-top: 1px; }
+    .ssm-item-name { font-size: 16px; font-weight: 600; color: var(--text); }
+    .ssm-item-meta { font-size: 13px; color: var(--text-mute); margin-top: 1px; }
     .ssm-item-ticker {
-      font-size: 12px;
+      font-size: 13px;
       font-weight: 600;
       color: var(--accent);
       background: var(--accent-glow);
@@ -482,18 +482,18 @@
       border-radius: 5px;
       white-space: nowrap;
     }
-    .ssm-empty { padding: 28px 20px; text-align: center; color: var(--text-mute); font-size: 13px; }
-    .ssm-loading { padding: 24px 20px; text-align: center; color: var(--text-mute); font-size: 13px; }
+    .ssm-empty { padding: 28px 20px; text-align: center; color: var(--text-mute); font-size: 15px; }
+    .ssm-loading { padding: 24px 20px; text-align: center; color: var(--text-mute); font-size: 15px; }
     .ssm-symbol-btn {
       display: flex;
       align-items: center;
       gap: 6px;
-      padding: 7px 11px;
+      padding: 8px 12px;
       border-radius: 6px;
       background: var(--surf2);
       border: 1px solid var(--border);
       color: var(--text);
-      font-size: 13px;
+      font-size: 15px;
       cursor: pointer;
       min-width: 180px;
       transition: border-color .15s, box-shadow .15s;
@@ -501,7 +501,7 @@
     }
     .ssm-symbol-btn:hover { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-glow); }
     .ssm-symbol-btn .ssm-btn-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .ssm-symbol-btn .ssm-btn-ticker { font-size: 11px; color: var(--text-mute); }
+    .ssm-symbol-btn .ssm-btn-ticker { font-size: 12px; color: var(--text-mute); }
 
     /* ── Chat bubbles ───────────────────────────────── */
     .chat-bubble-user {
@@ -525,7 +525,7 @@
       background: #ffffff;
       border-top: 1px solid var(--border);
       padding: 10px 20px;
-      font-size: 11px;
+      font-size: 13px;
       color: var(--text-mute);
       display: flex;
       align-items: center;
@@ -580,9 +580,9 @@
     </div>
     <div class="gnb-user">
       <div class="gnb-avatar" id="user-avatar">U</div>
-      <span id="user-name" style="font-size:12px; color:var(--text-dim);"></span>
+      <span id="user-name" style="font-size:14px; color:var(--text-dim);"></span>
     </div>
-    <button id="logout-btn" class="btn-secondary" style="padding:5px 12px; font-size:11.5px;">
+    <button id="logout-btn" class="btn-secondary" style="padding:6px 12px; font-size:14px;">
       <i class="fa-solid fa-arrow-right-from-bracket" style="margin-right:4px;"></i>로그아웃
     </button>
     <!-- 모바일 햄버거 -->

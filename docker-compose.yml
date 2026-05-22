@@ -63,6 +63,53 @@ services:
     networks:
     - shared-net
 
+  # ── Celery Worker (AI 에이전트·인제스트 비동기 태스크) ────────────────────────
+  celery-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: fin-ai-celery-worker
+    command: >
+      celery -A app.celery_app worker
+      --loglevel=info
+      --concurrency=2
+      --queues=celery
+    env_file: .env
+    environment:
+    - MONGO_URI=mongodb://mongo:27017/fin_ai
+    - REDIS_URL=redis://redis:6379
+    - NEO4J_URI=bolt://neo4j:7687
+    - NEO4J_USER=neo4j
+    - NEO4J_PASSWORD=finagent123
+    extra_hosts:
+    - host.docker.internal:host-gateway
+    volumes:
+    - app_data:/app/data
+    - ./data:/app/data/csv:ro
+    networks:
+    - shared-net
+    depends_on:
+    - neo4j
+    restart: unless-stopped
+
+  # ── Celery Beat (시장 데이터 주기 동기화 스케줄러) ────────────────────────────
+  celery-beat:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: fin-ai-celery-beat
+    command: >
+      celery -A app.celery_app beat
+      --loglevel=info
+      --schedule=/tmp/celerybeat-schedule
+    env_file: .env
+    environment:
+    - MONGO_URI=mongodb://mongo:27017/fin_ai
+    - REDIS_URL=redis://redis:6379
+    networks:
+    - shared-net
+    restart: unless-stopped
+
 volumes:
   app_data: null
   neo4j_data: null

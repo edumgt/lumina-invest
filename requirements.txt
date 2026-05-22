@@ -28,6 +28,9 @@ langgraph>=0.2.0
 # Neo4j
 neo4j>=5.14.0
 
+# Celery (비동기 태스크 큐 – broker/backend: Redis)
+celery[redis]>=5.4.0
+
 # Document parsing (PPT, DOC, XLS, PDF)
 python-pptx>=1.0.0
 python-docx>=1.1.0

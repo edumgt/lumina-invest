@@ -55,6 +55,17 @@ else
   fi
 fi
 
+# ── 외부 Redis shared-net 연결 보장 ─────────────────────────────
+# redis 컨테이너는 별도로 운영되므로 shared-net에 붙어 있는지 확인 후 연결
+if docker inspect redis --format '{{range .NetworkSettings.Networks}}{{.}}{{end}}' 2>/dev/null | grep -q .; then
+  if ! docker network inspect shared-net --format '{{range .Containers}}{{.Name}}{{"\n"}}{{end}}' 2>/dev/null | grep -q "^redis$"; then
+    echo "[start.sh] redis → shared-net 연결"
+    docker network connect shared-net redis
+  else
+    echo "[start.sh] redis 이미 shared-net 연결 중"
+  fi
+fi
+
 # ── Docker Compose 실행 ───────────────────────────────────────
 PROFILE_ARGS=()
 for p in "${PROFILES[@]}"; do

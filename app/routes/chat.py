@@ -173,3 +173,52 @@ async def chat(
         pass
 
     return {**result, "conversation_id": conversation_id}
+
+
+# ── 비동기 채팅 (Celery) ──────────────────────────────────────────────────────
+
+@router.post("/chat/async", summary="비동기 채팅 (태스크 큐)")
+async def chat_async(
+    body: ChatBody,
+    user=Depends(get_current_user_any),
+    mdb=Depends(get_mdb),
+):
+    """에이전트 실행을 Celery 워커에 위임하고 task_id 를 즉시 반환한다.
+
+    클라이언트는 GET /api/tasks/{task_id} 를 폴링하여 결과를 확인한다.
+    LLM 응답 대기(최대 수 분)가 HTTP 타임아웃을 유발하는 상황에 사용한다.
+    """
+    from app.tasks.agent_tasks import run_agent_task
+
+    user_id = user["id"]
+    conversation_id = await _get_or_create_conversation(mdb, user_id, body.conversation_id)
+
+    history = body.history
+    if not history:
+        history = await _build_history_from_db(mdb, conversation_id, user_id, limit=10)
+
+    rag_context = ""
+    if body.use_rag:
+        try:
+            docs = await rag_search(body.question, top_k=settings.TOP_K)
+            if docs:
+                rag_context = "\n\n".join(
+                    f"[{d['title']}] {d['text'][:500]}" for d in docs
+                )
+        except Exception:
+            pass
+
+    task = run_agent_task.delay(
+        user_id=user_id,
+        conversation_id=conversation_id,
+        question=body.question,
+        history=history,
+        llm_model=settings.LLM_MODEL,
+        rag_context=rag_context,
+    )
+
+    return {
+        "task_id": task.id,
+        "conversation_id": conversation_id,
+        "poll_url": f"/api/tasks/{task.id}",
+    }

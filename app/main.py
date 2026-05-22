@@ -3,12 +3,12 @@ import os
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 
 from app.database.mongo import connect_mongo, close_mongo, ensure_indexes
 from app.database.neo4j import connect_neo4j, close_neo4j, ensure_graph_schema
 from app.lib.redis_cache import connect_redis, close_redis
-from app.routes import health, auth, chat, ingest, stocks, library, admin, system, quant, ml, macro, documents, notification, graph, conversations
+from app.routes import health, auth, chat, ingest, stocks, library, admin, system, quant, ml, macro, documents, notification, graph, conversations, tasks
 from app.services.data_cache import ensure_cache_index
 from app.services.graph_service import seed_graph
 from app.services.sync_scheduler import start_sync_scheduler, stop_sync_scheduler
@@ -67,6 +67,7 @@ app.include_router(documents.router)
 app.include_router(notification.router)
 app.include_router(graph.router)
 app.include_router(conversations.router)
+app.include_router(tasks.router)
 
 # 정적 파일 (프론트엔드)
 _public = os.path.join(os.path.dirname(__file__), "..", "public")
@@ -75,7 +76,7 @@ if os.path.isdir(_public):
 
     @app.get("/", include_in_schema=False)
     async def index():
-        return FileResponse(os.path.join(_public, "index.html"))
+        return RedirectResponse(url="/login.html")
 
     @app.get("/login.html", include_in_schema=False)
     async def login_page():
