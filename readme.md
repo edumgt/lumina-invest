@@ -1,3 +1,5 @@
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
+
 ## 선수 - https://github.com/edumgt/openstack-private-cloud
 
 ## 목차
@@ -576,7 +578,7 @@ COPY ./qdrant_storage /qdrant/storage
 
 ---
 
-# 📘 Neo4j 정리
+# <i class="fa-solid fa-book"></i> Neo4j 정리
 
 ## 1. 개요
 
