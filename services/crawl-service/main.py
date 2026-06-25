@@ -7,8 +7,14 @@ from app.routes import ingest
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    await connect_redis()
-    await connect_mongo()
+    try:
+        await connect_redis()
+    except Exception as e:
+        print(f"[WARN] Redis 연결 실패: {e}")
+    try:
+        await connect_mongo()
+    except Exception as e:
+        print(f"[WARN] MongoDB 연결 실패: {e}")
     yield
     await close_redis()
     await close_mongo()
@@ -19,7 +25,6 @@ app = FastAPI(
     description="크롤링 / 문서 인제스트 / 금융 데이터 수집",
     version="1.0.0",
     lifespan=lifespan,
-    root_path="/api",
 )
 
 app.include_router(ingest.router)

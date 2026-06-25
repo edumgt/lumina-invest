@@ -26,7 +26,6 @@ app = FastAPI(
     description="회원가입 / 로그인 / 로그아웃 / 세션 관리",
     version="1.0.0",
     lifespan=lifespan,
-    root_path="/api",
 )
 
 app.include_router(auth.router)
