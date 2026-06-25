@@ -6,7 +6,13 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     libgomp1 \
+    ca-certificates \
     && rm -rf /var/lib/apt/lists/*
+
+# Amazon DocumentDB / RDS CA bundle
+RUN curl -fsSL https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem \
+    -o /usr/local/share/ca-certificates/rds-global-bundle.crt \
+    && update-ca-certificates
 
 # Python deps
 COPY requirements.txt ./

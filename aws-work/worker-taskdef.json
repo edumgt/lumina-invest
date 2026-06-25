@@ -1,0 +1,44 @@
+{
+  "family": "lumina-invest-worker",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "512",
+  "memory": "1024",
+  "executionRoleArn": "arn:aws:iam::086015456585:role/ecsTaskExecutionRole",
+  "taskRoleArn": "arn:aws:iam::086015456585:role/luminaInvestTaskRole",
+  "containerDefinitions": [
+    {
+      "name": "worker",
+      "image": "086015456585.dkr.ecr.ap-northeast-2.amazonaws.com/lumina-invest:latest",
+      "essential": true,
+      "command": [
+        "celery",
+        "-A", "app.celery_app",
+        "worker",
+        "--loglevel=info",
+        "--concurrency=2",
+        "--queues=celery"
+      ],
+      "environment": [
+        { "name": "MONGO_DB", "value": "fin_agent" }
+      ],
+      "secrets": [
+        { "name": "MONGO_URI",       "valueFrom": "arn:aws:secretsmanager:ap-northeast-2:086015456585:secret:lumina-invest/prod/app-c4WE2y:MONGO_URI::" },
+        { "name": "REDIS_URL",       "valueFrom": "arn:aws:secretsmanager:ap-northeast-2:086015456585:secret:lumina-invest/prod/app-c4WE2y:REDIS_URL::" },
+        { "name": "OLLAMA_BASE_URL", "valueFrom": "arn:aws:secretsmanager:ap-northeast-2:086015456585:secret:lumina-invest/prod/app-c4WE2y:OLLAMA_BASE_URL::" },
+        { "name": "QDRANT_URL",      "valueFrom": "arn:aws:secretsmanager:ap-northeast-2:086015456585:secret:lumina-invest/prod/app-c4WE2y:QDRANT_URL::" },
+        { "name": "NEO4J_URI",       "valueFrom": "arn:aws:secretsmanager:ap-northeast-2:086015456585:secret:lumina-invest/prod/app-c4WE2y:NEO4J_URI::" },
+        { "name": "NEO4J_USER",      "valueFrom": "arn:aws:secretsmanager:ap-northeast-2:086015456585:secret:lumina-invest/prod/app-c4WE2y:NEO4J_USER::" },
+        { "name": "NEO4J_PASSWORD",  "valueFrom": "arn:aws:secretsmanager:ap-northeast-2:086015456585:secret:lumina-invest/prod/app-c4WE2y:NEO4J_PASSWORD::" }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/lumina-invest-worker",
+          "awslogs-region": "ap-northeast-2",
+          "awslogs-stream-prefix": "ecs"
+        }
+      }
+    }
+  ]
+}

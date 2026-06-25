@@ -1,0 +1,20 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": ["ecs:RunTask"],
+      "Resource": [
+        "arn:aws:ecs:ap-northeast-2:086015456585:task-definition/lumina-invest-worker:*"
+      ]
+    },
+    {
+      "Effect": "Allow",
+      "Action": ["iam:PassRole"],
+      "Resource": [
+        "arn:aws:iam::086015456585:role/ecsTaskExecutionRole",
+        "arn:aws:iam::086015456585:role/luminaInvestTaskRole"
+      ]
+    }
+  ]
+}

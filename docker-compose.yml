@@ -3,7 +3,7 @@ services:
     image: neo4j:5.18-community
     container_name: fin-ai-neo4j
     ports:
-    - "7474:7474"
+    - "17474:7474"
     - "7687:7687"
     environment:
     - NEO4J_AUTH=neo4j/finagent123

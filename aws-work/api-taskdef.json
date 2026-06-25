@@ -1,0 +1,53 @@
+{
+  "family": "lumina-invest-api",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "1024",
+  "memory": "2048",
+  "executionRoleArn": "arn:aws:iam::086015456585:role/ecsTaskExecutionRole",
+  "taskRoleArn": "arn:aws:iam::086015456585:role/luminaInvestTaskRole",
+  "containerDefinitions": [
+    {
+      "name": "api",
+      "image": "086015456585.dkr.ecr.ap-northeast-2.amazonaws.com/lumina-invest:latest",
+      "essential": true,
+      "portMappings": [
+        {
+          "containerPort": 8000,
+          "protocol": "tcp"
+        }
+      ],
+      "environment": [
+        { "name": "MONGO_DB",       "value": "fin_agent" },
+        { "name": "TRUST_PROXY",    "value": "true" },
+        { "name": "COOKIE_SECURE",  "value": "true" }
+      ],
+      "secrets": [
+        { "name": "SESSION_SECRET",  "valueFrom": "arn:aws:secretsmanager:ap-northeast-2:086015456585:secret:lumina-invest/prod/app-c4WE2y:SESSION_SECRET::" },
+        { "name": "JWT_SECRET",      "valueFrom": "arn:aws:secretsmanager:ap-northeast-2:086015456585:secret:lumina-invest/prod/app-c4WE2y:JWT_SECRET::" },
+        { "name": "MONGO_URI",       "valueFrom": "arn:aws:secretsmanager:ap-northeast-2:086015456585:secret:lumina-invest/prod/app-c4WE2y:MONGO_URI::" },
+        { "name": "REDIS_URL",       "valueFrom": "arn:aws:secretsmanager:ap-northeast-2:086015456585:secret:lumina-invest/prod/app-c4WE2y:REDIS_URL::" },
+        { "name": "OLLAMA_BASE_URL", "valueFrom": "arn:aws:secretsmanager:ap-northeast-2:086015456585:secret:lumina-invest/prod/app-c4WE2y:OLLAMA_BASE_URL::" },
+        { "name": "QDRANT_URL",      "valueFrom": "arn:aws:secretsmanager:ap-northeast-2:086015456585:secret:lumina-invest/prod/app-c4WE2y:QDRANT_URL::" },
+        { "name": "NEO4J_URI",       "valueFrom": "arn:aws:secretsmanager:ap-northeast-2:086015456585:secret:lumina-invest/prod/app-c4WE2y:NEO4J_URI::" },
+        { "name": "NEO4J_USER",      "valueFrom": "arn:aws:secretsmanager:ap-northeast-2:086015456585:secret:lumina-invest/prod/app-c4WE2y:NEO4J_USER::" },
+        { "name": "NEO4J_PASSWORD",  "valueFrom": "arn:aws:secretsmanager:ap-northeast-2:086015456585:secret:lumina-invest/prod/app-c4WE2y:NEO4J_PASSWORD::" }
+      ],
+      "healthCheck": {
+        "command": ["CMD-SHELL", "curl -f http://localhost:8000/api/health || exit 1"],
+        "interval": 30,
+        "timeout": 10,
+        "retries": 3,
+        "startPeriod": 60
+      },
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/lumina-invest-api",
+          "awslogs-region": "ap-northeast-2",
+          "awslogs-stream-prefix": "ecs"
+        }
+      }
+    }
+  ]
+}
