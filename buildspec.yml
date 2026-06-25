@@ -1,0 +1,73 @@
+version: 0.2
+
+env:
+  variables:
+    REGION: ap-northeast-2
+    ACCOUNT_ID: "086015456585"
+    CLUSTER: lumina-prod
+
+phases:
+  pre_build:
+    commands:
+      - ECR_BASE="${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com"
+      - aws ecr get-login-password --region $REGION | docker login --username AWS --password-stdin $ECR_BASE
+      - echo "Login succeeded"
+
+  build:
+    commands:
+      # ── auth-service (Lambda) ─────────────────────────────────────────────
+      - |
+        docker build --platform linux/amd64 --provenance=false \
+          -t ${ECR_BASE}/auth-service:latest \
+          -t ${ECR_BASE}/auth-service:${CODEBUILD_RESOLVED_SOURCE_VERSION} \
+          -f services/auth-service/Dockerfile services/auth-service/
+      - docker push ${ECR_BASE}/auth-service:latest
+      - docker push ${ECR_BASE}/auth-service:${CODEBUILD_RESOLVED_SOURCE_VERSION}
+
+      # ── crawl-service (Lambda) ────────────────────────────────────────────
+      - |
+        docker build --platform linux/amd64 --provenance=false \
+          -t ${ECR_BASE}/crawl-service:latest \
+          -t ${ECR_BASE}/crawl-service:${CODEBUILD_RESOLVED_SOURCE_VERSION} \
+          -f services/crawl-service/Dockerfile services/crawl-service/
+      - docker push ${ECR_BASE}/crawl-service:latest
+      - docker push ${ECR_BASE}/crawl-service:${CODEBUILD_RESOLVED_SOURCE_VERSION}
+
+      # ── core-service (ECS) ────────────────────────────────────────────────
+      - |
+        docker build --platform linux/amd64 --provenance=false \
+          -t ${ECR_BASE}/lumina-invest:latest \
+          -t ${ECR_BASE}/lumina-invest:${CODEBUILD_RESOLVED_SOURCE_VERSION} \
+          .
+      - docker push ${ECR_BASE}/lumina-invest:latest
+      - docker push ${ECR_BASE}/lumina-invest:${CODEBUILD_RESOLVED_SOURCE_VERSION}
+
+  post_build:
+    commands:
+      # ── Lambda 코드 업데이트 ───────────────────────────────────────────────
+      - |
+        aws lambda update-function-code \
+          --function-name lumina-auth-service \
+          --image-uri ${ECR_BASE}/auth-service:latest \
+          --region $REGION
+      - |
+        aws lambda update-function-code \
+          --function-name lumina-crawl-service \
+          --image-uri ${ECR_BASE}/crawl-service:latest \
+          --region $REGION
+
+      # ── ECS 롤링 배포 ─────────────────────────────────────────────────────
+      - |
+        aws ecs update-service \
+          --cluster $CLUSTER \
+          --service lumina-invest-api-svc \
+          --force-new-deployment \
+          --region $REGION
+      - |
+        aws ecs update-service \
+          --cluster $CLUSTER \
+          --service lumina-invest-worker-svc \
+          --force-new-deployment \
+          --region $REGION
+
+      - echo "All deployments triggered."

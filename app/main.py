@@ -8,7 +8,7 @@ from fastapi.responses import FileResponse, RedirectResponse
 from app.database.mongo import connect_mongo, close_mongo, ensure_indexes
 from app.database.neo4j import connect_neo4j, close_neo4j, ensure_graph_schema
 from app.lib.redis_cache import connect_redis, close_redis
-from app.routes import health, auth, chat, ingest, stocks, library, admin, system, quant, ml, macro, documents, notification, graph, conversations, tasks
+from app.routes import health, chat, stocks, library, admin, system, quant, ml, macro, documents, notification, graph, conversations, tasks
 from app.services.data_cache import ensure_cache_index
 from app.services.graph_service import seed_graph
 from app.services.sync_scheduler import start_sync_scheduler, stop_sync_scheduler
@@ -51,11 +51,9 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# 라우터 등록
+# 라우터 등록 (auth → auth-service Lambda, ingest → crawl-service Lambda)
 app.include_router(health.router)
-app.include_router(auth.router)
 app.include_router(chat.router)
-app.include_router(ingest.router)
 app.include_router(stocks.router)
 app.include_router(library.router)
 app.include_router(admin.router)
