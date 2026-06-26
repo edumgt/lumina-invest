@@ -1,0 +1,41 @@
+#!/bin/bash
+set -euo pipefail
+
+dnf install -y redis6
+systemctl enable redis6 --now
+
+curl -fsSL https://ollama.ai/install.sh | sh
+systemctl enable ollama --now
+
+rpm --import https://debian.neo4j.com/neotechnology.gpg.key
+cat > /etc/yum.repos.d/neo4j.repo <<'NEO4J_REPO'
+[neo4j]
+name=Neo4j RPM Repository
+baseurl=https://yum.neo4j.com/stable/5
+enabled=1
+gpgcheck=1
+NEO4J_REPO
+dnf install -y neo4j
+systemctl enable neo4j --now
+
+curl -fsSL https://github.com/qdrant/qdrant/releases/latest/download/qdrant-x86_64-unknown-linux-musl.tar.gz | tar xz -C /usr/local/bin/
+cat > /etc/systemd/system/qdrant.service <<'QDRANT_SVC'
+[Unit]
+Description=Qdrant vector database
+After=network.target
+
+[Service]
+ExecStart=/usr/local/bin/qdrant
+Restart=on-failure
+WorkingDirectory=/data/qdrant
+
+[Install]
+WantedBy=multi-user.target
+QDRANT_SVC
+mkdir -p /data/qdrant
+systemctl daemon-reload
+systemctl enable qdrant --now
+
+mkdir -p {{ lumina_osaka.dependency_host.data_dir }}
+chown ec2-user:ec2-user {{ lumina_osaka.dependency_host.data_dir }}
+

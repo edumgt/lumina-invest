@@ -1,0 +1,87 @@
+---
+- name: Look up Amazon Linux 2023 AMI
+  amazon.aws.ec2_ami_info:
+    owners:
+      - amazon
+    filters:
+      name: al2023-ami-*-x86_64
+      virtualization-type: hvm
+      state: available
+  register: lumina_osaka_ami_info
+
+- name: Ensure Osaka dependency host security group exists
+  amazon.aws.ec2_security_group:
+    name: "{{ lumina_osaka.security_groups.dependency }}"
+    description: EC2 native services for Lumina Osaka
+    vpc_id: "{{ lumina_osaka_vpc_id }}"
+    rules:
+      - proto: tcp
+        from_port: 6379
+        to_port: 6379
+        group_name:
+          - "{{ lumina_osaka.security_groups.ecs }}"
+        rule_desc: ECS to Redis
+      - proto: tcp
+        from_port: 11434
+        to_port: 11434
+        group_name:
+          - "{{ lumina_osaka.security_groups.ecs }}"
+        rule_desc: ECS to Ollama
+      - proto: tcp
+        from_port: 6333
+        to_port: 6333
+        group_name:
+          - "{{ lumina_osaka.security_groups.ecs }}"
+        rule_desc: ECS to Qdrant
+      - proto: tcp
+        from_port: 7687
+        to_port: 7687
+        group_name:
+          - "{{ lumina_osaka.security_groups.ecs }}"
+        rule_desc: ECS to Neo4j bolt
+    rules_egress:
+      - proto: -1
+        cidr_ip:
+          - 0.0.0.0/0
+    tags: "{{ lumina_osaka.tags | combine({'Name': lumina_osaka.security_groups.dependency}) }}"
+
+- name: Ensure Osaka dependency host exists
+  amazon.aws.ec2_instance:
+    name: "{{ lumina_osaka.dependency_host.instance_name }}"
+    exact_count: 1
+    image_id: "{{ (lumina_osaka_ami_info.images | sort(attribute='creation_date'))[-1].image_id }}"
+    instance_type: "{{ lumina_osaka.dependency_host.instance_type }}"
+    vpc_subnet_id: "{{ lumina_osaka_public_subnet_id }}"
+    security_group: "{{ lumina_osaka.security_groups.dependency }}"
+    iam_instance_profile: "{{ lumina_osaka.iam.ec2_ssm_role }}"
+    network_interfaces:
+      - assign_public_ip: true
+        private_ip_address: "{{ lumina_osaka.dependency_host.private_ip }}"
+        subnet_id: "{{ lumina_osaka_public_subnet_id }}"
+        groups:
+          - "{{ lumina_osaka.security_groups.dependency }}"
+    volumes:
+      - device_name: /dev/xvda
+        ebs:
+          volume_size: "{{ lumina_osaka.dependency_host.root_volume_size }}"
+          volume_type: gp3
+          delete_on_termination: true
+    user_data: "{{ lookup('template', 'dependency-host-userdata.sh.j2') }}"
+    tags: "{{ lumina_osaka.tags | combine({'Name': lumina_osaka.dependency_host.instance_name}) }}"
+    wait: true
+  register: lumina_osaka_ec2_result
+
+- name: Set dependency host facts
+  ansible.builtin.set_fact:
+    lumina_osaka_dependency_instance_id: "{{ lumina_osaka_ec2_result.instance_ids[0] }}"
+    lumina_osaka_dependency_private_ip: "{{ lumina_osaka.dependency_host.private_ip }}"
+
+- name: Ensure Osaka dependency host elastic IP exists
+  amazon.aws.ec2_eip:
+    device_id: "{{ lumina_osaka_dependency_instance_id }}"
+    in_vpc: true
+    tag_name: Name
+    tag_value: lumina-osaka-dependency-eip
+    state: present
+  register: lumina_osaka_eip_result
+

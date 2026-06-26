@@ -1,0 +1,73 @@
+---
+- name: Ensure Osaka build directory exists
+  ansible.builtin.file:
+    path: "{{ playbook_dir | dirname }}/build/osaka"
+    state: directory
+    mode: "0755"
+
+- name: Ensure Osaka VPC exists
+  amazon.aws.ec2_vpc_net:
+    name: "{{ lumina_osaka.network.vpc_name }}"
+    cidr_block:
+      - "{{ lumina_osaka.network.vpc_cidr }}"
+    dns_support: true
+    dns_hostnames: true
+    tags: "{{ lumina_osaka.tags | combine({'Name': lumina_osaka.network.vpc_name}) }}"
+  register: lumina_osaka_vpc_result
+
+- name: Set Osaka VPC fact
+  ansible.builtin.set_fact:
+    lumina_osaka_vpc_id: "{{ lumina_osaka_vpc_result.vpc.id | default(lumina_osaka_vpc_result.vpc_id) }}"
+
+- name: Ensure Osaka internet gateway exists
+  amazon.aws.ec2_vpc_igw:
+    vpc_id: "{{ lumina_osaka_vpc_id }}"
+    state: present
+    tags: "{{ lumina_osaka.tags | combine({'Name': lumina_osaka.network.igw_name}) }}"
+  register: lumina_osaka_igw_result
+
+- name: Ensure Osaka subnets exist
+  amazon.aws.ec2_vpc_subnet:
+    vpc_id: "{{ lumina_osaka_vpc_id }}"
+    cidr: "{{ item.cidr }}"
+    az: "{{ item.az }}"
+    map_public: "{{ item.map_public }}"
+    tags: "{{ lumina_osaka.tags | combine({'Name': item.name, 'Role': item.role}) }}"
+  loop: "{{ lumina_osaka.network.subnets }}"
+  register: lumina_osaka_subnet_results
+
+- name: Build Osaka subnet maps
+  ansible.builtin.set_fact:
+    lumina_osaka_subnet_id_map: "{{ lumina_osaka_subnet_id_map | default({}) | combine({item.item.key: (item.subnet.id | default(item.subnet_id))}) }}"
+    lumina_osaka_subnet_role_map: "{{ lumina_osaka_subnet_role_map | default({}) | combine({item.item.key: item.item.role}) }}"
+  loop: "{{ lumina_osaka_subnet_results.results }}"
+
+- name: Set Osaka subnet group facts
+  ansible.builtin.set_fact:
+    lumina_osaka_app_subnet_ids:
+      - "{{ lumina_osaka_subnet_id_map.app_a }}"
+      - "{{ lumina_osaka_subnet_id_map.app_b }}"
+    lumina_osaka_alb_subnet_ids:
+      - "{{ lumina_osaka_subnet_id_map.app_a }}"
+      - "{{ lumina_osaka_subnet_id_map.app_b }}"
+    lumina_osaka_docdb_subnet_ids:
+      - "{{ lumina_osaka_subnet_id_map.docdb_a }}"
+      - "{{ lumina_osaka_subnet_id_map.docdb_b }}"
+      - "{{ lumina_osaka_subnet_id_map.docdb_c }}"
+    lumina_osaka_public_subnet_id: "{{ lumina_osaka_subnet_id_map.public_c }}"
+
+- name: Ensure Osaka main route table exists
+  amazon.aws.ec2_vpc_route_table:
+    vpc_id: "{{ lumina_osaka_vpc_id }}"
+    tags: "{{ lumina_osaka.tags | combine({'Name': lumina_osaka.network.route_table_name}) }}"
+    subnets:
+      - "{{ lumina_osaka_subnet_id_map.app_a }}"
+      - "{{ lumina_osaka_subnet_id_map.app_b }}"
+      - "{{ lumina_osaka_subnet_id_map.public_c }}"
+      - "{{ lumina_osaka_subnet_id_map.docdb_a }}"
+      - "{{ lumina_osaka_subnet_id_map.docdb_b }}"
+      - "{{ lumina_osaka_subnet_id_map.docdb_c }}"
+    routes:
+      - dest: 0.0.0.0/0
+        gateway_id: "{{ lumina_osaka_igw_result.gateway_id }}"
+

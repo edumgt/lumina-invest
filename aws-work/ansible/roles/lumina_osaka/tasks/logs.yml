@@ -1,0 +1,18 @@
+---
+- name: Ensure Osaka ECS log groups exist
+  amazon.aws.cloudwatchlogs_log_group:
+    state: present
+    log_group_name: "{{ item.log_group }}"
+    retention: 14
+  loop:
+    - "{{ lumina_osaka.ecs.services.api }}"
+    - "{{ lumina_osaka.ecs.services.worker }}"
+
+- name: Ensure Osaka Lambda log groups exist
+  amazon.aws.cloudwatchlogs_log_group:
+    state: present
+    log_group_name: "{{ item.log_group }}"
+    retention: 14
+  loop:
+    - "{{ lumina_osaka.lambda.auth }}"
+    - "{{ lumina_osaka.lambda.crawl }}"

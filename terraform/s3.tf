@@ -2,7 +2,7 @@
 # Frontend static bucket
 # ─────────────────────────────────────────
 resource "aws_s3_bucket" "front" {
-  bucket = "lumina-invest-front-${var.account_id}"
+  bucket = "lumina-invest-front-${var.account_id}-${var.region}"
   tags   = { Name = "lumina-invest-front" }
 }
 
@@ -40,7 +40,7 @@ resource "aws_s3_bucket_policy" "front" {
 # CodePipeline source bucket
 # ─────────────────────────────────────────
 resource "aws_s3_bucket" "source" {
-  bucket = "lumina-source-${var.account_id}"
+  bucket = "lumina-source-${var.account_id}-${var.region}"
   tags   = { Name = "lumina-source" }
 }
 
@@ -53,6 +53,6 @@ resource "aws_s3_bucket_versioning" "source" {
 # CodePipeline artifacts bucket
 # ─────────────────────────────────────────
 resource "aws_s3_bucket" "pipeline_artifacts" {
-  bucket = "lumina-pipeline-artifacts-${var.account_id}"
+  bucket = "lumina-pipeline-artifacts-${var.account_id}-${var.region}"
   tags   = { Name = "lumina-pipeline-artifacts" }
 }

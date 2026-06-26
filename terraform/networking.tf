@@ -31,7 +31,7 @@ resource "aws_subnet" "private_a" {
 resource "aws_subnet" "private_b" {
   vpc_id                  = aws_vpc.main.id
   cidr_block              = "172.30.32.0/19"
-  availability_zone       = "${var.region}b"
+  availability_zone       = "${var.region}d"  # 이 계정 도쿄 AZ: a/c/d (b 없음)
   map_public_ip_on_launch = true
 
   tags = { Name = "subnet-test-b" }
@@ -49,7 +49,7 @@ resource "aws_subnet" "public_c" {
 resource "aws_subnet" "private_d" {
   vpc_id                  = aws_vpc.main.id
   cidr_block              = "172.30.64.0/18"
-  availability_zone       = "${var.region}d"
+  availability_zone       = "${var.region}c"  # 도쿄(ap-northeast-1)는 a/b/c 3개 AZ
   map_public_ip_on_launch = true
 
   tags = { Name = "subnet-test-d" }

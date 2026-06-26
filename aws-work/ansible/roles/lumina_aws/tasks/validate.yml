@@ -10,7 +10,7 @@
       - lumina_secret_string is mapping
       - lumina_secret_string | length > 0
     fail_msg: >-
-      inventories/prod/group_vars/all.yml 와 secrets.sample.yml 값을 먼저 검토해 주세요.
+      선택한 inventory 의 group_vars/all.yml 과 group_vars/secrets.yml 값을 먼저 검토해 주세요.
       ECS 앱 서브넷 2개 이상, ALB 서브넷 2개 이상, Secret 매핑이 필요합니다.
 
 - name: Assert placeholder ALB subnet was replaced
@@ -19,6 +19,29 @@
       - "'REPLACE-WITH-SECOND-PUBLIC-SUBNET' not in (lumina_alb.subnet_ids | join(','))"
     fail_msg: >-
       lumina_alb.subnet_ids 에 실제 두 번째 public subnet ID를 넣어 주세요.
+
+- name: Assert critical placeholders were replaced
+  ansible.builtin.assert:
+    that:
+      - "'REPLACE-WITH' not in (lumina_validation_required_values | to_nice_yaml)"
+    fail_msg: >-
+      현재 inventory 에 REPLACE-WITH placeholder 가 남아 있습니다.
+      VPC, Subnet, ALB/API Gateway/CloudFront, Secret ARN, Scheduler ARN 값을 실제 오사카 리소스 값으로 바꿔 주세요.
+  vars:
+    lumina_validation_required_values:
+      aws_region: "{{ aws_region }}"
+      lumina_vpc_id: "{{ lumina_vpc_id }}"
+      lumina_app_subnets: "{{ lumina_subnet_ids.app }}"
+      lumina_alb_subnets: "{{ lumina_alb.subnet_ids }}"
+      lumina_docdb_subnets: "{{ lumina_subnet_ids.docdb }}"
+      lumina_secret_arn: "{{ lumina_secret.arn }}"
+      lumina_alb_dns: "{{ lumina_alb.dns_name }}"
+      lumina_cf_distribution_id: "{{ lumina_cloudfront.distribution_id }}"
+      lumina_cf_domain_name: "{{ lumina_cloudfront.domain_name }}"
+      lumina_auth_origin: "{{ lumina_cloudfront.origins.auth_api.domain_name }}"
+      lumina_crawl_origin: "{{ lumina_cloudfront.origins.crawl_api.domain_name }}"
+      lumina_scheduler_cluster_arn: "{{ lumina_scheduler.cluster_arn }}"
+      lumina_scheduler_task_definition_arn: "{{ lumina_scheduler.task_definition_arn }}"
 
 - name: Ensure build directory exists
   ansible.builtin.file:

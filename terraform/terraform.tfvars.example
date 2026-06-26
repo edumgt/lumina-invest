@@ -1,5 +1,5 @@
 # Copy to terraform.tfvars (do NOT commit terraform.tfvars to git)
-region     = "ap-northeast-2"
+region     = "ap-northeast-1"
 account_id = "086015456585"
 
 # Provide sensitive vars via environment variables to avoid storing them in files:

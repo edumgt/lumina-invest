@@ -1,0 +1,98 @@
+---
+- name: Ensure Osaka ECS execution role exists
+  amazon.aws.iam_role:
+    name: "{{ lumina_osaka.iam.ecs_execution_role }}"
+    description: ECS task execution role for Lumina Osaka
+    assume_role_policy_document:
+      Version: "2012-10-17"
+      Statement:
+        - Effect: Allow
+          Principal:
+            Service: ecs-tasks.amazonaws.com
+          Action: sts:AssumeRole
+    managed_policies:
+      - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+    purge_policies: false
+    create_instance_profile: false
+    tags: "{{ lumina_osaka.tags | combine({'Name': lumina_osaka.iam.ecs_execution_role}) }}"
+
+- name: Ensure Osaka ECS execution role can read secrets
+  amazon.aws.iam_policy:
+    iam_type: role
+    iam_name: "{{ lumina_osaka.iam.ecs_execution_role }}"
+    policy_name: SecretsManagerReadAccess
+    policy_json:
+      Version: "2012-10-17"
+      Statement:
+        - Effect: Allow
+          Action:
+            - secretsmanager:GetSecretValue
+            - secretsmanager:DescribeSecret
+          Resource:
+            - "arn:aws:secretsmanager:{{ aws_region }}:{{ aws_account_id }}:secret:{{ lumina_osaka.secret.name }}*"
+    state: present
+
+- name: Ensure Osaka ECS application task role exists
+  amazon.aws.iam_role:
+    name: "{{ lumina_osaka.iam.ecs_task_role }}"
+    description: Application task role for Lumina Osaka ECS workloads
+    assume_role_policy_document:
+      Version: "2012-10-17"
+      Statement:
+        - Effect: Allow
+          Principal:
+            Service: ecs-tasks.amazonaws.com
+          Action: sts:AssumeRole
+    create_instance_profile: false
+    tags: "{{ lumina_osaka.tags | combine({'Name': lumina_osaka.iam.ecs_task_role}) }}"
+
+- name: Ensure Osaka Lambda execution role exists
+  amazon.aws.iam_role:
+    name: "{{ lumina_osaka.iam.lambda_exec_role }}"
+    description: Lambda execution role for Lumina Osaka
+    assume_role_policy_document:
+      Version: "2012-10-17"
+      Statement:
+        - Effect: Allow
+          Principal:
+            Service: lambda.amazonaws.com
+          Action: sts:AssumeRole
+    managed_policies:
+      - arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole
+    purge_policies: false
+    create_instance_profile: false
+    tags: "{{ lumina_osaka.tags | combine({'Name': lumina_osaka.iam.lambda_exec_role}) }}"
+
+- name: Ensure Osaka Lambda execution role can read secrets
+  amazon.aws.iam_policy:
+    iam_type: role
+    iam_name: "{{ lumina_osaka.iam.lambda_exec_role }}"
+    policy_name: SecretsManagerReadAccess
+    policy_json:
+      Version: "2012-10-17"
+      Statement:
+        - Effect: Allow
+          Action:
+            - secretsmanager:GetSecretValue
+            - secretsmanager:DescribeSecret
+          Resource:
+            - "arn:aws:secretsmanager:{{ aws_region }}:{{ aws_account_id }}:secret:{{ lumina_osaka.secret.name }}*"
+    state: present
+
+- name: Ensure Osaka EC2 SSM role exists
+  amazon.aws.iam_role:
+    name: "{{ lumina_osaka.iam.ec2_ssm_role }}"
+    description: EC2 SSM role for Lumina Osaka dependency host
+    assume_role_policy_document:
+      Version: "2012-10-17"
+      Statement:
+        - Effect: Allow
+          Principal:
+            Service: ec2.amazonaws.com
+          Action: sts:AssumeRole
+    managed_policies:
+      - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+    purge_policies: false
+    create_instance_profile: true
+    tags: "{{ lumina_osaka.tags | combine({'Name': lumina_osaka.iam.ec2_ssm_role}) }}"
+

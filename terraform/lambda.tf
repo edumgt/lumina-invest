@@ -86,7 +86,7 @@ data "archive_file" "slack_notify" {
           color_map = {"SUCCEEDED": "#36a64f", "FAILED": "#d00000", "STARTED": "#439FE0"}
           color = color_map.get(state, "#888888")
 
-          region     = os.environ.get("AWS_REGION", "ap-northeast-2")
+          region     = os.environ.get("AWS_REGION", "ap-northeast-1")
           console    = f"https://console.aws.amazon.com/codesuite/codepipeline/pipelines/{pipeline}/view?region={region}"
           homepage   = os.environ.get("HOMEPAGE_URL", "https://d3ls3wdarllhnf.cloudfront.net")
 

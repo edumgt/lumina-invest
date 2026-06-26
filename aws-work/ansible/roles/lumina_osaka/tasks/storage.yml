@@ -1,0 +1,30 @@
+---
+- name: Ensure Osaka front bucket exists
+  amazon.aws.s3_bucket:
+    name: "{{ lumina_osaka.buckets.front }}"
+    state: present
+    encryption: AES256
+    object_ownership: BucketOwnerEnforced
+    public_access:
+      block_public_acls: true
+      ignore_public_acls: true
+      block_public_policy: true
+      restrict_public_buckets: true
+    tags: "{{ lumina_osaka.tags | combine({'Name': lumina_osaka.buckets.front}) }}"
+
+- name: Ensure Osaka source bucket exists
+  amazon.aws.s3_bucket:
+    name: "{{ lumina_osaka.buckets.source }}"
+    state: present
+    encryption: AES256
+    object_ownership: BucketOwnerEnforced
+    tags: "{{ lumina_osaka.tags | combine({'Name': lumina_osaka.buckets.source}) }}"
+
+- name: Ensure Osaka artifacts bucket exists
+  amazon.aws.s3_bucket:
+    name: "{{ lumina_osaka.buckets.artifacts }}"
+    state: present
+    encryption: AES256
+    object_ownership: BucketOwnerEnforced
+    tags: "{{ lumina_osaka.tags | combine({'Name': lumina_osaka.buckets.artifacts}) }}"
+

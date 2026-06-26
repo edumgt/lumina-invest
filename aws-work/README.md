@@ -8,8 +8,11 @@
 `aws-work/ansible` 아래에 현재 운영값을 기준으로 한 Ansible IaC 프로젝트를 추가했습니다.
 
 - 실행 진입점: `aws-work/ansible/playbooks/site.yml`
-- 인벤토리: `aws-work/ansible/inventories/prod/group_vars/all.yml`
-- 시크릿 샘플: `aws-work/ansible/inventories/prod/group_vars/secrets.sample.yml`
+- 서울 운영 인벤토리: `aws-work/ansible/inventories/prod/group_vars/all.yml`
+- 오사카 인벤토리: `aws-work/ansible/inventories/osaka/group_vars/all.yml`
+- 시크릿 샘플:
+  `aws-work/ansible/inventories/prod/group_vars/secrets.sample.yml`
+  `aws-work/ansible/inventories/osaka/group_vars/secrets.sample.yml`
 - 생성 결과물: `aws-work/ansible/build/`
 
 설계 원칙:
@@ -23,10 +26,19 @@
 ```bash
 cd aws-work/ansible
 ansible-galaxy collection install -r collections/requirements.yml
+# 서울 운영 배포
 # inventories/prod/group_vars/secrets.yml 의 placeholder 값을 실제 값으로 수정
 # inventories/prod/group_vars/all.yml 의 ALB 두 번째 public subnet ID도 수정
 ansible-playbook playbooks/site.yml
+
+# 오사카 리전 배포
+# inventories/osaka/group_vars/all.yml 의 VPC/Subnet/SG/ALB/API Gateway/CloudFront placeholder 값을 수정
+# inventories/osaka/group_vars/secrets.yml 의 placeholder 값을 실제 값으로 수정
+ansible-playbook -i inventories/osaka/hosts.yml playbooks/site.yml
 ```
+
+오사카 인벤토리는 `ap-northeast-3` 기준으로 분리해 두었고, 현재는 리전만 맞춘 scaffold 상태입니다.
+실제 AWS 리소스 ID와 엔드포인트는 오사카 환경 값으로 치환해야 합니다.
 
 아키텍처 다이어그램:
 

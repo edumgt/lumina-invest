@@ -1,0 +1,151 @@
+{
+  "CallerReference": "{{ lumina_osaka.cloudfront.caller_reference }}",
+  "Comment": "{{ lumina_osaka.cloudfront.comment }}",
+  "Enabled": true,
+  "DefaultRootObject": "{{ lumina_osaka.cloudfront.default_root_object }}",
+  "Origins": {
+    "Quantity": 4,
+    "Items": [
+      {
+        "Id": "s3-front",
+        "DomainName": "{{ lumina_osaka.buckets.front }}.s3.{{ aws_region }}.amazonaws.com",
+        "S3OriginConfig": {
+          "OriginAccessIdentity": ""
+        },
+        "OriginAccessControlId": "{{ lumina_osaka_oac_id }}"
+      },
+      {
+        "Id": "alb-api",
+        "DomainName": "{{ lumina_osaka_alb_dns_name }}",
+        "CustomOriginConfig": {
+          "HTTPPort": 80,
+          "HTTPSPort": 443,
+          "OriginProtocolPolicy": "http-only",
+          "OriginSslProtocols": {
+            "Quantity": 1,
+            "Items": [
+              "TLSv1.2"
+            ]
+          }
+        }
+      },
+      {
+        "Id": "apigw-auth",
+        "DomainName": "{{ lumina_osaka_auth_api_domain }}",
+        "CustomOriginConfig": {
+          "HTTPPort": 80,
+          "HTTPSPort": 443,
+          "OriginProtocolPolicy": "https-only",
+          "OriginSslProtocols": {
+            "Quantity": 1,
+            "Items": [
+              "TLSv1.2"
+            ]
+          }
+        }
+      },
+      {
+        "Id": "apigw-crawl",
+        "DomainName": "{{ lumina_osaka_crawl_api_domain }}",
+        "CustomOriginConfig": {
+          "HTTPPort": 80,
+          "HTTPSPort": 443,
+          "OriginProtocolPolicy": "https-only",
+          "OriginSslProtocols": {
+            "Quantity": 1,
+            "Items": [
+              "TLSv1.2"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  "DefaultCacheBehavior": {
+    "TargetOriginId": "s3-front",
+    "ViewerProtocolPolicy": "redirect-to-https",
+    "AllowedMethods": {
+      "Quantity": 2,
+      "Items": ["GET", "HEAD"],
+      "CachedMethods": {
+        "Quantity": 2,
+        "Items": ["GET", "HEAD"]
+      }
+    },
+    "Compress": true,
+    "ForwardedValues": {
+      "QueryString": false,
+      "Cookies": { "Forward": "none" }
+    },
+    "MinTTL": 0
+  },
+  "CacheBehaviors": {
+    "Quantity": 3,
+    "Items": [
+      {
+        "PathPattern": "/api/auth/*",
+        "TargetOriginId": "apigw-auth",
+        "ViewerProtocolPolicy": "redirect-to-https",
+        "AllowedMethods": {
+          "Quantity": 7,
+          "Items": ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"],
+          "CachedMethods": {
+            "Quantity": 2,
+            "Items": ["GET", "HEAD"]
+          }
+        },
+        "Compress": true,
+        "ForwardedValues": {
+          "QueryString": true,
+          "Headers": { "Quantity": 4, "Items": ["Authorization", "Content-Type", "Cookie", "Origin"] },
+          "Cookies": { "Forward": "all" }
+        },
+        "MinTTL": 0
+      },
+      {
+        "PathPattern": "/api/ingest/*",
+        "TargetOriginId": "apigw-crawl",
+        "ViewerProtocolPolicy": "redirect-to-https",
+        "AllowedMethods": {
+          "Quantity": 7,
+          "Items": ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"],
+          "CachedMethods": {
+            "Quantity": 2,
+            "Items": ["GET", "HEAD"]
+          }
+        },
+        "Compress": true,
+        "ForwardedValues": {
+          "QueryString": true,
+          "Headers": { "Quantity": 3, "Items": ["Authorization", "Content-Type", "Origin"] },
+          "Cookies": { "Forward": "all" }
+        },
+        "MinTTL": 0
+      },
+      {
+        "PathPattern": "/api/*",
+        "TargetOriginId": "alb-api",
+        "ViewerProtocolPolicy": "redirect-to-https",
+        "AllowedMethods": {
+          "Quantity": 7,
+          "Items": ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"],
+          "CachedMethods": {
+            "Quantity": 2,
+            "Items": ["GET", "HEAD"]
+          }
+        },
+        "Compress": true,
+        "ForwardedValues": {
+          "QueryString": true,
+          "Headers": { "Quantity": 5, "Items": ["Authorization", "Content-Type", "Cookie", "X-Forwarded-For", "Origin"] },
+          "Cookies": { "Forward": "all" }
+        },
+        "MinTTL": 0
+      }
+    ]
+  },
+  "ViewerCertificate": {
+    "CloudFrontDefaultCertificate": true
+  }
+}
+

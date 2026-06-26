@@ -1,0 +1,94 @@
+---
+- name: Look up Osaka CloudFront OAC
+  ansible.builtin.command:
+    argv:
+      - aws
+      - cloudfront
+      - list-origin-access-controls
+      - --query
+      - "OriginAccessControlList.Items[?Name=='lumina-invest-oac-osaka'].Id | [0]"
+      - --output
+      - text
+  register: lumina_osaka_oac_lookup
+  changed_when: false
+
+- name: Create Osaka CloudFront OAC if absent
+  ansible.builtin.command:
+    argv:
+      - aws
+      - cloudfront
+      - create-origin-access-control
+      - --origin-access-control-config
+      - "{{ {'Name': 'lumina-invest-oac-osaka', 'Description': 'OAC for Lumina Osaka front bucket', 'SigningProtocol': 'sigv4', 'SigningBehavior': 'always', 'OriginAccessControlOriginType': 's3'} | to_json }}"
+      - --query
+      - OriginAccessControl.Id
+      - --output
+      - text
+  register: lumina_osaka_oac_create
+  when: lumina_osaka_oac_lookup.stdout in ['None', '']
+
+- name: Set Osaka OAC fact
+  ansible.builtin.set_fact:
+    lumina_osaka_oac_id: "{{ lumina_osaka_oac_create.stdout if (lumina_osaka_oac_lookup.stdout in ['None', '']) else lumina_osaka_oac_lookup.stdout }}"
+
+- name: Render Osaka CloudFront config
+  ansible.builtin.template:
+    src: cloudfront-distribution-config.json.j2
+    dest: "{{ playbook_dir | dirname }}/build/osaka/cloudfront-distribution-config.json"
+    mode: "0644"
+
+- name: Look up Osaka CloudFront distribution by comment
+  ansible.builtin.command:
+    argv:
+      - aws
+      - cloudfront
+      - list-distributions
+      - --query
+      - "DistributionList.Items[?Comment=='{{ lumina_osaka.cloudfront.comment }}'].Id | [0]"
+      - --output
+      - text
+  register: lumina_osaka_cf_lookup
+  changed_when: false
+
+- name: Create Osaka CloudFront distribution if absent
+  ansible.builtin.command:
+    argv:
+      - aws
+      - cloudfront
+      - create-distribution
+      - --distribution-config
+      - "file://{{ playbook_dir | dirname }}/build/osaka/cloudfront-distribution-config.json"
+  register: lumina_osaka_cf_create
+  when: lumina_osaka_cf_lookup.stdout in ['None', '']
+
+- name: Read Osaka CloudFront distribution details
+  ansible.builtin.command:
+    argv:
+      - aws
+      - cloudfront
+      - get-distribution
+      - --id
+      - "{{ (lumina_osaka_cf_create.stdout | from_json).Distribution.Id if (lumina_osaka_cf_lookup.stdout in ['None', '']) else lumina_osaka_cf_lookup.stdout }}"
+  register: lumina_osaka_cf_get
+  changed_when: false
+
+- name: Set Osaka CloudFront facts
+  ansible.builtin.set_fact:
+    lumina_osaka_cloudfront_id: "{{ (lumina_osaka_cf_get.stdout | from_json).Distribution.Id }}"
+    lumina_osaka_cloudfront_arn: "{{ (lumina_osaka_cf_get.stdout | from_json).Distribution.ARN }}"
+    lumina_osaka_cloudfront_domain: "{{ (lumina_osaka_cf_get.stdout | from_json).Distribution.DomainName }}"
+
+- name: Apply Osaka front bucket policy for CloudFront
+  amazon.aws.s3_bucket:
+    name: "{{ lumina_osaka.buckets.front }}"
+    state: present
+    policy: "{{ lookup('template', 'front-bucket-policy.json.j2') }}"
+    encryption: AES256
+    object_ownership: BucketOwnerEnforced
+    public_access:
+      block_public_acls: true
+      ignore_public_acls: true
+      block_public_policy: true
+      restrict_public_buckets: true
+    tags: "{{ lumina_osaka.tags | combine({'Name': lumina_osaka.buckets.front}) }}"
+

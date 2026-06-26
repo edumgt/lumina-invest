@@ -1,0 +1,11 @@
+---
+- name: Assert required Osaka secret values exist
+  ansible.builtin.assert:
+    that:
+      - lumina_osaka_secret_values.SESSION_SECRET | length >= 16
+      - lumina_osaka_secret_values.JWT_SECRET | length >= 16
+      - lumina_osaka_docdb_master_password | length >= 8
+      - lumina_osaka.network.subnets | length >= 6
+    fail_msg: >-
+      inventories/osaka/group_vars/all.yml 과 secrets.yml 의 값을 먼저 확인해 주세요.
+

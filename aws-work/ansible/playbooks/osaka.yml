@@ -1,0 +1,15 @@
+---
+- name: Provision Lumina Invest Osaka with pure Ansible
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  collections:
+    - amazon.aws
+    - community.aws
+  vars_files:
+    - "{{ (inventory_dir | default(playbook_dir | dirname ~ '/inventories/osaka')) ~ '/group_vars/secrets.yml' }}"
+  environment:
+    AWS_REGION: "{{ aws_region }}"
+    AWS_DEFAULT_REGION: "{{ aws_region }}"
+  roles:
+    - lumina_osaka

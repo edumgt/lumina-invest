@@ -1,0 +1,65 @@
+---
+- name: Ensure Osaka auth API Gateway exists
+  ansible.builtin.shell: |
+    set -euo pipefail
+    api_id="$(aws apigatewayv2 get-apis --region {{ aws_region }} --query "Items[?Name=='{{ lumina_osaka.api_gateway.auth_name }}'].ApiId | [0]" --output text)"
+    if [ "$api_id" = "None" ] || [ -z "$api_id" ]; then
+      api_id="$(aws apigatewayv2 create-api --region {{ aws_region }} --name {{ lumina_osaka.api_gateway.auth_name }} --protocol-type HTTP --query ApiId --output text)"
+      integration_id="$(aws apigatewayv2 create-integration --region {{ aws_region }} --api-id "$api_id" --integration-type AWS_PROXY --integration-uri arn:aws:lambda:{{ aws_region }}:{{ aws_account_id }}:function:{{ lumina_osaka.lambda.auth.function_name }} --payload-format-version 2.0 --query IntegrationId --output text)"
+      aws apigatewayv2 create-route --region {{ aws_region }} --api-id "$api_id" --route-key '$default' --target "integrations/$integration_id" >/dev/null
+      aws apigatewayv2 create-stage --region {{ aws_region }} --api-id "$api_id" --stage-name '$default' --auto-deploy >/dev/null
+      echo "$api_id created"
+    else
+      echo "$api_id existing"
+    fi
+  args:
+    executable: /bin/bash
+  register: lumina_osaka_auth_api_result
+  changed_when: "'created' in lumina_osaka_auth_api_result.stdout"
+
+- name: Set Osaka auth API ID fact
+  ansible.builtin.set_fact:
+    lumina_osaka_auth_api_id: "{{ lumina_osaka_auth_api_result.stdout.split()[0] }}"
+
+- name: Ensure Osaka crawl API Gateway exists
+  ansible.builtin.shell: |
+    set -euo pipefail
+    api_id="$(aws apigatewayv2 get-apis --region {{ aws_region }} --query "Items[?Name=='{{ lumina_osaka.api_gateway.crawl_name }}'].ApiId | [0]" --output text)"
+    if [ "$api_id" = "None" ] || [ -z "$api_id" ]; then
+      api_id="$(aws apigatewayv2 create-api --region {{ aws_region }} --name {{ lumina_osaka.api_gateway.crawl_name }} --protocol-type HTTP --query ApiId --output text)"
+      integration_id="$(aws apigatewayv2 create-integration --region {{ aws_region }} --api-id "$api_id" --integration-type AWS_PROXY --integration-uri arn:aws:lambda:{{ aws_region }}:{{ aws_account_id }}:function:{{ lumina_osaka.lambda.crawl.function_name }} --payload-format-version 2.0 --query IntegrationId --output text)"
+      aws apigatewayv2 create-route --region {{ aws_region }} --api-id "$api_id" --route-key '$default' --target "integrations/$integration_id" >/dev/null
+      aws apigatewayv2 create-stage --region {{ aws_region }} --api-id "$api_id" --stage-name '$default' --auto-deploy >/dev/null
+      echo "$api_id created"
+    else
+      echo "$api_id existing"
+    fi
+  args:
+    executable: /bin/bash
+  register: lumina_osaka_crawl_api_result
+  changed_when: "'created' in lumina_osaka_crawl_api_result.stdout"
+
+- name: Set Osaka crawl API ID fact
+  ansible.builtin.set_fact:
+    lumina_osaka_crawl_api_id: "{{ lumina_osaka_crawl_api_result.stdout.split()[0] }}"
+    lumina_osaka_auth_api_domain: "{{ lumina_osaka_auth_api_id }}.execute-api.{{ aws_region }}.amazonaws.com"
+    lumina_osaka_crawl_api_domain: "{{ lumina_osaka_crawl_api_id }}.execute-api.{{ aws_region }}.amazonaws.com"
+
+- name: Allow API Gateway to invoke Osaka auth Lambda
+  amazon.aws.lambda_policy:
+    state: present
+    function_name: "{{ lumina_osaka.lambda.auth.function_name }}"
+    statement_id: lumina-osaka-apigw-auth
+    action: lambda:InvokeFunction
+    principal: apigateway.amazonaws.com
+    source_arn: "arn:aws:execute-api:{{ aws_region }}:{{ aws_account_id }}:{{ lumina_osaka_auth_api_id }}/*/*"
+
+- name: Allow API Gateway to invoke Osaka crawl Lambda
+  amazon.aws.lambda_policy:
+    state: present
+    function_name: "{{ lumina_osaka.lambda.crawl.function_name }}"
+    statement_id: lumina-osaka-apigw-crawl
+    action: lambda:InvokeFunction
+    principal: apigateway.amazonaws.com
+    source_arn: "arn:aws:execute-api:{{ aws_region }}:{{ aws_account_id }}:{{ lumina_osaka_crawl_api_id }}/*/*"
+

@@ -1,0 +1,45 @@
+---
+- name: Validate Osaka inputs
+  ansible.builtin.import_tasks: validate.yml
+
+- name: Create Osaka network
+  ansible.builtin.import_tasks: network.yml
+
+- name: Create Osaka security groups
+  ansible.builtin.import_tasks: security.yml
+
+- name: Create Osaka IAM resources
+  ansible.builtin.import_tasks: iam.yml
+
+- name: Create Osaka ECR repositories
+  ansible.builtin.import_tasks: ecr.yml
+
+- name: Launch dependency host
+  ansible.builtin.import_tasks: ec2.yml
+
+- name: Create DocumentDB
+  ansible.builtin.import_tasks: docdb.yml
+
+- name: Store runtime secrets
+  ansible.builtin.import_tasks: secrets.yml
+
+- name: Create log groups
+  ansible.builtin.import_tasks: logs.yml
+
+- name: Build and push container images
+  ansible.builtin.import_tasks: images.yml
+
+- name: Create S3 buckets
+  ansible.builtin.import_tasks: storage.yml
+
+- name: Create ECS and ALB resources
+  ansible.builtin.import_tasks: ecs.yml
+
+- name: Create Lambda functions
+  ansible.builtin.import_tasks: lambda.yml
+
+- name: Create API Gateway v2 endpoints
+  ansible.builtin.import_tasks: apigw.yml
+
+- name: Create CloudFront distribution
+  ansible.builtin.import_tasks: edge.yml

@@ -1,0 +1,33 @@
+---
+- name: Ensure Osaka auth Lambda exists
+  amazon.aws.lambda:
+    name: "{{ lumina_osaka.lambda.auth.function_name }}"
+    state: present
+    package_type: Image
+    image_uri: "{{ lumina_osaka.lambda.auth.image_uri }}"
+    role: "arn:aws:iam::{{ aws_account_id }}:role/{{ lumina_osaka.iam.lambda_exec_role }}"
+    memory_size: "{{ lumina_osaka.lambda.auth.memory_size }}"
+    timeout: "{{ lumina_osaka.lambda.auth.timeout }}"
+    vpc_subnet_ids: "{{ lumina_osaka_app_subnet_ids }}"
+    vpc_security_group_ids:
+      - "{{ lumina_osaka_ecs_security_group_id }}"
+    environment_variables:
+      SECRET_NAME: "{{ lumina_osaka.secret.name }}"
+      AWS_REGION: "{{ aws_region }}"
+
+- name: Ensure Osaka crawl Lambda exists
+  amazon.aws.lambda:
+    name: "{{ lumina_osaka.lambda.crawl.function_name }}"
+    state: present
+    package_type: Image
+    image_uri: "{{ lumina_osaka.lambda.crawl.image_uri }}"
+    role: "arn:aws:iam::{{ aws_account_id }}:role/{{ lumina_osaka.iam.lambda_exec_role }}"
+    memory_size: "{{ lumina_osaka.lambda.crawl.memory_size }}"
+    timeout: "{{ lumina_osaka.lambda.crawl.timeout }}"
+    vpc_subnet_ids: "{{ lumina_osaka_app_subnet_ids }}"
+    vpc_security_group_ids:
+      - "{{ lumina_osaka_ecs_security_group_id }}"
+    environment_variables:
+      SECRET_NAME: "{{ lumina_osaka.secret.name }}"
+      AWS_REGION: "{{ aws_region }}"
+

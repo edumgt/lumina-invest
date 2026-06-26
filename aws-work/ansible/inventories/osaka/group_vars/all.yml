@@ -1,0 +1,193 @@
+---
+aws_region: ap-northeast-3
+aws_account_id: "086015456585"
+
+lumina_osaka:
+  environment: osaka
+  app_name: lumina-invest
+  repo_root: /home/ubuntu/lumina-invest
+  tags:
+    Project: lumina-invest
+    Environment: osaka
+    ManagedBy: ansible
+    Region: ap-northeast-3
+
+  network:
+    vpc_name: lumina-osaka-vpc
+    vpc_cidr: 10.30.0.0/16
+    igw_name: lumina-osaka-igw
+    route_table_name: lumina-osaka-main-rt
+    subnets:
+      - key: app_a
+        name: lumina-osaka-app-a
+        cidr: 10.30.0.0/20
+        az: ap-northeast-3a
+        map_public: true
+        role: app
+      - key: app_b
+        name: lumina-osaka-app-b
+        cidr: 10.30.16.0/20
+        az: ap-northeast-3b
+        map_public: true
+        role: app
+      - key: public_c
+        name: lumina-osaka-public-c
+        cidr: 10.30.32.0/24
+        az: ap-northeast-3c
+        map_public: true
+        role: public
+      - key: docdb_a
+        name: lumina-osaka-docdb-a
+        cidr: 10.30.48.0/24
+        az: ap-northeast-3a
+        map_public: false
+        role: docdb
+      - key: docdb_b
+        name: lumina-osaka-docdb-b
+        cidr: 10.30.49.0/24
+        az: ap-northeast-3b
+        map_public: false
+        role: docdb
+      - key: docdb_c
+        name: lumina-osaka-docdb-c
+        cidr: 10.30.50.0/24
+        az: ap-northeast-3c
+        map_public: false
+        role: docdb
+
+  security_groups:
+    alb: lumina-alb-sg-osaka
+    ecs: lumina-ecs-sg-osaka
+    docdb: lumina-docdb-sg-osaka
+    dependency: lumina-ec2-services-sg-osaka
+
+  iam:
+    ecs_execution_role: ecsTaskExecutionRoleOsaka
+    ecs_task_role: luminaInvestTaskRoleOsaka
+    lambda_exec_role: lumina-lambda-exec-role-osaka
+    ec2_ssm_role: lumina-ec2-ssm-role-osaka
+    ec2_instance_profile: lumina-ec2-ssm-profile-osaka
+
+  ecr:
+    repositories:
+      - lumina-invest
+      - auth-service
+      - crawl-service
+
+  dependency_host:
+    instance_name: lumina-dependency-host-osaka
+    instance_type: t3.medium
+    subnet_key: public_c
+    private_ip: 10.30.32.131
+    root_volume_size: 30
+    data_dir: /data/lumina-invest
+
+  docdb:
+    subnet_group_name: lumina-docdb-subnet-group-osaka
+    cluster_identifier: lumina-docdb-osaka
+    instance_identifier: lumina-docdb-osaka-1
+    instance_class: db.t3.medium
+    master_username: docdbuser
+    db_name: fin_agent
+
+  secret:
+    name: lumina-invest/osaka/app
+    description: Runtime secrets for Lumina Invest Osaka workloads
+
+  buckets:
+    front: lumina-invest-front-osaka-086015456585
+    source: lumina-source-osaka-086015456585
+    artifacts: lumina-pipeline-artifacts-osaka-086015456585
+
+  alb:
+    name: lumina-alb-osaka
+    target_group_name: lumina-api-tg-osaka
+    health_check_path: /api/health
+    health_check_matcher: "200-399"
+
+  ecs:
+    cluster_name: lumina-osaka
+    assign_public_ip: true
+    services:
+      api:
+        service_name: lumina-invest-api-svc-osaka
+        family: lumina-invest-api-osaka
+        container_name: api
+        desired_count: 2
+        cpu: "1024"
+        memory: "2048"
+        port: 8000
+        image: 086015456585.dkr.ecr.ap-northeast-3.amazonaws.com/lumina-invest:latest
+        log_group: /ecs/lumina-invest-api-osaka
+        environment:
+          - name: MONGO_DB
+            value: fin_agent
+          - name: TRUST_PROXY
+            value: "true"
+          - name: COOKIE_SECURE
+            value: "true"
+        secret_keys:
+          - SESSION_SECRET
+          - JWT_SECRET
+          - MONGO_URI
+          - REDIS_URL
+          - OLLAMA_BASE_URL
+          - QDRANT_URL
+          - NEO4J_URI
+          - NEO4J_USER
+          - NEO4J_PASSWORD
+      worker:
+        service_name: lumina-invest-worker-svc-osaka
+        family: lumina-invest-worker-osaka
+        container_name: worker
+        desired_count: 1
+        cpu: "512"
+        memory: "1024"
+        image: 086015456585.dkr.ecr.ap-northeast-3.amazonaws.com/lumina-invest:latest
+        log_group: /ecs/lumina-invest-worker-osaka
+        command:
+          - celery
+          - -A
+          - app.celery_app
+          - worker
+          - --loglevel=info
+          - --concurrency=2
+          - --queues=celery
+        environment:
+          - name: MONGO_DB
+            value: fin_agent
+        secret_keys:
+          - MONGO_URI
+          - REDIS_URL
+          - OLLAMA_BASE_URL
+          - QDRANT_URL
+          - NEO4J_URI
+          - NEO4J_USER
+          - NEO4J_PASSWORD
+
+  lambda:
+    auth:
+      function_name: lumina-auth-service-osaka
+      repository: auth-service
+      image_uri: 086015456585.dkr.ecr.ap-northeast-3.amazonaws.com/auth-service:latest
+      memory_size: 512
+      timeout: 30
+      log_group: /aws/lambda/lumina-auth-service-osaka
+    crawl:
+      function_name: lumina-crawl-service-osaka
+      repository: crawl-service
+      image_uri: 086015456585.dkr.ecr.ap-northeast-3.amazonaws.com/crawl-service:latest
+      memory_size: 1024
+      timeout: 300
+      log_group: /aws/lambda/lumina-crawl-service-osaka
+
+  api_gateway:
+    auth_name: lumina-auth-api-osaka
+    crawl_name: lumina-crawl-api-osaka
+
+  cloudfront:
+    comment: Lumina Osaka front
+    caller_reference: lumina-osaka-ansible
+    default_root_object: login.html
+    aliases: []
+

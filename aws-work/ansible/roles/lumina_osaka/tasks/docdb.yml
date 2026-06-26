@@ -1,0 +1,140 @@
+---
+- name: Ensure Osaka DocumentDB security group exists
+  amazon.aws.ec2_security_group:
+    name: "{{ lumina_osaka.security_groups.docdb }}"
+    description: DocumentDB access for Lumina Osaka
+    vpc_id: "{{ lumina_osaka_vpc_id }}"
+    rules:
+      - proto: tcp
+        from_port: 27017
+        to_port: 27017
+        group_name:
+          - "{{ lumina_osaka.security_groups.ecs }}"
+        rule_desc: ECS to DocumentDB
+    rules_egress:
+      - proto: -1
+        cidr_ip:
+          - 0.0.0.0/0
+    tags: "{{ lumina_osaka.tags | combine({'Name': lumina_osaka.security_groups.docdb}) }}"
+
+- name: Create or update Osaka DocumentDB subnet group
+  ansible.builtin.shell: |
+    set -euo pipefail
+    if aws docdb describe-db-subnet-groups --region {{ aws_region }} --db-subnet-group-name {{ lumina_osaka.docdb.subnet_group_name }} >/dev/null 2>&1; then
+      aws docdb modify-db-subnet-group \
+        --region {{ aws_region }} \
+        --db-subnet-group-name {{ lumina_osaka.docdb.subnet_group_name }} \
+        --db-subnet-group-description "Lumina Osaka DocDB subnet group" \
+        --subnet-ids {{ lumina_osaka_docdb_subnet_ids | join(' ') }} >/dev/null
+    else
+      aws docdb create-db-subnet-group \
+        --region {{ aws_region }} \
+        --db-subnet-group-name {{ lumina_osaka.docdb.subnet_group_name }} \
+        --db-subnet-group-description "Lumina Osaka DocDB subnet group" \
+        --subnet-ids {{ lumina_osaka_docdb_subnet_ids | join(' ') }} >/dev/null
+    fi
+  args:
+    executable: /bin/bash
+  changed_when: true
+
+- name: Create Osaka DocumentDB cluster if absent
+  ansible.builtin.shell: |
+    set -euo pipefail
+    if aws docdb describe-db-clusters --region {{ aws_region }} --db-cluster-identifier {{ lumina_osaka.docdb.cluster_identifier }} >/dev/null 2>&1; then
+      echo exists
+    else
+      aws docdb create-db-cluster \
+        --region {{ aws_region }} \
+        --db-cluster-identifier {{ lumina_osaka.docdb.cluster_identifier }} \
+        --engine docdb \
+        --master-username {{ lumina_osaka.docdb.master_username }} \
+        --master-user-password '{{ lumina_osaka_docdb_master_password }}' \
+        --db-subnet-group-name {{ lumina_osaka.docdb.subnet_group_name }} \
+        --vpc-security-group-ids "$(aws ec2 describe-security-groups --region {{ aws_region }} --filters Name=group-name,Values={{ lumina_osaka.security_groups.docdb }} Name=vpc-id,Values={{ lumina_osaka_vpc_id }} --query 'SecurityGroups[0].GroupId' --output text)" \
+        --storage-encrypted >/dev/null
+      echo created
+    fi
+  args:
+    executable: /bin/bash
+  register: lumina_osaka_docdb_cluster_create
+  changed_when: "'created' in lumina_osaka_docdb_cluster_create.stdout"
+
+- name: Wait for Osaka DocumentDB cluster
+  ansible.builtin.command:
+    argv:
+      - aws
+      - docdb
+      - describe-db-clusters
+      - --region
+      - "{{ aws_region }}"
+      - --db-cluster-identifier
+      - "{{ lumina_osaka.docdb.cluster_identifier }}"
+      - --query
+      - DBClusters[0].Status
+      - --output
+      - text
+  register: lumina_osaka_docdb_cluster_status
+  changed_when: false
+  until: lumina_osaka_docdb_cluster_status.stdout == "available"
+  retries: 60
+  delay: 30
+
+- name: Create Osaka DocumentDB instance if absent
+  ansible.builtin.shell: |
+    set -euo pipefail
+    if aws docdb describe-db-instances --region {{ aws_region }} --db-instance-identifier {{ lumina_osaka.docdb.instance_identifier }} >/dev/null 2>&1; then
+      echo exists
+    else
+      aws docdb create-db-instance \
+        --region {{ aws_region }} \
+        --db-instance-identifier {{ lumina_osaka.docdb.instance_identifier }} \
+        --db-cluster-identifier {{ lumina_osaka.docdb.cluster_identifier }} \
+        --engine docdb \
+        --db-instance-class {{ lumina_osaka.docdb.instance_class }} >/dev/null
+      echo created
+    fi
+  args:
+    executable: /bin/bash
+  register: lumina_osaka_docdb_instance_create
+  changed_when: "'created' in lumina_osaka_docdb_instance_create.stdout"
+
+- name: Wait for Osaka DocumentDB instance
+  ansible.builtin.command:
+    argv:
+      - aws
+      - docdb
+      - describe-db-instances
+      - --region
+      - "{{ aws_region }}"
+      - --db-instance-identifier
+      - "{{ lumina_osaka.docdb.instance_identifier }}"
+      - --query
+      - DBInstances[0].DBInstanceStatus
+      - --output
+      - text
+  register: lumina_osaka_docdb_instance_status
+  changed_when: false
+  until: lumina_osaka_docdb_instance_status.stdout == "available"
+  retries: 60
+  delay: 30
+
+- name: Read Osaka DocumentDB endpoint
+  ansible.builtin.command:
+    argv:
+      - aws
+      - docdb
+      - describe-db-clusters
+      - --region
+      - "{{ aws_region }}"
+      - --db-cluster-identifier
+      - "{{ lumina_osaka.docdb.cluster_identifier }}"
+      - --query
+      - DBClusters[0].Endpoint
+      - --output
+      - text
+  register: lumina_osaka_docdb_endpoint_result
+  changed_when: false
+
+- name: Set Osaka DocumentDB endpoint fact
+  ansible.builtin.set_fact:
+    lumina_osaka_docdb_endpoint: "{{ lumina_osaka_docdb_endpoint_result.stdout }}"

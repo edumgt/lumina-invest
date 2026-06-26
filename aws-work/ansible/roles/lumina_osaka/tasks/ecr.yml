@@ -1,0 +1,9 @@
+---
+- name: Ensure Osaka ECR repositories exist
+  community.aws.ecs_ecr:
+    name: "{{ item }}"
+    scan_on_push: true
+    image_tag_mutability: mutable
+    state: present
+  loop: "{{ lumina_osaka.ecr.repositories }}"
+

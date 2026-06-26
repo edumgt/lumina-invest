@@ -1,0 +1,36 @@
+---
+- name: Log in to Osaka ECR
+  ansible.builtin.shell: |
+    set -euo pipefail
+    aws ecr get-login-password --region {{ aws_region }} | docker login --username AWS --password-stdin {{ aws_account_id }}.dkr.ecr.{{ aws_region }}.amazonaws.com
+  args:
+    executable: /bin/bash
+    chdir: "{{ lumina_osaka.repo_root }}"
+
+- name: Build and push Osaka core app image
+  ansible.builtin.shell: |
+    set -euo pipefail
+    docker build --platform linux/amd64 --provenance=false -t {{ lumina_osaka.ecs.services.api.image }} -f Dockerfile .
+    docker push {{ lumina_osaka.ecs.services.api.image }}
+  args:
+    executable: /bin/bash
+    chdir: "{{ lumina_osaka.repo_root }}"
+
+- name: Build and push Osaka auth lambda image
+  ansible.builtin.shell: |
+    set -euo pipefail
+    docker build --platform linux/amd64 --provenance=false -t {{ lumina_osaka.lambda.auth.image_uri }} -f services/auth-service/Dockerfile services/auth-service
+    docker push {{ lumina_osaka.lambda.auth.image_uri }}
+  args:
+    executable: /bin/bash
+    chdir: "{{ lumina_osaka.repo_root }}"
+
+- name: Build and push Osaka crawl lambda image
+  ansible.builtin.shell: |
+    set -euo pipefail
+    docker build --platform linux/amd64 --provenance=false -t {{ lumina_osaka.lambda.crawl.image_uri }} -f services/crawl-service/Dockerfile services/crawl-service
+    docker push {{ lumina_osaka.lambda.crawl.image_uri }}
+  args:
+    executable: /bin/bash
+    chdir: "{{ lumina_osaka.repo_root }}"
+

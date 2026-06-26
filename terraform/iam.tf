@@ -232,8 +232,8 @@ resource "aws_iam_role_policy" "codebuild_policy" {
         Effect = "Allow"
         Action = ["s3:GetObject", "s3:PutObject", "s3:GetBucketLocation"]
         Resource = [
-          "arn:aws:s3:::lumina-source-${var.account_id}/*",
-          "arn:aws:s3:::lumina-pipeline-artifacts-${var.account_id}/*",
+          "${aws_s3_bucket.source.arn}/*",
+          "${aws_s3_bucket.pipeline_artifacts.arn}/*",
         ]
       },
     ]
@@ -262,10 +262,10 @@ resource "aws_iam_role_policy" "codepipeline_policy" {
           "s3:GetBucketVersioning", "s3:PutObject",
         ]
         Resource = [
-          "arn:aws:s3:::lumina-source-${var.account_id}",
-          "arn:aws:s3:::lumina-source-${var.account_id}/*",
-          "arn:aws:s3:::lumina-pipeline-artifacts-${var.account_id}",
-          "arn:aws:s3:::lumina-pipeline-artifacts-${var.account_id}/*",
+          aws_s3_bucket.source.arn,
+          "${aws_s3_bucket.source.arn}/*",
+          aws_s3_bucket.pipeline_artifacts.arn,
+          "${aws_s3_bucket.pipeline_artifacts.arn}/*",
         ]
       },
       {
@@ -300,7 +300,7 @@ resource "aws_iam_role_policy" "ec2_s3_deploy" {
       {
         Effect   = "Allow"
         Action   = ["s3:PutObject", "s3:GetObject"]
-        Resource = ["arn:aws:s3:::lumina-source-${var.account_id}/*"]
+        Resource = ["${aws_s3_bucket.source.arn}/*"]
       },
       {
         Effect   = "Allow"
