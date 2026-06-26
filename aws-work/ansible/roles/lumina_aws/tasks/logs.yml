@@ -1,0 +1,9 @@
+---
+- name: Ensure ECS log groups exist
+  amazon.aws.cloudwatchlogs_log_group:
+    state: present
+    log_group_name: "{{ item.value.log_group }}"
+    retention: 30
+    tags: "{{ lumina_tags | combine({'Name': item.value.log_group}) }}"
+  loop: "{{ lumina_ecs.services | dict2items }}"
+

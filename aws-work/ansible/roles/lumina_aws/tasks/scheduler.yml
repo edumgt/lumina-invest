@@ -1,0 +1,46 @@
+---
+- name: Render Scheduler target payloads
+  ansible.builtin.template:
+    src: scheduler-target.json.j2
+    dest: "{{ lumina_ansible_root }}/build/{{ item.name }}-target.json"
+    mode: "0644"
+  loop: "{{ lumina_scheduler.schedules }}"
+
+- name: Render Scheduler input payloads
+  ansible.builtin.template:
+    src: scheduler-input.json.j2
+    dest: "{{ lumina_ansible_root }}/build/{{ item.name }}-input.json"
+    mode: "0644"
+  loop: "{{ lumina_scheduler.schedules }}"
+
+- name: Create or update scheduler jobs when explicitly enabled
+  ansible.builtin.shell: |
+    set -euo pipefail
+    if aws scheduler get-schedule --name "{{ item.name }}" >/dev/null 2>&1; then
+      aws scheduler update-schedule \
+        --name "{{ item.name }}" \
+        --description "{{ item.description }}" \
+        --schedule-expression '{{ item.schedule_expression }}' \
+        --schedule-expression-timezone "{{ item.timezone }}" \
+        --flexible-time-window '{"Mode":"OFF"}' \
+        --target "file://{{ lumina_ansible_root }}/build/{{ item.name }}-target.json"
+    else
+      aws scheduler create-schedule \
+        --name "{{ item.name }}" \
+        --description "{{ item.description }}" \
+        --schedule-expression '{{ item.schedule_expression }}' \
+        --schedule-expression-timezone "{{ item.timezone }}" \
+        --flexible-time-window '{"Mode":"OFF"}' \
+        --target "file://{{ lumina_ansible_root }}/build/{{ item.name }}-target.json"
+    fi
+  args:
+    executable: /bin/bash
+  loop: "{{ lumina_scheduler.schedules }}"
+  when: lumina_apply_scheduler_cli | bool
+
+- name: Explain Scheduler apply toggle
+  ansible.builtin.debug:
+    msg: >-
+      Scheduler payload를 build 디렉터리에 생성했습니다.
+      명령 반영은 lumina_apply_scheduler_cli=true 로 별도 활성화하는 흐름을 권장합니다.
+  when: not (lumina_apply_scheduler_cli | bool)

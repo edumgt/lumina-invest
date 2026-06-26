@@ -1,0 +1,125 @@
+---
+- name: Ensure ECS cluster exists
+  community.aws.ecs_cluster:
+    name: "{{ lumina_ecs.cluster_name }}"
+    state: present
+    capacity_providers:
+      - FARGATE
+      - FARGATE_SPOT
+    capacity_provider_strategy:
+      - capacity_provider: FARGATE
+        base: 1
+        weight: 1
+
+- name: Register API task definition
+  community.aws.ecs_taskdefinition:
+    state: present
+    family: "{{ lumina_ecs.services.api.family }}"
+    launch_type: FARGATE
+    network_mode: awsvpc
+    cpu: "{{ lumina_ecs.services.api.cpu }}"
+    memory: "{{ lumina_ecs.services.api.memory }}"
+    execution_role_arn: "arn:aws:iam::{{ aws_account_id }}:role/{{ lumina_ecs.execution_role_name }}"
+    task_role_arn: "arn:aws:iam::{{ aws_account_id }}:role/{{ lumina_ecs.task_role_name }}"
+    containers:
+      - "{{ lumina_ecs.services.api.container }}"
+  register: lumina_api_taskdef
+
+- name: Register worker task definition
+  community.aws.ecs_taskdefinition:
+    state: present
+    family: "{{ lumina_ecs.services.worker.family }}"
+    launch_type: FARGATE
+    network_mode: awsvpc
+    cpu: "{{ lumina_ecs.services.worker.cpu }}"
+    memory: "{{ lumina_ecs.services.worker.memory }}"
+    execution_role_arn: "arn:aws:iam::{{ aws_account_id }}:role/{{ lumina_ecs.execution_role_name }}"
+    task_role_arn: "arn:aws:iam::{{ aws_account_id }}:role/{{ lumina_ecs.task_role_name }}"
+    containers:
+      - "{{ lumina_ecs.services.worker.container }}"
+  register: lumina_worker_taskdef
+
+- name: Build latest task definition references
+  ansible.builtin.set_fact:
+    lumina_api_taskdef_ref: "{{ lumina_api_taskdef.family }}:{{ lumina_api_taskdef.revision }}"
+    lumina_worker_taskdef_ref: "{{ lumina_worker_taskdef.family }}:{{ lumina_worker_taskdef.revision }}"
+
+- name: Ensure API target group exists
+  community.aws.elb_target_group:
+    name: "{{ lumina_alb.target_group_name }}"
+    protocol: HTTP
+    port: "{{ lumina_ecs.services.api.port }}"
+    vpc_id: "{{ lumina_vpc_id }}"
+    target_type: ip
+    health_check_protocol: HTTP
+    health_check_path: "{{ lumina_alb.health_check_path }}"
+    health_check_port: traffic-port
+    healthy_threshold_count: 3
+    unhealthy_threshold_count: 3
+    health_check_interval: 30
+    health_check_timeout: 5
+    successful_response_codes: "{{ lumina_alb.health_check_matcher }}"
+    tags: "{{ lumina_tags | combine({'Name': lumina_alb.target_group_name}) }}"
+    state: present
+  register: lumina_api_tg
+
+- name: Ensure ALB exists
+  amazon.aws.elb_application_lb:
+    name: "{{ lumina_alb.name }}"
+    state: present
+    scheme: "{{ lumina_alb.scheme }}"
+    subnets: "{{ lumina_alb.subnet_ids }}"
+    security_groups:
+      - "{{ lumina_security_groups.alb.name }}"
+    purge_listeners: true
+    purge_rules: false
+    listeners:
+      - Protocol: HTTP
+        Port: "{{ lumina_alb.listener_port }}"
+        DefaultActions:
+          - Type: forward
+            TargetGroupArn: "{{ lumina_api_tg.target_group_arn }}"
+    tags: "{{ lumina_tags | combine({'Name': lumina_alb.name}) }}"
+  register: lumina_alb_result
+
+- name: Ensure API ECS service exists
+  community.aws.ecs_service:
+    state: present
+    name: "{{ lumina_ecs.services.api.service_name }}"
+    cluster: "{{ lumina_ecs.cluster_name }}"
+    task_definition: "{{ lumina_api_taskdef_ref }}"
+    desired_count: "{{ lumina_ecs.services.api.desired_count }}"
+    launch_type: FARGATE
+    network_configuration:
+      subnets: "{{ lumina_subnet_ids.app }}"
+      security_groups:
+        - "{{ lumina_security_groups.ecs.name }}"
+      assign_public_ip: "{{ lumina_ecs.assign_public_ip }}"
+    load_balancers:
+      - targetGroupArn: "{{ lumina_api_tg.target_group_arn }}"
+        containerName: "{{ lumina_ecs.services.api.container_name }}"
+        containerPort: "{{ lumina_ecs.services.api.port }}"
+    deployment_configuration:
+      maximum_percent: 200
+      minimum_healthy_percent: 50
+    force_new_deployment: true
+    tags: "{{ lumina_tags }}"
+
+- name: Ensure worker ECS service exists
+  community.aws.ecs_service:
+    state: present
+    name: "{{ lumina_ecs.services.worker.service_name }}"
+    cluster: "{{ lumina_ecs.cluster_name }}"
+    task_definition: "{{ lumina_worker_taskdef_ref }}"
+    desired_count: "{{ lumina_ecs.services.worker.desired_count }}"
+    launch_type: FARGATE
+    network_configuration:
+      subnets: "{{ lumina_subnet_ids.app }}"
+      security_groups:
+        - "{{ lumina_security_groups.ecs.name }}"
+      assign_public_ip: "{{ lumina_ecs.assign_public_ip }}"
+    deployment_configuration:
+      maximum_percent: 200
+      minimum_healthy_percent: 50
+    force_new_deployment: true
+    tags: "{{ lumina_tags }}"

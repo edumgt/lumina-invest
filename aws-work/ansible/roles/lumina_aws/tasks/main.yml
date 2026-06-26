@@ -1,0 +1,30 @@
+---
+- name: Validate inputs
+  ansible.builtin.import_tasks: validate.yml
+
+- name: Manage security groups
+  ansible.builtin.import_tasks: security.yml
+
+- name: Manage IAM roles and policies
+  ansible.builtin.import_tasks: iam.yml
+
+- name: Manage CloudWatch log groups
+  ansible.builtin.import_tasks: logs.yml
+
+- name: Manage runtime secrets
+  ansible.builtin.import_tasks: secrets.yml
+
+- name: Manage S3 buckets
+  ansible.builtin.import_tasks: storage.yml
+
+- name: Manage ECS and ALB resources
+  ansible.builtin.import_tasks: ecs.yml
+
+- name: Render CloudFront artifacts
+  ansible.builtin.import_tasks: edge.yml
+  when: lumina_ansible_manage_edge_artifacts | bool
+
+- name: Render scheduler artifacts
+  ansible.builtin.import_tasks: scheduler.yml
+  when: lumina_ansible_manage_scheduler_artifacts | bool
+

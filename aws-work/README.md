@@ -3,6 +3,31 @@
 `lumina-invest`의 AWS 포팅 및 운영 정보를 정리한 단일 문서입니다.  
 이 문서는 기존 `README.md`와 `readme2.md`를 합친 기준 문서이며, 실제 리소스 값과 운영 메모를 함께 담고 있습니다.
 
+## Ansible IaC
+
+`aws-work/ansible` 아래에 현재 운영값을 기준으로 한 Ansible IaC 프로젝트를 추가했습니다.
+
+- 실행 진입점: `aws-work/ansible/playbooks/site.yml`
+- 인벤토리: `aws-work/ansible/inventories/prod/group_vars/all.yml`
+- 시크릿 샘플: `aws-work/ansible/inventories/prod/group_vars/secrets.sample.yml`
+- 생성 결과물: `aws-work/ansible/build/`
+
+설계 원칙:
+
+- 현재 문서에 없는 Route Table / NAT 상세는 추정하지 않고, 기존 `VPC/Subnet/SG`를 입력값으로 참조합니다.
+- ECS, IAM, S3, Secrets Manager, ALB, CloudWatch Logs는 Ansible 모듈 기준으로 관리합니다.
+- CloudFront OAC, Scheduler payload는 Ansible이 JSON artifact를 렌더링하고, 실제 적용은 명시적으로 켜는 방식으로 분리했습니다.
+
+빠른 사용 예시:
+
+```bash
+cd aws-work/ansible
+ansible-galaxy collection install -r collections/requirements.yml
+# inventories/prod/group_vars/secrets.yml 의 placeholder 값을 실제 값으로 수정
+# inventories/prod/group_vars/all.yml 의 ALB 두 번째 public subnet ID도 수정
+ansible-playbook playbooks/site.yml
+```
+
 아키텍처 다이어그램:
 
 ![Lumina AWS Architecture](./lumina-aws-architecture.svg)

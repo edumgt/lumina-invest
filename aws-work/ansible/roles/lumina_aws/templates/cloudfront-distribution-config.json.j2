@@ -1,0 +1,135 @@
+{
+  "CallerReference": "{{ lumina_cloudfront.caller_reference }}",
+  "Comment": "{{ lumina_cloudfront.comment }}",
+  "Enabled": true,
+  "DefaultRootObject": "{{ lumina_cloudfront.default_root_object }}",
+  "Origins": {
+    "Quantity": 4,
+    "Items": [
+      {
+        "Id": "{{ lumina_cloudfront.origins.auth_api.id }}",
+        "DomainName": "{{ lumina_cloudfront.origins.auth_api.domain_name }}",
+        "OriginPath": "{{ lumina_cloudfront.origins.auth_api.origin_path }}",
+        "CustomOriginConfig": {
+          "HTTPPort": 80,
+          "HTTPSPort": 443,
+          "OriginProtocolPolicy": "https-only",
+          "OriginSslProtocols": {
+            "Quantity": 1,
+            "Items": [
+              "TLSv1.2"
+            ]
+          }
+        }
+      },
+      {
+        "Id": "{{ lumina_cloudfront.origins.crawl_api.id }}",
+        "DomainName": "{{ lumina_cloudfront.origins.crawl_api.domain_name }}",
+        "OriginPath": "{{ lumina_cloudfront.origins.crawl_api.origin_path }}",
+        "CustomOriginConfig": {
+          "HTTPPort": 80,
+          "HTTPSPort": 443,
+          "OriginProtocolPolicy": "https-only",
+          "OriginSslProtocols": {
+            "Quantity": 1,
+            "Items": [
+              "TLSv1.2"
+            ]
+          }
+        }
+      },
+      {
+        "Id": "{{ lumina_cloudfront.origins.alb_api.id }}",
+        "DomainName": "{{ lumina_cloudfront.origins.alb_api.domain_name }}",
+        "OriginPath": "{{ lumina_cloudfront.origins.alb_api.origin_path }}",
+        "CustomOriginConfig": {
+          "HTTPPort": 80,
+          "HTTPSPort": 443,
+          "OriginProtocolPolicy": "http-only",
+          "OriginSslProtocols": {
+            "Quantity": 1,
+            "Items": [
+              "TLSv1.2"
+            ]
+          }
+        }
+      },
+      {
+        "Id": "{{ lumina_cloudfront.origins.s3_front.id }}",
+        "DomainName": "{{ lumina_cloudfront.origins.s3_front.domain_name }}",
+        "S3OriginConfig": {
+          "OriginAccessIdentity": ""
+        },
+        "OriginAccessControlId": "{{ lumina_cloudfront.oac_id }}"
+      }
+    ]
+  },
+  "DefaultCacheBehavior": {
+    "TargetOriginId": "{{ lumina_cloudfront.origins.s3_front.id }}",
+    "ViewerProtocolPolicy": "redirect-to-https",
+    "AllowedMethods": {
+      "Quantity": 2,
+      "Items": [
+        "GET",
+        "HEAD"
+      ],
+      "CachedMethods": {
+        "Quantity": 2,
+        "Items": [
+          "GET",
+          "HEAD"
+        ]
+      }
+    },
+    "Compress": true,
+    "ForwardedValues": {
+      "QueryString": false,
+      "Cookies": {
+        "Forward": "none"
+      }
+    },
+    "MinTTL": 0
+  },
+  "CacheBehaviors": {
+    "Quantity": {{ lumina_cloudfront.cache_behaviors | length }},
+    "Items": [
+{% for behavior in lumina_cloudfront.cache_behaviors %}
+      {
+        "PathPattern": "{{ behavior.path_pattern }}",
+        "TargetOriginId": "{{ behavior.target_origin_id }}",
+        "ViewerProtocolPolicy": "redirect-to-https",
+        "AllowedMethods": {
+          "Quantity": {{ behavior.allowed_methods | length }},
+          "Items": {{ behavior.allowed_methods | to_json }},
+          "CachedMethods": {
+            "Quantity": 3,
+            "Items": [
+              "GET",
+              "HEAD",
+              "OPTIONS"
+            ]
+          }
+        },
+        "Compress": true,
+        "ForwardedValues": {
+          "QueryString": true,
+          "Cookies": {
+            "Forward": "all"
+          },
+          "Headers": {
+            "Quantity": 1,
+            "Items": [
+              "*"
+            ]
+          }
+        },
+        "MinTTL": 0
+      }{% if not loop.last %},{% endif %}
+{% endfor %}
+    ]
+  },
+  "ViewerCertificate": {
+    "CloudFrontDefaultCertificate": true
+  }
+}
+

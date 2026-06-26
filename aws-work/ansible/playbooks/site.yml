@@ -1,0 +1,14 @@
+---
+- name: Provision Lumina Invest AWS platform
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  collections:
+    - amazon.aws
+    - community.aws
+  vars_files:
+    - "{{ playbook_dir | dirname }}/inventories/prod/group_vars/secrets.yml"
+  vars:
+    lumina_ansible_root: "{{ playbook_dir | dirname }}"
+  roles:
+    - lumina_aws

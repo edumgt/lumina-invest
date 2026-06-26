@@ -1,0 +1,8 @@
+{
+  "containerOverrides": [
+    {
+      "name": "{{ lumina_ecs.services.worker.container_name }}",
+      "command": {{ item.command | to_json }}
+    }
+  ]
+}

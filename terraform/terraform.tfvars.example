@@ -1,0 +1,7 @@
+# Copy to terraform.tfvars (do NOT commit terraform.tfvars to git)
+region     = "ap-northeast-2"
+account_id = "086015456585"
+
+# Provide sensitive vars via environment variables to avoid storing them in files:
+#   export TF_VAR_docdb_master_password="your-secure-password"
+#   export TF_VAR_slack_webhook_url="https://hooks.slack.com/services/..."

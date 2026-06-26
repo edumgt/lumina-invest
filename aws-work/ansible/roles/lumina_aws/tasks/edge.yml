@@ -1,0 +1,67 @@
+---
+- name: Ensure front bucket policy exists for CloudFront OAC
+  amazon.aws.s3_bucket:
+    name: "{{ lumina_buckets.front.name }}"
+    state: present
+    policy: "{{ lookup('template', 'front-bucket-policy.json.j2') }}"
+    encryption: AES256
+    object_ownership: BucketOwnerEnforced
+    public_access:
+      block_public_acls: true
+      ignore_public_acls: true
+      block_public_policy: true
+      restrict_public_buckets: true
+    tags: "{{ lumina_tags | combine({'Name': lumina_buckets.front.name}) }}"
+
+- name: Render CloudFront distribution config
+  ansible.builtin.template:
+    src: cloudfront-distribution-config.json.j2
+    dest: "{{ lumina_ansible_root }}/build/cloudfront-distribution-config.json"
+    mode: "0644"
+
+- name: Apply CloudFront distribution config when explicitly enabled
+  ansible.builtin.command:
+    argv:
+      - aws
+      - cloudfront
+      - get-distribution-config
+      - --id
+      - "{{ lumina_cloudfront.distribution_id }}"
+      - --output
+      - json
+  register: lumina_cloudfront_get
+  changed_when: false
+  when: lumina_apply_cloudfront_cli | bool
+
+- name: Extract CloudFront ETag
+  ansible.builtin.set_fact:
+    lumina_cloudfront_etag: "{{ (lumina_cloudfront_get.stdout | from_json).ETag }}"
+  when: lumina_apply_cloudfront_cli | bool
+
+- name: Persist current CloudFront config metadata
+  ansible.builtin.copy:
+    content: "{{ lumina_cloudfront_get.stdout }}"
+    dest: "{{ lumina_ansible_root }}/build/cloudfront-current.json"
+    mode: "0644"
+  when: lumina_apply_cloudfront_cli | bool
+
+- name: Update CloudFront distribution from rendered config
+  ansible.builtin.command:
+    argv:
+      - aws
+      - cloudfront
+      - update-distribution
+      - --id
+      - "{{ lumina_cloudfront.distribution_id }}"
+      - --if-match
+      - "{{ lumina_cloudfront_etag }}"
+      - --distribution-config
+      - "file://{{ lumina_ansible_root }}/build/cloudfront-distribution-config.json"
+  when: lumina_apply_cloudfront_cli | bool
+
+- name: Explain CloudFront apply toggle
+  ansible.builtin.debug:
+    msg: >-
+      CloudFront 설정 파일을 build/cloudfront-distribution-config.json 에 생성했습니다.
+      실제 반영은 lumina_apply_cloudfront_cli=true 로 명시적으로 켜 주세요.
+  when: not (lumina_apply_cloudfront_cli | bool)

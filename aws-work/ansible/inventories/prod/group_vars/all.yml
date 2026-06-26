@@ -1,0 +1,259 @@
+---
+aws_region: ap-northeast-2
+aws_account_id: "086015456585"
+
+lumina_environment: prod
+lumina_app_name: lumina-invest
+lumina_ansible_manage_edge_artifacts: true
+lumina_ansible_manage_scheduler_artifacts: true
+lumina_apply_cloudfront_cli: false
+lumina_apply_scheduler_cli: false
+
+lumina_tags:
+  Project: lumina-invest
+  Environment: prod
+  ManagedBy: ansible
+
+lumina_vpc_id: vpc-01879d70df92987b9
+
+lumina_subnet_ids:
+  app:
+    - subnet-0d28ba1be9a1ff04c
+    - subnet-0e0cd6292f59623af
+  alb:
+    - subnet-0b7dcd7ba9c6836c0
+    - subnet-REPLACE-WITH-SECOND-PUBLIC-SUBNET
+  docdb:
+    - subnet-0d28ba1be9a1ff04c
+    - subnet-0e0cd6292f59623af
+    - subnet-084bfb82b09ef14e1
+
+lumina_security_groups:
+  alb:
+    name: lumina-alb-sg
+    id: sg-0cab122da7c919d78
+  ecs:
+    name: lumina-ecs-sg
+    id: sg-0baee9bc5a2ea90b0
+  docdb:
+    name: lumina-docdb-sg
+    id: sg-02cd84bcccf1eb18f
+  dependencies:
+    name: launch-wizard-1
+    id: sg-0dc3ec23151b1ce26
+
+lumina_dependency_host:
+  instance_id: i-0af91b80c1ada35f3
+  private_ip: 172.30.2.131
+  public_ip: 3.34.124.168
+
+lumina_secret:
+  name: lumina-invest/prod/app
+  arn: "arn:aws:secretsmanager:ap-northeast-2:086015456585:secret:lumina-invest/prod/app-c4WE2y"
+  description: Runtime secrets for Lumina Invest production workloads
+
+lumina_buckets:
+  front:
+    name: lumina-invest-front-086015456585
+  source:
+    name: lumina-source-086015456585
+  artifacts:
+    name: lumina-pipeline-artifacts-086015456585
+
+lumina_alb:
+  name: lumina-alb
+  scheme: internet-facing
+  listener_port: 80
+  subnet_ids:
+    - subnet-0b7dcd7ba9c6836c0
+    - subnet-REPLACE-WITH-SECOND-PUBLIC-SUBNET
+  target_group_name: lumina-api-tg
+  health_check_path: /api/health
+  health_check_matcher: "200-399"
+  dns_name: lumina-alb-1822566663.ap-northeast-2.elb.amazonaws.com
+
+lumina_cloudfront:
+  distribution_id: E2Z5V1W67DDW54
+  domain_name: d3ls3wdarllhnf.cloudfront.net
+  comment: Lumina front
+  caller_reference: lumina-invest-ansible
+  default_root_object: login.html
+  oac_id: E2HVAGOCBF9LUY
+  origins:
+    auth_api:
+      id: apigw-auth
+      domain_name: 6ow1q0ivg8.execute-api.ap-northeast-2.amazonaws.com
+      origin_path: ""
+    crawl_api:
+      id: apigw-crawl
+      domain_name: uzsod90nkd.execute-api.ap-northeast-2.amazonaws.com
+      origin_path: ""
+    alb_api:
+      id: alb-api
+      domain_name: lumina-alb-1822566663.ap-northeast-2.elb.amazonaws.com
+      origin_path: ""
+    s3_front:
+      id: s3-front
+      domain_name: lumina-invest-front-086015456585.s3.ap-northeast-2.amazonaws.com
+  cache_behaviors:
+    - path_pattern: /api/auth/*
+      target_origin_id: apigw-auth
+      allowed_methods:
+        - GET
+        - HEAD
+        - OPTIONS
+        - PUT
+        - PATCH
+        - POST
+        - DELETE
+    - path_pattern: /api/ingest/*
+      target_origin_id: apigw-crawl
+      allowed_methods:
+        - GET
+        - HEAD
+        - OPTIONS
+        - PUT
+        - PATCH
+        - POST
+        - DELETE
+    - path_pattern: /api/*
+      target_origin_id: alb-api
+      allowed_methods:
+        - GET
+        - HEAD
+        - OPTIONS
+        - PUT
+        - PATCH
+        - POST
+        - DELETE
+
+lumina_ecs:
+  cluster_name: lumina-prod
+  execution_role_name: ecsTaskExecutionRole
+  task_role_name: luminaInvestTaskRole
+  scheduler_role_name: luminaSchedulerRole
+  assign_public_ip: true
+  services:
+    api:
+      service_name: lumina-invest-api-svc
+      family: lumina-invest-api
+      container_name: api
+      desired_count: 2
+      cpu: "1024"
+      memory: "2048"
+      port: 8000
+      image: 086015456585.dkr.ecr.ap-northeast-2.amazonaws.com/lumina-invest:latest
+      log_group: /ecs/lumina-invest-api
+      container:
+        name: api
+        image: 086015456585.dkr.ecr.ap-northeast-2.amazonaws.com/lumina-invest:latest
+        essential: true
+        portMappings:
+          - containerPort: 8000
+            protocol: tcp
+        environment:
+          - name: MONGO_DB
+            value: fin_agent
+          - name: TRUST_PROXY
+            value: "true"
+          - name: COOKIE_SECURE
+            value: "false"
+        secrets:
+          - name: SESSION_SECRET
+            valueFrom: "arn:aws:secretsmanager:ap-northeast-2:086015456585:secret:lumina-invest/prod/app-c4WE2y:SESSION_SECRET::"
+          - name: JWT_SECRET
+            valueFrom: "arn:aws:secretsmanager:ap-northeast-2:086015456585:secret:lumina-invest/prod/app-c4WE2y:JWT_SECRET::"
+          - name: MONGO_URI
+            valueFrom: "arn:aws:secretsmanager:ap-northeast-2:086015456585:secret:lumina-invest/prod/app-c4WE2y:MONGO_URI::"
+          - name: REDIS_URL
+            valueFrom: "arn:aws:secretsmanager:ap-northeast-2:086015456585:secret:lumina-invest/prod/app-c4WE2y:REDIS_URL::"
+          - name: OLLAMA_BASE_URL
+            valueFrom: "arn:aws:secretsmanager:ap-northeast-2:086015456585:secret:lumina-invest/prod/app-c4WE2y:OLLAMA_BASE_URL::"
+          - name: QDRANT_URL
+            valueFrom: "arn:aws:secretsmanager:ap-northeast-2:086015456585:secret:lumina-invest/prod/app-c4WE2y:QDRANT_URL::"
+          - name: NEO4J_URI
+            valueFrom: "arn:aws:secretsmanager:ap-northeast-2:086015456585:secret:lumina-invest/prod/app-c4WE2y:NEO4J_URI::"
+          - name: NEO4J_USER
+            valueFrom: "arn:aws:secretsmanager:ap-northeast-2:086015456585:secret:lumina-invest/prod/app-c4WE2y:NEO4J_USER::"
+          - name: NEO4J_PASSWORD
+            valueFrom: "arn:aws:secretsmanager:ap-northeast-2:086015456585:secret:lumina-invest/prod/app-c4WE2y:NEO4J_PASSWORD::"
+        healthCheck:
+          command:
+            - CMD-SHELL
+            - curl -f http://localhost:8000/api/health || exit 1
+          interval: 30
+          timeout: 10
+          retries: 3
+          startPeriod: 60
+        logConfiguration:
+          logDriver: awslogs
+          options:
+            awslogs-group: /ecs/lumina-invest-api
+            awslogs-region: ap-northeast-2
+            awslogs-stream-prefix: ecs
+    worker:
+      service_name: lumina-invest-worker-svc
+      family: lumina-invest-worker
+      container_name: worker
+      desired_count: 1
+      cpu: "512"
+      memory: "1024"
+      image: 086015456585.dkr.ecr.ap-northeast-2.amazonaws.com/lumina-invest:latest
+      log_group: /ecs/lumina-invest-worker
+      container:
+        name: worker
+        image: 086015456585.dkr.ecr.ap-northeast-2.amazonaws.com/lumina-invest:latest
+        essential: true
+        command:
+          - celery
+          - -A
+          - app.celery_app
+          - worker
+          - --loglevel=info
+          - --concurrency=2
+          - --queues=celery
+        environment:
+          - name: MONGO_DB
+            value: fin_agent
+        secrets:
+          - name: MONGO_URI
+            valueFrom: "arn:aws:secretsmanager:ap-northeast-2:086015456585:secret:lumina-invest/prod/app-c4WE2y:MONGO_URI::"
+          - name: REDIS_URL
+            valueFrom: "arn:aws:secretsmanager:ap-northeast-2:086015456585:secret:lumina-invest/prod/app-c4WE2y:REDIS_URL::"
+          - name: OLLAMA_BASE_URL
+            valueFrom: "arn:aws:secretsmanager:ap-northeast-2:086015456585:secret:lumina-invest/prod/app-c4WE2y:OLLAMA_BASE_URL::"
+          - name: QDRANT_URL
+            valueFrom: "arn:aws:secretsmanager:ap-northeast-2:086015456585:secret:lumina-invest/prod/app-c4WE2y:QDRANT_URL::"
+          - name: NEO4J_URI
+            valueFrom: "arn:aws:secretsmanager:ap-northeast-2:086015456585:secret:lumina-invest/prod/app-c4WE2y:NEO4J_URI::"
+          - name: NEO4J_USER
+            valueFrom: "arn:aws:secretsmanager:ap-northeast-2:086015456585:secret:lumina-invest/prod/app-c4WE2y:NEO4J_USER::"
+          - name: NEO4J_PASSWORD
+            valueFrom: "arn:aws:secretsmanager:ap-northeast-2:086015456585:secret:lumina-invest/prod/app-c4WE2y:NEO4J_PASSWORD::"
+        logConfiguration:
+          logDriver: awslogs
+          options:
+            awslogs-group: /ecs/lumina-invest-worker
+            awslogs-region: ap-northeast-2
+            awslogs-stream-prefix: ecs
+
+lumina_scheduler:
+  cluster_arn: arn:aws:ecs:ap-northeast-2:086015456585:cluster/lumina-prod
+  task_definition_arn: arn:aws:ecs:ap-northeast-2:086015456585:task-definition/lumina-invest-worker:2
+  schedules:
+    - name: lumina-hourly-sync
+      description: Placeholder hourly ECS scheduler for worker task
+      schedule_expression: cron(0 * * * ? *)
+      timezone: Asia/Seoul
+      command:
+        - /bin/sh
+        - -lc
+        - echo replace-me-hourly-command
+    - name: lumina-daily-candles
+      description: Placeholder daily ECS scheduler for worker task
+      schedule_expression: cron(0 6 * * ? *)
+      timezone: Asia/Seoul
+      command:
+        - /bin/sh
+        - -lc
+        - echo replace-me-daily-command

@@ -1,0 +1,15 @@
+---
+- name: Ensure application buckets exist
+  amazon.aws.s3_bucket:
+    name: "{{ item.value.name }}"
+    state: present
+    encryption: AES256
+    object_ownership: BucketOwnerEnforced
+    public_access:
+      block_public_acls: true
+      ignore_public_acls: true
+      block_public_policy: true
+      restrict_public_buckets: true
+    tags: "{{ lumina_tags | combine({'Name': item.value.name}) }}"
+  loop: "{{ lumina_buckets | dict2items }}"
+

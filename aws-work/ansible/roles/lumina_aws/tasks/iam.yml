@@ -1,0 +1,83 @@
+---
+- name: Ensure ECS task execution role exists
+  amazon.aws.iam_role:
+    name: "{{ lumina_ecs.execution_role_name }}"
+    description: ECS task execution role for Lumina services
+    assume_role_policy_document:
+      Version: "2012-10-17"
+      Statement:
+        - Effect: Allow
+          Principal:
+            Service: ecs-tasks.amazonaws.com
+          Action: sts:AssumeRole
+    managed_policies:
+      - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+    purge_policies: false
+    create_instance_profile: false
+    tags: "{{ lumina_tags | combine({'Name': lumina_ecs.execution_role_name}) }}"
+
+- name: Ensure execution role can read app secrets
+  amazon.aws.iam_policy:
+    iam_type: role
+    iam_name: "{{ lumina_ecs.execution_role_name }}"
+    policy_name: SecretsManagerReadAccess
+    policy_json:
+      Version: "2012-10-17"
+      Statement:
+        - Effect: Allow
+          Action:
+            - secretsmanager:GetSecretValue
+            - secretsmanager:DescribeSecret
+          Resource:
+            - "arn:aws:secretsmanager:{{ aws_region }}:{{ aws_account_id }}:secret:{{ lumina_secret.name }}*"
+    state: present
+
+- name: Ensure ECS application task role exists
+  amazon.aws.iam_role:
+    name: "{{ lumina_ecs.task_role_name }}"
+    description: Application task role for Lumina ECS workloads
+    assume_role_policy_document:
+      Version: "2012-10-17"
+      Statement:
+        - Effect: Allow
+          Principal:
+            Service: ecs-tasks.amazonaws.com
+          Action: sts:AssumeRole
+    create_instance_profile: false
+    tags: "{{ lumina_tags | combine({'Name': lumina_ecs.task_role_name}) }}"
+
+- name: Ensure scheduler role exists
+  amazon.aws.iam_role:
+    name: "{{ lumina_ecs.scheduler_role_name }}"
+    description: EventBridge Scheduler role for on-demand ECS runs
+    assume_role_policy_document:
+      Version: "2012-10-17"
+      Statement:
+        - Effect: Allow
+          Principal:
+            Service: scheduler.amazonaws.com
+          Action: sts:AssumeRole
+    create_instance_profile: false
+    tags: "{{ lumina_tags | combine({'Name': lumina_ecs.scheduler_role_name}) }}"
+
+- name: Ensure scheduler role has RunTask permissions
+  amazon.aws.iam_policy:
+    iam_type: role
+    iam_name: "{{ lumina_ecs.scheduler_role_name }}"
+    policy_name: luminaSchedulerRunEcs
+    policy_json:
+      Version: "2012-10-17"
+      Statement:
+        - Effect: Allow
+          Action:
+            - ecs:RunTask
+          Resource:
+            - "arn:aws:ecs:{{ aws_region }}:{{ aws_account_id }}:task-definition/{{ lumina_ecs.services.worker.family }}:*"
+        - Effect: Allow
+          Action:
+            - iam:PassRole
+          Resource:
+            - "arn:aws:iam::{{ aws_account_id }}:role/{{ lumina_ecs.execution_role_name }}"
+            - "arn:aws:iam::{{ aws_account_id }}:role/{{ lumina_ecs.task_role_name }}"
+    state: present
+

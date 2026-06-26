@@ -1,0 +1,27 @@
+---
+- name: Assert required inventory values exist
+  ansible.builtin.assert:
+    that:
+      - aws_region | length > 0
+      - aws_account_id | length > 0
+      - lumina_vpc_id | length > 0
+      - lumina_subnet_ids.app | length >= 2
+      - lumina_alb.subnet_ids | length >= 2
+      - lumina_secret_string is mapping
+      - lumina_secret_string | length > 0
+    fail_msg: >-
+      inventories/prod/group_vars/all.yml 와 secrets.sample.yml 값을 먼저 검토해 주세요.
+      ECS 앱 서브넷 2개 이상, ALB 서브넷 2개 이상, Secret 매핑이 필요합니다.
+
+- name: Assert placeholder ALB subnet was replaced
+  ansible.builtin.assert:
+    that:
+      - "'REPLACE-WITH-SECOND-PUBLIC-SUBNET' not in (lumina_alb.subnet_ids | join(','))"
+    fail_msg: >-
+      lumina_alb.subnet_ids 에 실제 두 번째 public subnet ID를 넣어 주세요.
+
+- name: Ensure build directory exists
+  ansible.builtin.file:
+    path: "{{ lumina_ansible_root }}/build"
+    state: directory
+    mode: "0755"

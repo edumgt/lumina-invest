@@ -1,0 +1,25 @@
+{
+  "Arn": "{{ lumina_scheduler.cluster_arn }}",
+  "RoleArn": "arn:aws:iam::{{ aws_account_id }}:role/{{ lumina_ecs.scheduler_role_name }}",
+  "Input": {{ {"containerOverrides": [{"name": lumina_ecs.services.worker.container_name, "command": item.command}]} | to_json }},
+  "EcsParameters": {
+    "LaunchType": "FARGATE",
+    "TaskCount": 1,
+    "TaskDefinitionArn": "{{ lumina_scheduler.task_definition_arn }}",
+    "EnableECSManagedTags": true,
+    "EnableExecuteCommand": false,
+    "NetworkConfiguration": {
+      "awsvpcConfiguration": {
+        "AssignPublicIp": "{{ 'ENABLED' if lumina_ecs.assign_public_ip else 'DISABLED' }}",
+        "Subnets": {{ lumina_subnet_ids.app | to_json }},
+        "SecurityGroups": [
+          "{{ lumina_security_groups.ecs.id }}"
+        ]
+      }
+    }
+  },
+  "RetryPolicy": {
+    "MaximumEventAgeInSeconds": 3600,
+    "MaximumRetryAttempts": 2
+  }
+}
