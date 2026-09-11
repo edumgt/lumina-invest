@@ -6,7 +6,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database.postgres import get_pg_session
 from app.lib.session import get_current_user
-from app.lib.ollama import get_ollama
+from app.lib.llm_client import get_llm_client
 from app.models import CrawledDoc
 from app.services.financial_ingest import run_full_ingest
 from app.services.crawl import run_auto_crawl, crawl_url, crawl_naver_stock, _chunk_text, _store_qdrant
@@ -34,7 +34,7 @@ async def crawl_auto(
     user=Depends(get_current_user),
     db: AsyncSession = Depends(get_pg_session),
 ):
-    ollama = get_ollama()
+    ollama = get_llm_client()
     log: list[str] = []
     result = await run_auto_crawl(db, ollama, log)
     return {"ok": True, "result": result, "log": log}
@@ -50,7 +50,7 @@ async def crawl_manual(
     user=Depends(get_current_user),
     db: AsyncSession = Depends(get_pg_session),
 ):
-    ollama = get_ollama()
+    ollama = get_llm_client()
     log: list[str] = []
     chunks = await crawl_url(body.url, db, ollama, log)
     return {"ok": True, "chunks": chunks, "log": log}
@@ -67,7 +67,7 @@ async def crawl_naver(
     db: AsyncSession = Depends(get_pg_session),
 ):
     """네이버 금융 종목 페이지 전용 크롤링."""
-    ollama = get_ollama()
+    ollama = get_llm_client()
     log: list[str] = []
     chunks = await crawl_naver_stock(body.code, db, ollama, log)
     message = "네이버 주식 크롤링이 완료되었습니다." if chunks > 0 else "네이버 주식 크롤링 결과가 없습니다."
@@ -80,7 +80,7 @@ async def ingest_local_docs(
     db: AsyncSession = Depends(get_pg_session),
 ):
     """data/raw/ 하위 로컬 Markdown 문서를 Qdrant RAG에 인제스트."""
-    ollama = get_ollama()
+    ollama = get_llm_client()
     log: list[str] = []
     total = 0
 
@@ -130,7 +130,7 @@ async def ingest_translation_data(
     user=Depends(get_current_user),
 ):
     """data/1.데이터 다국어 번역 ZIP → Qdrant translation_docs 컬렉션 인제스트."""
-    ollama = get_ollama()
+    ollama = get_llm_client()
     log: list[str] = []
     result = await run_translation_ingest(
         ollama,
@@ -156,7 +156,7 @@ async def search_translation(
     user=Depends(get_current_user),
 ):
     """translation_docs 컬렉션에서 한국어 쿼리로 유사 문서 검색."""
-    ollama = get_ollama()
+    ollama = get_llm_client()
     hits = await translation_search(
         body.query,
         ollama,

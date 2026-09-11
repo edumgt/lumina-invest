@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database.postgres import get_pg_session
 from app.lib.session import get_current_user
-from app.lib.ollama import get_ollama
+from app.lib.llm_client import get_llm_client
 from app.models import UploadedDoc
 from app.services.doc_parser import parse_document, SUPPORTED_EXTENSIONS
 from app.services.rag_pipeline import store_chunks, rag_search, delete_chunks_by_source
@@ -56,7 +56,7 @@ async def upload_document(
     if len(content) == 0:
         raise HTTPException(400, "빈 파일입니다.")
 
-    ollama = get_ollama()
+    ollama = get_llm_client()
 
     try:
         chunks = await parse_document(file.filename, content, ollama)

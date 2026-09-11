@@ -24,6 +24,20 @@ class Settings(BaseSettings):
     VLM_MODEL: str = "llava"          # Vision-Language Model for image/slide description
     OLLAMA_TIMEOUT: float = 300.0
 
+    # ── LLM 서빙 백엔드 선택 (채팅/에이전트 전용, 임베딩은 항상 Ollama 사용) ─────
+    # ollama(기본, 로컬/EC2 Ollama) | bedrock | sagemaker | vllm
+    LLM_PROVIDER: str = "ollama"
+
+    # Bedrock (converse API 사용, AWS_REGION 재사용)
+    BEDROCK_MODEL_ID: str = ""  # 예: us-east-1의 meta.llama3-1-8b-instruct-v1:0
+
+    # SageMaker JumpStart 엔드포인트 (invoke_endpoint)
+    SAGEMAKER_ENDPOINT_NAME: str = ""
+
+    # EC2/ECS 위의 vLLM (OpenAI 호환 /v1/chat/completions)
+    VLLM_BASE_URL: str = ""
+    VLLM_MODEL: str = ""
+
     VECTOR_STORE: str = "qdrant"
     QDRANT_URL: str = "http://localhost:6333"
     QDRANT_COLLECTION: str = "fin_chunks"

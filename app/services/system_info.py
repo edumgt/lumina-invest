@@ -92,12 +92,69 @@ def _docker_containers() -> list[dict]:
         return []
 
 
+async def _llm_provider_status() -> dict:
+    """현재 설정된 LLM_PROVIDER의 연결 상태. 실제 추론 호출은 하지 않고(과금 방지)
+    가벼운 read-only API로만 확인한다."""
+    provider = settings.LLM_PROVIDER.lower()
+
+    if provider == "ollama":
+        ok, ms = await _ping_http(f"{settings.OLLAMA_BASE_URL}/api/tags")
+        return {"provider": "ollama", "target": settings.OLLAMA_BASE_URL, "ok": ok, "ms": ms}
+
+    if provider == "vllm":
+        ok, ms = await _ping_http(f"{settings.VLLM_BASE_URL}/v1/models") if settings.VLLM_BASE_URL else (False, -1)
+        return {"provider": "vllm", "target": settings.VLLM_BASE_URL, "ok": ok, "ms": ms}
+
+    if provider == "bedrock":
+        if not settings.BEDROCK_MODEL_ID:
+            return {"provider": "bedrock", "target": "", "ok": False, "ms": -1, "error": "BEDROCK_MODEL_ID 미설정"}
+        try:
+            import boto3
+
+            t0 = asyncio.get_event_loop().time()
+
+            def _check():
+                client = boto3.client("bedrock", region_name=settings.AWS_REGION)
+                client.get_foundation_model(modelIdentifier=settings.BEDROCK_MODEL_ID)
+
+            await asyncio.to_thread(_check)
+            ms = round((asyncio.get_event_loop().time() - t0) * 1000, 1)
+            return {"provider": "bedrock", "target": settings.BEDROCK_MODEL_ID, "ok": True, "ms": ms}
+        except Exception as e:
+            return {"provider": "bedrock", "target": settings.BEDROCK_MODEL_ID, "ok": False, "ms": -1, "error": str(e)[:200]}
+
+    if provider == "sagemaker":
+        if not settings.SAGEMAKER_ENDPOINT_NAME:
+            return {"provider": "sagemaker", "target": "", "ok": False, "ms": -1, "error": "SAGEMAKER_ENDPOINT_NAME 미설정"}
+        try:
+            import boto3
+
+            t0 = asyncio.get_event_loop().time()
+
+            def _check():
+                client = boto3.client("sagemaker", region_name=settings.AWS_REGION)
+                resp = client.describe_endpoint(EndpointName=settings.SAGEMAKER_ENDPOINT_NAME)
+                return resp["EndpointStatus"]
+
+            status = await asyncio.to_thread(_check)
+            ms = round((asyncio.get_event_loop().time() - t0) * 1000, 1)
+            return {
+                "provider": "sagemaker", "target": settings.SAGEMAKER_ENDPOINT_NAME,
+                "ok": status == "InService", "ms": ms, "endpoint_status": status,
+            }
+        except Exception as e:
+            return {"provider": "sagemaker", "target": settings.SAGEMAKER_ENDPOINT_NAME, "ok": False, "ms": -1, "error": str(e)[:200]}
+
+    return {"provider": provider, "target": "", "ok": False, "ms": -1, "error": "알 수 없는 LLM_PROVIDER"}
+
+
 async def get_system_status() -> dict:
     # 서비스 핑을 병렬로
-    (ollama_ok, ollama_ms), (qdrant_ok, qdrant_ms), (redis_ok, redis_ms) = await asyncio.gather(
+    (ollama_ok, ollama_ms), (qdrant_ok, qdrant_ms), (redis_ok, redis_ms), llm_status = await asyncio.gather(
         _ping_http(f"{settings.OLLAMA_BASE_URL}/api/tags"),
         _ping_http(f"{settings.QDRANT_URL}/collections"),
         _ping_redis(settings.REDIS_URL),
+        _llm_provider_status(),
     )
 
     services = [
@@ -112,4 +169,5 @@ async def get_system_status() -> dict:
         "disk":        _disk_usage("/"),
         "services":    services,
         "containers":  _docker_containers(),
+        "llm_provider": llm_status,
     }

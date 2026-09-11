@@ -1,0 +1,4 @@
+# deploy_llm_endpoint.py 전용 (운영 서버 requirements.txt와 별도).
+# 로컬/운영자 머신에서: pip install -r sagemaker/requirements-deploy.txt
+sagemaker>=2.230.0
+boto3>=1.35.0

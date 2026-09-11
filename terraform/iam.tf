@@ -106,6 +106,29 @@ resource "aws_iam_role" "lumina_invest_task" {
   assume_role_policy = data.aws_iam_policy_document.ecs_tasks_assume.json
 }
 
+# LLM_PROVIDER=bedrock/sagemaker 선택 시 앱(ECS 태스크)이 호출할 최소 권한.
+# ollama(기본값)만 쓸 때는 불필요하지만 상시 부여해도 무해함 (invoke만 가능, 배포/삭제 불가).
+resource "aws_iam_role_policy" "lumina_invest_task_llm" {
+  name = "LLMProviderInvokeAccess"
+  role = aws_iam_role.lumina_invest_task.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["bedrock:InvokeModel", "bedrock:Converse", "bedrock:GetFoundationModel"]
+        Resource = "*"
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["sagemaker:InvokeEndpoint", "sagemaker:DescribeEndpoint"]
+        Resource = "arn:aws:sagemaker:${var.region}:${var.account_id}:endpoint/*"
+      },
+    ]
+  })
+}
+
 # ─────────────────────────────────────────
 # EventBridge Scheduler Role
 # ─────────────────────────────────────────

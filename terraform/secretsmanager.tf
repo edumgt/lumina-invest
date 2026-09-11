@@ -17,6 +17,14 @@ resource "aws_secretsmanager_secret_version" "app" {
     NEO4J_URI       = "bolt://172.30.2.131:7687"
     NEO4J_USER      = "neo4j"
     NEO4J_PASSWORD  = "change-me-neo4j"
+
+    # LLM 서빙 백엔드 선택 (ollama 기본값 — Bedrock/SageMaker/vLLM으로 바꾸려면
+    # 아래 값을 채우고 LLM_PROVIDER를 변경. 자세한 내용은 .env.example 참고)
+    LLM_PROVIDER            = "ollama"
+    BEDROCK_MODEL_ID        = ""
+    SAGEMAKER_ENDPOINT_NAME = ""
+    VLLM_BASE_URL           = ""
+    VLLM_MODEL              = ""
   })
 
   # Prevent Terraform from overwriting secrets updated outside of Terraform

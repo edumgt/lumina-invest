@@ -21,7 +21,7 @@ from app.config import settings
 from app.database.postgres import get_pg_session
 from app.models import Chat, Conversation
 from app.lib.jwt_auth import get_current_user_any
-from app.lib.ollama import get_ollama
+from app.lib.llm_client import get_llm_client
 from app.lib.user_state import get_active_conversation, set_active_conversation
 from app.services.langgraph_agent import run_agent
 from app.services.rag_pipeline import rag_search
@@ -99,7 +99,7 @@ async def chat(
     db: AsyncSession = Depends(get_pg_session),
 ):
     user_id = user["id"]
-    ollama = get_ollama()
+    ollama = get_llm_client()
 
     # 대화 스레드 확보
     conversation_id = await _get_or_create_conversation(db, user_id, body.conversation_id)
@@ -141,7 +141,7 @@ async def chat(
     except httpx.TimeoutException:
         raise HTTPException(504, "LLM 응답 시간이 초과되었습니다.")
     except Exception as e:
-        raise HTTPException(500, f"에이전트 오류: {str(e)[:200]}")
+        raise HTTPException(500, f"에이전트 오류 (LLM_PROVIDER={settings.LLM_PROVIDER}): {str(e)[:200]}")
 
     # PostgreSQL – 메시지 저장 (conversation_id 포함)
     try:

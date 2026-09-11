@@ -41,7 +41,7 @@ def run_agent_task(
         from app.config import settings
         from app.database.postgres import connect_postgres, close_postgres, get_session_factory
         from app.lib.redis_cache import connect_redis, close_redis
-        from app.lib.ollama import OllamaClient
+        from app.lib.llm_client import get_llm_client
         from app.models import Chat, Conversation
         from app.services.langgraph_agent import run_agent
 
@@ -50,7 +50,7 @@ def run_agent_task(
         try:
             session_factory = get_session_factory()
             async with session_factory() as db:
-                ollama = OllamaClient(settings.OLLAMA_BASE_URL, settings.OLLAMA_TIMEOUT)
+                ollama = get_llm_client()
 
                 result = await run_agent(
                     db, ollama, llm_model, question, history, rag_context

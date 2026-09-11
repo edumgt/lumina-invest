@@ -60,6 +60,11 @@ resource "aws_ecs_task_definition" "api" {
       { name = "NEO4J_URI",       valueFrom = "${aws_secretsmanager_secret.app.arn}:NEO4J_URI::" },
       { name = "NEO4J_USER",      valueFrom = "${aws_secretsmanager_secret.app.arn}:NEO4J_USER::" },
       { name = "NEO4J_PASSWORD",  valueFrom = "${aws_secretsmanager_secret.app.arn}:NEO4J_PASSWORD::" },
+      { name = "LLM_PROVIDER",            valueFrom = "${aws_secretsmanager_secret.app.arn}:LLM_PROVIDER::" },
+      { name = "BEDROCK_MODEL_ID",        valueFrom = "${aws_secretsmanager_secret.app.arn}:BEDROCK_MODEL_ID::" },
+      { name = "SAGEMAKER_ENDPOINT_NAME", valueFrom = "${aws_secretsmanager_secret.app.arn}:SAGEMAKER_ENDPOINT_NAME::" },
+      { name = "VLLM_BASE_URL",           valueFrom = "${aws_secretsmanager_secret.app.arn}:VLLM_BASE_URL::" },
+      { name = "VLLM_MODEL",              valueFrom = "${aws_secretsmanager_secret.app.arn}:VLLM_MODEL::" },
     ]
 
     healthCheck = {
@@ -107,6 +112,11 @@ resource "aws_ecs_task_definition" "worker" {
       { name = "NEO4J_URI",       valueFrom = "${aws_secretsmanager_secret.app.arn}:NEO4J_URI::" },
       { name = "NEO4J_USER",      valueFrom = "${aws_secretsmanager_secret.app.arn}:NEO4J_USER::" },
       { name = "NEO4J_PASSWORD",  valueFrom = "${aws_secretsmanager_secret.app.arn}:NEO4J_PASSWORD::" },
+      { name = "LLM_PROVIDER",            valueFrom = "${aws_secretsmanager_secret.app.arn}:LLM_PROVIDER::" },
+      { name = "BEDROCK_MODEL_ID",        valueFrom = "${aws_secretsmanager_secret.app.arn}:BEDROCK_MODEL_ID::" },
+      { name = "SAGEMAKER_ENDPOINT_NAME", valueFrom = "${aws_secretsmanager_secret.app.arn}:SAGEMAKER_ENDPOINT_NAME::" },
+      { name = "VLLM_BASE_URL",           valueFrom = "${aws_secretsmanager_secret.app.arn}:VLLM_BASE_URL::" },
+      { name = "VLLM_MODEL",              valueFrom = "${aws_secretsmanager_secret.app.arn}:VLLM_MODEL::" },
     ]
 
     logConfiguration = {

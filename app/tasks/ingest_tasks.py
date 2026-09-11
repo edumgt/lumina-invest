@@ -53,14 +53,14 @@ def auto_crawl_task(self) -> dict:
         from app.config import settings
         from app.database.postgres import connect_postgres, close_postgres, get_session_factory
         from app.lib.redis_cache import connect_redis, close_redis
-        from app.lib.ollama import OllamaClient
+        from app.lib.llm_client import get_llm_client
         from app.services.crawl import run_auto_crawl
 
         await connect_redis()
         await connect_postgres()
         log: list[str] = []
         try:
-            ollama = OllamaClient(settings.OLLAMA_BASE_URL, settings.OLLAMA_TIMEOUT)
+            ollama = get_llm_client()
             session_factory = get_session_factory()
             async with session_factory() as db:
                 result = await run_auto_crawl(db, ollama, log)
@@ -89,14 +89,14 @@ def url_crawl_task(self, url: str) -> dict:
         from app.config import settings
         from app.database.postgres import connect_postgres, close_postgres, get_session_factory
         from app.lib.redis_cache import connect_redis, close_redis
-        from app.lib.ollama import OllamaClient
+        from app.lib.llm_client import get_llm_client
         from app.services.crawl import crawl_url
 
         await connect_redis()
         await connect_postgres()
         log: list[str] = []
         try:
-            ollama = OllamaClient(settings.OLLAMA_BASE_URL, settings.OLLAMA_TIMEOUT)
+            ollama = get_llm_client()
             session_factory = get_session_factory()
             async with session_factory() as db:
                 chunks = await crawl_url(url, db, ollama, log)
@@ -130,13 +130,13 @@ def translation_ingest_task(
     async def _async() -> dict:
         from app.config import settings
         from app.lib.redis_cache import connect_redis, close_redis
-        from app.lib.ollama import OllamaClient
+        from app.lib.llm_client import get_llm_client
         from app.services.translation_ingest import run_translation_ingest
 
         await connect_redis()
         log: list[str] = []
         try:
-            ollama = OllamaClient(settings.OLLAMA_BASE_URL, settings.OLLAMA_TIMEOUT)
+            ollama = get_llm_client()
             result = await run_translation_ingest(
                 ollama, log,
                 data_type=data_type,
