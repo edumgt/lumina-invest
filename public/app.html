@@ -659,6 +659,7 @@
     <button class="gnb-item" data-gnb="agent"><i class="fa-solid fa-robot"></i> 로보 어드바이저</button>
     <button class="gnb-item" data-gnb="crawl"><i class="fa-solid fa-spider"></i> 크롤링</button>
     <button class="gnb-item" data-gnb="trading"><i class="fa-solid fa-chart-line"></i> 직접매매</button>
+    <button class="gnb-item" data-gnb="paper"><i class="fa-solid fa-graduation-cap"></i> 모의투자</button>
     <button class="gnb-item" data-gnb="quant"><i class="fa-solid fa-bolt"></i> 퀀트자동매매</button>
     <button class="gnb-item" data-gnb="us"><i class="fa-solid fa-flag-usa"></i> 미국주식</button>
     <button class="gnb-item" data-gnb="company"><i class="fa-solid fa-chart-pie"></i> 투자 인디케이터</button>
@@ -1002,6 +1003,158 @@
       </div>
     </div>
 
+
+    <!-- ══ 3b. 모의투자 (stock-coin-trade 이식) ══════════════════════ -->
+    <div class="view" data-view="paper-dashboard">
+      <div class="card">
+        <div class="flex items-center gap-3 mb-4 flex-wrap">
+          <h2 class="text-lg font-semibold">🎓 모의투자 계좌 현황</h2>
+          <span class="text-xs" id="pd-counts" style="color:var(--text-mute);"></span>
+          <button id="pd-refresh" class="btn-secondary ml-auto">새로고침</button>
+          <button id="pd-reset" class="btn-red">계좌 초기화</button>
+        </div>
+        <div id="pd-kpis" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2 mb-4"></div>
+        <h3 class="font-semibold mb-2 text-sm">최근 체결 (주식·코인·대체자산)</h3>
+        <div id="pd-recent" class="overflow-x-auto text-sm"></div>
+      </div>
+    </div>
+
+    <div class="view" data-view="paper-stock">
+      <div class="card">
+        <div class="flex items-center gap-3 mb-4 flex-wrap">
+          <h2 class="text-lg font-semibold">🏛️ 국내주식 모의주문</h2>
+          <span class="text-sm ml-auto" style="color:var(--text-mute);">보유 현금 <b id="ps-cash" style="color:var(--text);">-</b></span>
+        </div>
+        <div class="grid md:grid-cols-2 gap-4 mb-4">
+          <div class="rounded-xl border border-white/10 bg-black/20 p-4">
+            <h3 class="font-semibold mb-3">주문 입력</h3>
+            <div class="flex gap-2 mb-2">
+              <input id="ps-symbol" class="input" placeholder="종목코드 (예: 005930, 000660.KS, AAPL)" />
+              <button id="ps-quote-btn" class="btn-secondary">시세 조회</button>
+            </div>
+            <div id="ps-quote" class="text-sm mb-2 min-h-[24px]"></div>
+            <input id="ps-qty" class="input mb-2" type="number" min="1" placeholder="수량 (주)" />
+            <div class="flex gap-2 mb-2">
+              <button id="ps-preview-buy" class="btn-secondary flex-1">매수 미리보기</button>
+              <button id="ps-preview-sell" class="btn-secondary flex-1">매도 미리보기</button>
+            </div>
+            <div class="flex gap-2">
+              <button id="ps-buy" class="btn-green flex-1">시장가 매수</button>
+              <button id="ps-sell" class="btn-red flex-1">시장가 매도</button>
+            </div>
+            <div class="text-xs mt-2" style="color:var(--text-mute);">* 체결가는 Yahoo Finance 현재가(지연)이며, 직접매매 포트폴리오·Open API 주문과 같은 잔고를 씁니다.</div>
+          </div>
+          <div id="ps-preview" class="text-sm"></div>
+        </div>
+        <h3 class="font-semibold mb-2 text-sm">보유 종목</h3>
+        <div id="ps-positions" class="overflow-x-auto text-sm mb-4"></div>
+        <h3 class="font-semibold mb-2 text-sm">주문 내역</h3>
+        <div id="ps-history" class="overflow-x-auto text-sm"></div>
+      </div>
+    </div>
+
+    <div class="view" data-view="paper-crypto">
+      <div class="card">
+        <div class="flex items-center gap-3 mb-4 flex-wrap">
+          <h2 class="text-lg font-semibold">₿ 코인 모의매매 (Upbit KRW 마켓)</h2>
+          <span class="text-sm ml-auto" style="color:var(--text-mute);">보유 현금 <b id="pc-cash" style="color:var(--text);">-</b></span>
+        </div>
+        <div class="grid md:grid-cols-2 gap-4 mb-4">
+          <div class="rounded-xl border border-white/10 bg-black/20 p-4">
+            <div class="flex gap-2 mb-2">
+              <select id="pc-market" class="input"></select>
+              <button id="pc-refresh" class="btn-secondary">시세</button>
+            </div>
+            <div id="pc-ticker" class="text-sm mb-2 min-h-[24px]"></div>
+            <div id="pc-domestic" class="mb-3"></div>
+            <div class="grid grid-cols-2 gap-2 mb-2">
+              <input id="pc-buy-krw" class="input" type="number" min="1000" step="1000" placeholder="매수 금액 (원)" />
+              <input id="pc-sell-count" class="input" type="number" min="0" step="any" placeholder="매도 수량 (개)" />
+            </div>
+            <div class="flex gap-2 mb-2">
+              <button id="pc-preview-buy" class="btn-secondary flex-1">매수 미리보기</button>
+              <button id="pc-preview-sell" class="btn-secondary flex-1">매도 미리보기</button>
+            </div>
+            <div class="flex gap-2">
+              <button id="pc-buy" class="btn-green flex-1">시장가 매수</button>
+              <button id="pc-sell" class="btn-red flex-1">시장가 매도</button>
+            </div>
+          </div>
+          <div>
+            <div id="pc-preview" class="text-sm mb-3"></div>
+            <h3 class="font-semibold mb-2 text-sm">거래대금 상위 (24h)</h3>
+            <div id="pc-rankings" class="overflow-x-auto text-sm" style="max-height:320px;overflow-y:auto;"></div>
+          </div>
+        </div>
+        <h3 class="font-semibold mb-2 text-sm">보유 코인</h3>
+        <div id="pc-hold" class="overflow-x-auto text-sm mb-4"></div>
+        <h3 class="font-semibold mb-2 text-sm">거래 내역</h3>
+        <div id="pc-history" class="overflow-x-auto text-sm"></div>
+      </div>
+    </div>
+
+    <div class="view" data-view="paper-alternative">
+      <div class="card">
+        <h2 class="text-lg font-semibold mb-1">🧊 대체자산 모의주문</h2>
+        <p class="text-xs mb-4" id="pa-notice" style="color:var(--text-mute);"></p>
+        <div id="pa-markets" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 mb-4"></div>
+        <div class="grid md:grid-cols-2 gap-4 mb-4">
+          <div class="rounded-xl border border-white/10 bg-black/20 p-4">
+            <h3 class="font-semibold mb-3">주문 입력</h3>
+            <select id="pa-symbol" class="input mb-2"></select>
+            <input id="pa-qty" class="input mb-2" type="number" min="1" placeholder="수량 (계약/좌/g/구좌)" />
+            <div class="flex gap-2 mb-2">
+              <button id="pa-preview-buy" class="btn-secondary flex-1">매수 미리보기</button>
+              <button id="pa-preview-sell" class="btn-secondary flex-1">매도 미리보기</button>
+            </div>
+            <div class="flex gap-2">
+              <button id="pa-buy" class="btn-green flex-1">매수</button>
+              <button id="pa-sell" class="btn-red flex-1">매도</button>
+            </div>
+            <div id="pa-preview" class="text-sm mt-3"></div>
+          </div>
+          <div class="rounded-xl border border-white/10 bg-black/20 p-4">
+            <h3 class="font-semibold mb-2 text-sm">최근 120일 차트</h3>
+            <div id="pa-chart"></div>
+          </div>
+        </div>
+        <h3 class="font-semibold mb-2 text-sm">보유 포지션</h3>
+        <div id="pa-positions" class="overflow-x-auto text-sm mb-4"></div>
+        <h3 class="font-semibold mb-2 text-sm">주문 내역</h3>
+        <div id="pa-history" class="overflow-x-auto text-sm"></div>
+      </div>
+    </div>
+
+    <div class="view" data-view="paper-openapi">
+      <div class="card mb-4">
+        <h2 class="text-lg font-semibold mb-1">🔑 Open API 키 발급</h2>
+        <p class="text-xs mb-3" style="color:var(--text-mute);">외부 시스템(스크립트·봇·다른 서비스)이 이 모의계좌를 조회·주문할 수 있는 키입니다. 키 원문은 서버에 저장되지 않으며(SHA-256 해시만 보관) 발급 직후 한 번만 표시됩니다.</p>
+        <div class="flex gap-2 mb-3">
+          <input id="po-label" class="input" placeholder="키 라벨 (예: 파이썬 봇)" />
+          <button id="po-create" class="btn-primary">키 발급</button>
+        </div>
+        <div id="po-new-key" class="mb-3"></div>
+        <div id="po-keys" class="overflow-x-auto text-sm"></div>
+      </div>
+      <div class="card mb-4">
+        <h2 class="text-lg font-semibold mb-2">📘 Open API 엔드포인트</h2>
+        <div id="po-docs" class="overflow-x-auto text-sm"></div>
+      </div>
+      <div class="card">
+        <h2 class="text-lg font-semibold mb-1">🦙 Alpaca Paper Trading 연결 테스트 (읽기 전용)</h2>
+        <p class="text-xs mb-3" style="color:var(--text-mute);">키를 비워 두면 서버 환경변수(ALPACA_API_KEY / ALPACA_SECRET_KEY)를 사용합니다. 계좌 식별자는 반환하지 않으며 주문은 실행하지 않습니다.</p>
+        <div class="grid md:grid-cols-2 gap-2 mb-2">
+          <input id="po-alpaca-key" class="input" placeholder="APCA-API-KEY-ID (선택)" />
+          <input id="po-alpaca-secret" class="input" type="password" placeholder="APCA-API-SECRET-KEY (선택)" />
+        </div>
+        <div class="flex gap-2 mb-3">
+          <button id="po-alpaca-account" class="btn-secondary">계정 상태 조회</button>
+          <button id="po-alpaca-positions" class="btn-secondary">보유 포지션 조회</button>
+        </div>
+        <div id="po-alpaca-result" class="text-sm"></div>
+      </div>
+    </div>
+
     <!-- ══ 4. 퀀트 자동매매 ════════════════════════════════════════ -->
     <!-- 4-1. 퀀트 대시보드 -->
     <div class="view" data-view="quant-dashboard">
@@ -1076,6 +1229,42 @@
         </div>
         <div id="bt-result" class="text-sm space-y-3"></div>
         <div id="bt-compare-tray"></div>
+      </div>
+    </div>
+
+
+    <!-- 4-3b. QuantConnect LEAN 백테스트 (domain-rag-lab 이식) -->
+    <div class="view" data-view="quant-lean">
+      <div class="card mb-4">
+        <div class="flex items-center gap-3 mb-3 flex-wrap">
+          <h2 class="text-lg font-semibold">🐳 LEAN 백테스트 (QuantConnect)</h2>
+          <div id="ql-status" class="text-sm"></div>
+        </div>
+        <p class="text-xs mb-3" style="color:var(--text-mute);">Yahoo Finance 일봉을 정리해 QuantConnect LEAN 엔진(Docker)에서 동일 전략을 실행하고, pandas로 계산한 수익률·MDD·샤프와 함께 보여줍니다. 교육용 과거 검증이며 투자 권유가 아닙니다.</p>
+        <div id="ql-examples" class="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3"></div>
+        <div id="ql-example-detail" class="mb-3"></div>
+        <div class="grid md:grid-cols-3 gap-2 mb-2">
+          <div><label class="text-xs" style="color:var(--text-mute);">01 · 전략</label><select id="ql-strategy" class="input"></select></div>
+          <div><label class="text-xs" style="color:var(--text-mute);">02 · 종목 / ETF</label><input id="ql-ticker" class="input" value="005930.KS" maxlength="12" placeholder="005930.KS / SPY" /></div>
+          <div><label class="text-xs" style="color:var(--text-mute);">05 · 초기 자금</label><input id="ql-cash" class="input" type="number" value="10000" min="1000" /></div>
+        </div>
+        <div class="grid md:grid-cols-2 gap-2 mb-2">
+          <div><label class="text-xs" style="color:var(--text-mute);">03 · 검증 기간 (전략 성과를 계산할 기간)</label><div class="flex gap-2 items-center"><input id="ql-start" class="input" type="date" value="2023-01-01" /><span style="color:var(--text-mute);">~</span><input id="ql-end" class="input" type="date" /></div></div>
+          <div><label class="text-xs" style="color:var(--text-mute);">04 · 비교 기간 (다른 시장 국면의 단순 보유 수익률)</label><div class="flex gap-2 items-center"><input id="ql-cmp-start" class="input" type="date" value="2022-01-01" /><span style="color:var(--text-mute);">~</span><input id="ql-cmp-end" class="input" type="date" /></div></div>
+        </div>
+        <div class="text-xs mb-2" id="ql-strategy-hint" style="color:var(--text-mute);"></div>
+        <div class="flex gap-3 flex-wrap items-end mb-3 text-xs">
+          <div id="ql-p-ma" class="flex gap-2 items-center">단기 MA <input id="ql-short" class="input w-20" type="number" value="20" min="2" max="120" /> 장기 MA <input id="ql-long" class="input w-20" type="number" value="60" min="5" max="300" /></div>
+          <div id="ql-p-dca" class="flex gap-2 items-center" style="display:none;">적립 간격(거래일) <input id="ql-dca" class="input w-20" type="number" value="21" min="1" max="120" /></div>
+          <div id="ql-p-mom" class="flex gap-2 items-center" style="display:none;">돌파 기준(거래일) <input id="ql-breakout" class="input w-20" type="number" value="20" min="5" max="120" /></div>
+          <button id="ql-run" class="btn-primary ml-auto"><i class="fa-solid fa-play"></i> 이 조건으로 검증 실행</button>
+        </div>
+        <div id="ql-result" class="text-sm"></div>
+        <div id="ql-compare-tray"></div>
+      </div>
+      <div class="card">
+        <h3 class="font-semibold mb-2 text-sm">최근 실행 이력</h3>
+        <div id="ql-history" class="overflow-x-auto text-sm"></div>
       </div>
     </div>
 
@@ -2461,6 +2650,7 @@ RC_i = wi × (Σw)_i / √(w'Σw)
 
 <script type="module">
 import { api, getMe, setToast, escHtml, fmt, fmtPct, colorPct } from "/js/common.js";
+import { initPaperViews, onPaperViewActivated } from "/js/paper.js";
 
 // ── Navigation ────────────────────────────────────────────────────
 const GNB_MENUS = {
@@ -2492,12 +2682,23 @@ const GNB_MENUS = {
       { key: "trading-order",     icon: "fa-solid fa-arrows-rotate",     label: "주문/매매" },
     ],
   },
+  paper: {
+    label: "<i class='fa-solid fa-graduation-cap'></i> 모의투자",
+    items: [
+      { key: "paper-dashboard",   icon: "fa-solid fa-wallet",          label: "모의계좌 현황" },
+      { key: "paper-stock",       icon: "fa-solid fa-building-columns",label: "국내주식 모의주문" },
+      { key: "paper-crypto",      icon: "fa-brands fa-bitcoin",        label: "코인 모의매매" },
+      { key: "paper-alternative", icon: "fa-solid fa-cubes",           label: "대체자산 (선물·옵션·금·부동산)" },
+      { key: "paper-openapi",     icon: "fa-solid fa-key",             label: "Open API · 외부 연동" },
+    ],
+  },
   quant: {
     label: "<i class='fa-solid fa-bolt'></i> 퀀트자동매매",
     items: [
       { key: "quant-dashboard", icon: "fa-solid fa-gauge-high",      label: "퀀트 대시보드" },
       { key: "quant-auto",      icon: "fa-solid fa-robot",           label: "자동매매 현황" },
       { key: "quant-backtest",  icon: "fa-solid fa-flask",           label: "전략 분석" },
+      { key: "quant-lean",      icon: "fa-brands fa-docker",         label: "LEAN 백테스트 (QuantConnect)" },
       { key: "settings",        icon: "fa-solid fa-sliders",         label: "증권사 API 설정" },
       { key: "notification-settings", icon: "fa-solid fa-bell",      label: "알림 설정" },
     ],
@@ -2627,6 +2828,12 @@ const VIEW_GUIDES = {
   "crawl-ingest":    { summary: "CSV로 준비된 신용·금융상품 데이터를 DB에 적재하거나 초기화합니다.", steps: ["'금융 데이터 인제스트'는 data 폴더의 CSV를 읽어 DB에 반영합니다.", "'DB 초기화'는 관리자 전용이며 기존 데이터를 모두 삭제하니 주의하세요."], relatedTerms: [] },
   "trading-chart":   { summary: "종목 시세와 캔들 차트를 조회합니다.", steps: ["'종목 검색'으로 원하는 종목을 선택하세요.", "기간을 바꿔가며 캔들 차트와 현재가·등락률을 확인하세요."], relatedTerms: ["ma", "rsi"] },
   "trading-portfolio": { summary: "직접 보유 종목을 등록해 나만의 포트폴리오를 관리합니다.", steps: ["종목명·수량·평균단가를 입력해 보유 내역을 추가하세요.", "평가손익은 실시간 시세 기준으로 자동 계산됩니다."], relatedTerms: [] },
+  "paper-dashboard": { summary: "주식·코인·대체자산이 공유하는 모의투자 계좌(초기 1억원)의 현금·평가액·손익을 확인합니다.", steps: ["각 자산군의 평가액과 총 손익을 확인하세요.", "'계좌 초기화'로 모든 포지션·이력을 지우고 처음부터 다시 연습할 수 있습니다."], relatedTerms: ["paper_trading"] },
+  "paper-stock":     { summary: "KRX 종목(또는 해외 티커)을 실시간 시세로 모의 매수/매도합니다.", steps: ["종목코드(예: 005930)를 입력하고 '시세 조회'를 누르세요.", "수량을 넣고 '미리보기'로 체결 가능 여부와 잔고 변화를 확인한 뒤 매수/매도하세요.", "체결은 직접매매 포트폴리오와 같은 잔고를 사용합니다."], relatedTerms: ["paper_trading"] },
+  "paper-crypto":    { summary: "Upbit KRW 마켓 현재가로 코인을 금액(매수)/수량(매도) 기준으로 모의 거래합니다.", steps: ["마켓을 고르면 현재가와 국내 거래소(Upbit·Bithumb·Korbit) 가격 비교가 표시됩니다.", "매수는 원화 금액, 매도는 코인 수량으로 입력합니다."], relatedTerms: ["paper_trading"] },
+  "paper-alternative": { summary: "선물·옵션·파생 ETN·금·은·부동산 지분을 교육용 기준가/지연 시세로 모의 주문합니다.", steps: ["상품 카드를 클릭하면 차트와 주문 대상이 바뀝니다.", "선물은 증거금(marginRate)만큼만 현금이 차감됩니다."], relatedTerms: ["paper_trading"] },
+  "paper-openapi":   { summary: "외부 시스템에서 모의계좌를 조회·주문할 수 있는 Open API 키를 발급하고, Alpaca Paper 연결을 테스트합니다.", steps: ["라벨을 입력하고 키를 발급하세요. 키 원문은 발급 직후 한 번만 표시됩니다.", "curl 예시처럼 Authorization: Bearer 헤더로 /openapi/v1 엔드포인트를 호출하세요.", "Alpaca Paper 키를 넣으면 계정 상태를 읽기 전용으로 확인합니다."], relatedTerms: ["broker_api", "paper_trading"] },
+  "quant-lean":      { summary: "Yahoo Finance 일봉을 QuantConnect LEAN 엔진(Docker)에서 실행해 전략 수익률·MDD·샤프를 검증합니다.", steps: ["예시를 고르거나 전략·티커·기간을 직접 입력하세요.", "'검증 실행'을 누르면 LEAN 컨테이너가 실행되고(수 분 소요) pandas 지표와 함께 결과가 표시됩니다.", "LEAN이 연결되지 않은 환경에서는 pandas 계산 결과만 표시됩니다."], relatedTerms: ["backtest", "sharpe", "mdd"] },
   "trading-order":   { summary: "가상 잔고로 매수/매도 주문을 내고 체결 내역을 확인합니다.", steps: ["매수/매도, 수량, 가격을 입력해 주문하세요.", "증권사 API를 연동하면 실제 계좌 데이터로도 확인할 수 있습니다."], relatedTerms: ["broker_api", "paper_trading"] },
   "quant-dashboard": { summary: "대표 종목들의 실시간 시세와 퀀트 시그널을 한눈에 봅니다.", steps: ["시장 지수 카드와 종목별 매수/매도 시그널 카드를 확인하세요.", "차트에서 종목을 바꿔가며 지표 흐름을 살펴보세요."], relatedTerms: ["signal", "rsi", "ma"] },
   "quant-auto":      { summary: "10분 주기 자동매매를 시작/중지하고 실행 로그를 확인합니다.", steps: ["'시작'을 누르면 설정된 종목·전략으로 자동매매가 실행됩니다.", "로그에서 각 사이클의 매매 내역과 사유를 확인하세요.", "실거래 전 반드시 '증권사 API 설정'에서 모의(paper) 모드로 충분히 검증하세요."], relatedTerms: ["auto_trade_cycle", "virtual_account", "paper_trading"] },
@@ -2726,7 +2933,7 @@ function renderViewGuide(viewKey) {
 
 // ── 백테스트/모델 비교 트레이 (localStorage, 프론트 전용) ────────────
 const COMPARE_TRAY_KEY = "compare_tray";
-const COMPARE_TRAY_MOUNTS = ["bt-compare-tray", "ibt-compare-tray", "mlc-compare-tray"];
+const COMPARE_TRAY_MOUNTS = ["bt-compare-tray", "ibt-compare-tray", "mlc-compare-tray", "ql-compare-tray"];
 
 function compareTrayGet() {
   try { return JSON.parse(localStorage.getItem(COMPARE_TRAY_KEY) || "[]"); } catch { return []; }
@@ -3378,6 +3585,7 @@ async function boot() {
     loadMarketTicker();
     loadSyncStatus();
     setInterval(loadSyncStatus, 60_000);   // refresh sync badge every minute
+    initPaperViews();                      // 모의투자 · LEAN 백테스트 버튼 바인딩 (js/paper.js)
     const hash = location.hash.replace("#", "");
     navigate(hash && document.querySelector(`[data-view="${hash}"]`) ? hash : "agent-chat");
   } catch {
@@ -3683,6 +3891,7 @@ function loadCompanySector() {
 
 // ── View Activation ───────────────────────────────────────────────
 function onViewActivated(view) {
+  onPaperViewActivated(view); // 모의투자 · LEAN 백테스트 (js/paper.js)
   if (view === "trading-chart") loadStockChart();
   if (view === "trading-portfolio") loadPortfolio();
   if (view === "trading-order") { loadOrderHistory(); loadBrokerStatus(); }

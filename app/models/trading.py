@@ -32,6 +32,8 @@ class Order(Base, UUIDPkMixin, CreatedAtMixin):
     price: Mapped[float] = mapped_column(Float, nullable=False)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="filled")
     broker: Mapped[str] = mapped_column(String(20), nullable=False, default="virtual")
+    # WEB(직접매매 화면) | PAPER(모의투자 화면) | OPENAPI(외부 Open API) | PINE(파인스크립트 실습) | QUANT(자동매매)
+    source: Mapped[str] = mapped_column(String(20), nullable=False, default="WEB")
 
 
 class BrokerSettings(Base, UUIDPkMixin, UpdatedAtMixin):

@@ -21,6 +21,7 @@ from app.services.brokers.factory import get_broker_client
 from app.services.brokers.catalog import get_broker_catalog, get_broker_codes
 from app.services import notification
 from app.services.audit import audit
+from app.services import paper_trading
 from app.services.data_cache import cache_get, cache_set
 from app.services.sync_scheduler import KEY_MARKET_INDICES
 
@@ -283,9 +284,17 @@ async def place_order(
     db: AsyncSession = Depends(get_pg_session),
 ):
     uid = _uid(user["id"])
+    # 가상 매매는 모의투자 계좌(PaperAccount)의 현금과 연동한다 — 매수 시 차감, 매도 시 가산.
+    if body.broker == "virtual":
+        delta = -body.price * body.quantity if body.order_type == "buy" else body.price * body.quantity
+        try:
+            await paper_trading.apply_cash(db, uid, delta)
+        except paper_trading.PaperTradeError as exc:
+            await db.rollback()
+            raise HTTPException(400, str(exc))
     db.add(Order(
         user_id=uid, symbol=body.symbol, name=body.name, order_type=body.order_type,
-        quantity=body.quantity, price=body.price, status="filled", broker=body.broker,
+        quantity=body.quantity, price=body.price, status="filled", broker=body.broker, source="WEB",
     ))
     await _apply_portfolio(db, uid, body.symbol, body.name,
                            body.order_type, body.quantity, body.price)

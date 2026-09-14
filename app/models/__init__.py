@@ -7,6 +7,16 @@ from app.models.trading import (
     QuantVirtualAccount,
     CustomIndicator,
 )
+from app.models.paper import (
+    PaperAccount,
+    CryptoHolding,
+    CryptoOrder,
+    AlternativePosition,
+    AlternativeOrder,
+    ApiKey,
+    LeanBacktestRun,
+    PAPER_INITIAL_CASH,
+)
 from app.models.chat import Conversation, Chat
 from app.models.misc import (
     AuditEvent,
@@ -32,6 +42,14 @@ __all__ = [
     "BrokerSettings",
     "QuantVirtualAccount",
     "CustomIndicator",
+    "PaperAccount",
+    "CryptoHolding",
+    "CryptoOrder",
+    "AlternativePosition",
+    "AlternativeOrder",
+    "ApiKey",
+    "LeanBacktestRun",
+    "PAPER_INITIAL_CASH",
     "Conversation",
     "Chat",
     "AuditEvent",

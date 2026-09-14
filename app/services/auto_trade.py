@@ -106,7 +106,7 @@ async def _execute_virtual_trade(
 
     db.add(Order(
         user_id=user_id, symbol=symbol, name=name, order_type=action,
-        quantity=executed_quantity, price=price, status="filled", broker="quant_ai",
+        quantity=executed_quantity, price=price, status="filled", broker="quant_ai", source="QUANT",
     ))
 
     if action == "buy":
