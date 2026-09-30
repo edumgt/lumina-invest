@@ -48,6 +48,12 @@ services:
     networks:
     - shared-net
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "cypher-shell -u neo4j -p finagent123 'RETURN 1' >/dev/null 2>&1"]
+      interval: 5s
+      timeout: 10s
+      retries: 20
+      start_period: 30s
 
   app:
     build:
@@ -80,9 +86,12 @@ services:
     networks:
     - shared-net
     depends_on:
-    - postgres
-    - redis
-    - neo4j
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
 
   ingest:
     build:
@@ -109,8 +118,10 @@ services:
     networks:
     - shared-net
     depends_on:
-    - postgres
-    - redis
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
   # ── Celery Worker (AI 에이전트·인제스트 비동기 태스크) ────────────────────────
   celery-worker:
@@ -138,9 +149,12 @@ services:
     networks:
     - shared-net
     depends_on:
-    - postgres
-    - redis
-    - neo4j
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
     restart: unless-stopped
 
   # ── Celery Beat (시장 데이터 주기 동기화 스케줄러) ────────────────────────────
@@ -160,8 +174,10 @@ services:
     networks:
     - shared-net
     depends_on:
-    - postgres
-    - redis
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:

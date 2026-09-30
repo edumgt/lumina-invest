@@ -22,11 +22,16 @@ services:
       TRUST_PROXY: "true"
       COOKIE_SECURE: "true"
     depends_on:
-      - postgres
-      - redis
-      - neo4j
-      - qdrant
-      - ollama
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+      ollama:
+        condition: service_started
 
   ingest:
     image: lumina-invest-app:fd
@@ -34,10 +39,14 @@ services:
       OLLAMA_BASE_URL: http://ollama:11434
       QDRANT_URL: http://qdrant:6333
     depends_on:
-      - postgres
-      - redis
-      - qdrant
-      - ollama
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+      ollama:
+        condition: service_started
 
   celery-worker:
     image: lumina-invest-app:fd
@@ -45,11 +54,16 @@ services:
       OLLAMA_BASE_URL: http://ollama:11434
       QDRANT_URL: http://qdrant:6333
     depends_on:
-      - postgres
-      - redis
-      - neo4j
-      - qdrant
-      - ollama
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+      ollama:
+        condition: service_started
 
   celery-beat:
     image: lumina-invest-app:fd

@@ -251,6 +251,33 @@ docker run --rm -v "$PWD/tests:/app/tests:ro" -v "$PWD/pytest.ini:/app/pytest.in
 
 GitHub Actions `Unit Tests` 워크플로가 push/PR마다 실행되며, `Deploy to fund-web EC2`는 테스트 통과 후에만 배포합니다.
 
+### EC2 배포 (GitHub Actions → docker compose)
+
+`main` 에 push 되면 [.github/workflows/deploy.yml](.github/workflows/deploy.yml) 이 이 repo 를 EC2 로 rsync 하고
+`docker compose up -d --build` 로 컨테이너를 재빌드·재기동합니다. `.env` · `data/` · Docker 볼륨은 서버 것을 그대로 유지합니다.
+
+| 구분 | 이름 | 설명 |
+|---|---|---|
+| Secret | `FUND_WEB_SSH_KEY` | EC2 접속용 개인키 (PEM 파일 전문) |
+| Variable | `FUND_WEB_HOST` | EC2 퍼블릭 IP 또는 DNS |
+| Variable | `FUND_WEB_USER` | SSH 사용자 (예: `ubuntu`) |
+| Variable | `FUND_WEB_APP_DIR` | (선택) 서버 배포 경로. 기본 `/home/<USER>/lumina-invest` |
+| Variable | `FUND_WEB_COMPOSE_FILE` | (선택) compose 파일 목록(콜론 구분). 기본 `docker-compose.yml`, 운영은 `docker-compose.yml:compose.fd.yml` |
+| Variable | `FUND_WEB_DOMAIN` | (선택) 설정 시 `https://<DOMAIN>/api/health` 도 추가 확인 |
+
+서버 사전 준비 (최초 1회):
+
+```bash
+# Docker Engine + Compose v2 설치 (Ubuntu)
+curl -fsSL https://get.docker.com | sudo sh
+# 배포 경로와 .env 준비 — .env 는 git 에 없으므로 서버에서 직접 작성
+mkdir -p ~/lumina-invest && cd ~/lumina-invest
+cp /path/to/.env.example .env && vi .env
+```
+
+`shared-net` 네트워크는 워크플로가 없으면 자동 생성합니다. 보안 그룹은 GitHub Actions 러너에서 22번 포트 접속이 가능해야 하고,
+앱 포트(8966)는 리버스 프록시 또는 직접 노출 여부에 맞춰 열어 줍니다.
+
 ## 로컬 실행 가이드
 
 ### 사전 요구사항
