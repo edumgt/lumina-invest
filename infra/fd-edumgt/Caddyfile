@@ -1,0 +1,8 @@
+fd.edumgt.co.kr {
+    encode zstd gzip
+    reverse_proxy app:8000
+}
+
+http://43.201.229.188 {
+    redir https://fd.edumgt.co.kr{uri} 308
+}
