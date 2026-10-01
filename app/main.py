@@ -74,6 +74,41 @@ app = FastAPI(
 # 세션 슬라이딩 만료: 서버 TTL 이 연장된 요청의 응답에 세션 쿠키를 다시 실어 브라우저 쿠키 만료도 연장한다.
 app.add_middleware(SessionCookieRefreshMiddleware)
 
+
+class StaticNoCacheMiddleware:
+    """프런트 정적 파일(/js, /css, *.html)에 Cache-Control: no-cache 를 붙이는 순수 ASGI 미들웨어.
+
+    StaticFiles 는 Cache-Control 을 보내지 않아 브라우저가 휴리스틱 캐시로 옛 common.js 를 재사용하고,
+    새 HTML 이 옛 모듈을 import 해 "does not provide an export named ..." SyntaxError 가 난다.
+    no-cache 는 매번 ETag 로 재검증(304)하므로 배포 직후에도 새 파일을 받는다.
+    """
+
+    _PREFIXES = ("/js/", "/css/")
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        path = scope.get("path", "")
+        if not (path.startswith(self._PREFIXES) or path.endswith(".html") or path == "/"):
+            await self.app(scope, receive, send)
+            return
+
+        async def send_wrapper(message):
+            if message["type"] == "http.response.start":
+                headers = [(k, v) for k, v in message.get("headers", []) if k.lower() != b"cache-control"]
+                headers.append((b"cache-control", b"no-cache"))
+                message["headers"] = headers
+            await send(message)
+
+        await self.app(scope, receive, send_wrapper)
+
+
+app.add_middleware(StaticNoCacheMiddleware)
+
 # 라우터 등록
 # auth/ingest는 프로덕션(AWS)에서 auth-service/crawl-service Lambda로도 분리 배포되지만,
 # 로컬 docker-compose 단일 앱 실행 시에도 동작하도록 메인 앱에도 등록한다.
