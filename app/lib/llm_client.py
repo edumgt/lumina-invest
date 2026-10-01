@@ -142,6 +142,41 @@ class VLLMClient(_EmbedViaOllamaMixin):
             return data["choices"][0]["message"]["content"]
 
 
+class OpenAIClient(_EmbedViaOllamaMixin):
+    """OpenAI Chat Completions API (사용자가 화면에서 입력한 API 키로 호출).
+
+    채팅 화면의 "OpenAI API Key 입력으로 사용" 모드 전용. 요청마다 새로 만들고 키는 캐시/로그에 남기지 않는다.
+    """
+
+    def __init__(self, api_key: str, model: str = "", base_url: str = "", timeout: float | None = None):
+        super().__init__()
+        if not api_key or not api_key.strip():
+            raise ValueError("OpenAI API 키가 비어 있습니다.")
+        self._api_key = api_key.strip()
+        self._model = model or settings.OPENAI_MODEL
+        self._base = (base_url or settings.OPENAI_BASE_URL).rstrip("/")
+        self._timeout = timeout or settings.OLLAMA_TIMEOUT
+
+    @property
+    def model(self) -> str:
+        return self._model
+
+    async def chat(self, model: str, messages: list[dict], options: dict | None = None) -> str:
+        opts = options or {}
+        payload = {
+            "model": self._model or model,
+            "messages": messages,
+            "max_tokens": opts.get("num_predict", 1024),
+            "temperature": opts.get("temperature", 0.7),
+        }
+        headers = {"Authorization": f"Bearer {self._api_key}"}
+        async with httpx.AsyncClient(timeout=self._timeout) as client:
+            resp = await client.post(f"{self._base}/v1/chat/completions", json=payload, headers=headers)
+            resp.raise_for_status()
+            data = resp.json()
+            return data["choices"][0]["message"]["content"]
+
+
 _client_cache: LLMClient | None = None
 
 

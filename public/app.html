@@ -112,7 +112,20 @@
             <h2 class="text-lg font-semibold">🤖 로보 어드바이저 AI 상담</h2>
             <p class="text-xs text-slate-400 mt-0.5">신용 리스크 · 금융상품 추천 · 퀀트 전략을 AI가 종합 분석하여 투자 자문을 제공합니다</p>
           </div>
-          <button id="clear-chat" class="btn-secondary text-xs">초기화</button>
+          <div class="chat-mode-bar">
+            <label class="chat-mode-label" for="chat-llm-mode"><i class="fa-solid fa-microchip"></i> 답변 엔진</label>
+            <select id="chat-llm-mode" class="input chat-mode-select" title="답변 생성 방식 선택">
+              <option value="ollama">Local Ollama 연동 사용</option>
+              <option value="openai">OpenAI API Key 입력으로 사용</option>
+              <option value="rag">순수 RAG 청크 사용 (LLM 미사용)</option>
+            </select>
+            <div id="chat-openai-key-wrap" class="chat-key-wrap hidden">
+              <input id="chat-openai-key" type="password" class="input chat-key-input" placeholder="sk-... OpenAI API Key"
+                     autocomplete="off" spellcheck="false" />
+              <button type="button" id="chat-openai-key-toggle" class="chat-key-eye" title="키 표시/숨김"><i class="fa-solid fa-eye"></i></button>
+            </div>
+            <button id="clear-chat" class="btn-secondary text-xs">초기화</button>
+          </div>
         </div>
         <div id="chat-messages" class="flex-1 overflow-y-auto py-4 space-y-4 pr-1"></div>
         <div class="pt-4 border-t border-white/10">

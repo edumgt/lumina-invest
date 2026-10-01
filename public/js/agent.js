@@ -3,6 +3,58 @@
 import { api, getMe, setToast, escHtml, fmt, fmtPct, colorPct } from "/js/common.js";
 
 let chatHistory = [];
+
+// ── 답변 엔진 선택 (우측 상단): ollama | openai | rag ─────────────────────
+// 선택값과 OpenAI 키는 이 브라우저의 localStorage 에만 저장되고, 키는 요청 본문으로만 서버에 전달된다(서버 저장 없음).
+const LLM_MODE_KEY = "lumina.chat.llmMode";
+const OPENAI_KEY_KEY = "lumina.chat.openaiKey";
+const LLM_MODE_LABEL = { ollama: "Local Ollama", openai: "OpenAI API", rag: "순수 RAG 청크" };
+
+function getLlmMode() {
+  return document.getElementById("chat-llm-mode")?.value || "ollama";
+}
+function getOpenAiKey() {
+  return (document.getElementById("chat-openai-key")?.value || "").trim();
+}
+function syncLlmModeUi() {
+  const mode = getLlmMode();
+  document.getElementById("chat-openai-key-wrap")?.classList.toggle("hidden", mode !== "openai");
+  const inp = document.getElementById("chat-input");
+  if (inp) {
+    inp.placeholder = mode === "rag"
+      ? "검색어를 입력하면 지식 베이스에서 유사한 청크를 LLM 없이 그대로 보여줍니다."
+      : "예) 내 리스크 성향에 맞는 금융상품 추천해줘. 30대 남성 평균 신용점수는? 금리 3% 이상 정기예금 추천해줘.";
+  }
+  try { localStorage.setItem(LLM_MODE_KEY, mode); } catch {}
+}
+function initLlmModeControls() {
+  const sel = document.getElementById("chat-llm-mode");
+  const key = document.getElementById("chat-openai-key");
+  const eye = document.getElementById("chat-openai-key-toggle");
+  if (!sel) return;
+  try {
+    const savedMode = localStorage.getItem(LLM_MODE_KEY);
+    if (savedMode && [...sel.options].some(o => o.value === savedMode)) sel.value = savedMode;
+    const savedKey = localStorage.getItem(OPENAI_KEY_KEY);
+    if (savedKey && key) key.value = savedKey;
+  } catch {}
+  sel.addEventListener("change", () => {
+    syncLlmModeUi();
+    if (getLlmMode() === "openai" && !getOpenAiKey()) key?.focus();
+  });
+  key?.addEventListener("input", () => {
+    try { localStorage.setItem(OPENAI_KEY_KEY, key.value.trim()); } catch {}
+  });
+  eye?.addEventListener("click", () => {
+    if (!key) return;
+    const show = key.type === "password";
+    key.type = show ? "text" : "password";
+    eye.innerHTML = `<i class="fa-solid ${show ? "fa-eye-slash" : "fa-eye"}"></i>`;
+  });
+  syncLlmModeUi();
+}
+initLlmModeControls();
+
 // ── 1. AI 채팅 ────────────────────────────────────────────────────
 function appendUserMsg(text) {
   const d = document.createElement("div");
@@ -12,9 +64,12 @@ function appendUserMsg(text) {
   scrollChat();
 }
 
-function appendAssistantMsg(answer, steps) {
+function appendAssistantMsg(answer, steps, meta = {}) {
   const msgId = "m" + Date.now();
   let stepsHtml = "";
+  const modeTag = meta.mode && LLM_MODE_LABEL[meta.mode]
+    ? `<div class="text-[11px] text-slate-400 mb-1"><i class="fa-solid fa-microchip" style="margin-right:4px;"></i>${escHtml(LLM_MODE_LABEL[meta.mode])}${meta.chunks != null ? ` · 청크 ${meta.chunks}개` : ""}</div>`
+    : "";
   if (steps?.length) {
     const items = steps.map((s, i) => {
       const obs = s.observation ? `<div class="mt-1 text-slate-500 bg-black/20 rounded p-2 max-h-24 overflow-y-auto">${escHtml(s.observation.slice(0, 300))}</div>` : "";
@@ -31,7 +86,7 @@ function appendAssistantMsg(answer, steps) {
   const d = document.createElement("div");
   d.className = "flex justify-start";
   d.innerHTML = `<div class="max-w-[88%] px-4 py-3 text-sm leading-relaxed" style="background:var(--surf);border:1px solid var(--border);border-radius:4px 18px 18px 18px;box-shadow:0 1px 4px rgba(0,0,0,0.06);color:var(--text);">
-    <pre style="white-space:pre-wrap;word-break:break-word;font-family:inherit;font-size:13px;line-height:1.7;">${escHtml(answer)}</pre>${stepsHtml}
+    ${modeTag}<pre style="white-space:pre-wrap;word-break:break-word;font-family:inherit;font-size:13px;line-height:1.7;">${escHtml(answer)}</pre>${stepsHtml}
   </div>`;
   d.querySelectorAll(".steps-btn").forEach(btn => {
     btn.addEventListener("click", () => {
@@ -53,6 +108,13 @@ async function sendChat() {
   const inp = document.getElementById("chat-input");
   const q = inp.value.trim();
   if (!q) return;
+  const mode = getLlmMode();
+  const openaiKey = mode === "openai" ? getOpenAiKey() : "";
+  if (mode === "openai" && !openaiKey) {
+    setToast("OpenAI API Key를 입력해 주세요.", "error");
+    document.getElementById("chat-openai-key")?.focus();
+    return;
+  }
   inp.value = "";
   appendUserMsg(q);
 
@@ -60,17 +122,23 @@ async function sendChat() {
   const thinking = document.createElement("div");
   thinking.id = "thinking";
   thinking.className = "flex justify-start";
-  thinking.innerHTML = `<div class="px-4 py-3 text-sm animate-pulse" style="background:var(--surf);border:1px solid var(--border);border-radius:4px 18px 18px 18px;color:var(--text-mute);display:inline-block;"><i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px;color:var(--accent);"></i>에이전트 분석 중...</div>`;
+  const thinkingText = mode === "rag" ? "지식 베이스 검색 중..." : mode === "openai" ? "OpenAI 분석 중..." : "에이전트 분석 중...";
+  thinking.innerHTML = `<div class="px-4 py-3 text-sm animate-pulse" style="background:var(--surf);border:1px solid var(--border);border-radius:4px 18px 18px 18px;color:var(--text-mute);display:inline-block;"><i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px;color:var(--accent);"></i>${thinkingText}</div>`;
   document.getElementById("chat-messages").appendChild(thinking);
   scrollChat();
 
   try {
-    const res = await api("/api/chat", { method: "POST", body: { question: q, history: chatHistory } });
+    const body = { question: q, history: chatHistory, llm_mode: mode };
+    if (mode === "openai") body.openai_api_key = openaiKey;
+    const res = await api("/api/chat", { method: "POST", body });
     document.getElementById("thinking")?.remove();
-    chatHistory.push({ role: "user", content: q });
-    chatHistory.push({ role: "assistant", content: res.answer });
-    if (chatHistory.length > 20) chatHistory = chatHistory.slice(-20);
-    appendAssistantMsg(res.answer, res.steps);
+    if (mode !== "rag") {
+      // 순수 RAG 결과(청크 목록)는 대화 맥락에 넣지 않는다
+      chatHistory.push({ role: "user", content: q });
+      chatHistory.push({ role: "assistant", content: res.answer });
+      if (chatHistory.length > 20) chatHistory = chatHistory.slice(-20);
+    }
+    appendAssistantMsg(res.answer, res.steps, { mode: res.mode || mode, chunks: res.chunks ? res.chunks.length : null });
   } catch (e) {
     document.getElementById("thinking")?.remove();
     setToast(e.message, "error");

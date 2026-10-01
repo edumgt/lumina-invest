@@ -43,6 +43,12 @@ class Settings(BaseSettings):
     VLLM_BASE_URL: str = ""
     VLLM_MODEL: str = ""
 
+    # OpenAI API (채팅 화면에서 "OpenAI API Key 입력" 모드 선택 시 사용)
+    # 키는 브라우저가 요청마다 보내며 서버에 저장하지 않는다. OPENAI_API_KEY 는 요청에 키가 없을 때의 서버 기본값(선택).
+    OPENAI_BASE_URL: str = "https://api.openai.com"
+    OPENAI_MODEL: str = "gpt-4o-mini"
+    OPENAI_API_KEY: str = ""
+
     VECTOR_STORE: str = "qdrant"
     QDRANT_URL: str = "http://localhost:6333"
     QDRANT_COLLECTION: str = "fin_chunks"

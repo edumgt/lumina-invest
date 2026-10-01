@@ -6,10 +6,14 @@
 - 메시지 저장 시 conversation_id 포함
 - 대화 스레드 updated_at / message_count 갱신
 - JWT Bearer 또는 쿠키 세션 모두 허용 (get_current_user_any)
+- llm_mode 로 답변 생성 방식을 고른다 (채팅 화면 우측 상단 선택):
+    ollama : 서버 설정(LLM_PROVIDER)의 LLM 으로 LangGraph 에이전트 실행 (기본)
+    openai : 요청에 담긴 OpenAI API 키로 OpenAI Chat Completions 호출 (키는 저장·로그하지 않음)
+    rag    : LLM 없이 Qdrant 에서 검색한 청크만 그대로 반환 (순수 RAG)
 """
 import uuid
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Literal, Optional
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
@@ -21,7 +25,7 @@ from app.config import settings
 from app.database.postgres import get_pg_session
 from app.models import Chat, Conversation
 from app.lib.jwt_auth import get_current_user_any
-from app.lib.llm_client import get_llm_client
+from app.lib.llm_client import OpenAIClient, get_llm_client
 from app.lib.user_state import get_active_conversation, set_active_conversation
 from app.services.langgraph_agent import run_agent
 from app.services.rag_pipeline import rag_search
@@ -33,11 +37,53 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+LlmMode = Literal["ollama", "openai", "rag"]
+
+
 class ChatBody(BaseModel):
     question: str
     history: list[dict] = []
     use_rag: bool = True
     conversation_id: Optional[str] = None  # 없으면 자동 생성
+    llm_mode: LlmMode = "ollama"
+    openai_api_key: Optional[str] = None   # llm_mode=openai 일 때. 서버에 저장하지 않는다.
+    openai_model: Optional[str] = None     # 비우면 settings.OPENAI_MODEL
+
+
+def _rag_only_answer(question: str, docs: list[dict]) -> dict:
+    """순수 RAG 모드: 검색된 청크를 LLM 없이 그대로 답변으로 구성한다."""
+    if not docs:
+        return {
+            "answer": "검색된 참고 문서(청크)가 없습니다. 크롤링/문서 업로드로 지식 베이스를 먼저 채워 주세요.",
+            "steps": [], "citations": [], "chunks": [], "mode": "rag",
+        }
+    lines = [f"'{question}' 관련 검색 결과 {len(docs)}개 (LLM 미사용, 유사도 순)\n"]
+    citations = []
+    for i, d in enumerate(docs, 1):
+        title = d.get("title") or d.get("source") or "제목 없음"
+        score = d.get("score")
+        score_txt = f" · 유사도 {score:.3f}" if isinstance(score, (int, float)) else ""
+        lines.append(f"[{i}] {title}{score_txt}")
+        if d.get("url"):
+            lines.append(f"    {d['url']}")
+        lines.append(f"    {d.get('text', '').strip()[:800]}")
+        lines.append("")
+        citations.append({"title": title, "url": d.get("url", ""), "source": d.get("source", "")})
+    return {
+        "answer": "\n".join(lines).rstrip(),
+        "steps": [], "citations": citations, "chunks": docs, "mode": "rag",
+    }
+
+
+def _resolve_llm(body: "ChatBody"):
+    """llm_mode 에 맞는 (클라이언트, 모델명, 표시용 이름) 을 돌려준다."""
+    if body.llm_mode == "openai":
+        key = (body.openai_api_key or settings.OPENAI_API_KEY or "").strip()
+        if not key:
+            raise HTTPException(400, "OpenAI API 키를 입력해 주세요.")
+        client = OpenAIClient(key, model=(body.openai_model or "").strip())
+        return client, client.model, "OpenAI"
+    return get_llm_client(), settings.LLM_MODEL, f"Ollama({settings.LLM_PROVIDER})"
 
 
 async def _get_or_create_conversation(db: AsyncSession, user_id: str, cid: Optional[str]) -> str:
@@ -99,7 +145,7 @@ async def chat(
     db: AsyncSession = Depends(get_pg_session),
 ):
     user_id = user["id"]
-    ollama = get_llm_client()
+    llm, llm_model, llm_label = _resolve_llm(body)
 
     # 대화 스레드 확보
     conversation_id = await _get_or_create_conversation(db, user_id, body.conversation_id)
@@ -109,9 +155,10 @@ async def chat(
     if not history:
         history = await _build_history_from_db(db, conversation_id, user_id, limit=10)
 
-    # LangChain RAG 검색 (Qdrant)
+    # LangChain RAG 검색 (Qdrant) – rag 모드는 항상 검색
     rag_context = ""
-    if body.use_rag:
+    docs: list[dict] = []
+    if body.use_rag or body.llm_mode == "rag":
         try:
             docs = await rag_search(body.question, top_k=settings.TOP_K)
             if docs:
@@ -119,29 +166,46 @@ async def chat(
                     f"[{d['title']}] {d['text'][:500]}" for d in docs
                 )
         except Exception:
-            pass
+            docs = []
 
-    # LangGraph 에이전트 실행
-    try:
-        result = await run_agent(
-            db, ollama, settings.LLM_MODEL,
-            body.question, history,
-            rag_context=rag_context,
-        )
-    except httpx.HTTPStatusError as e:
-        if e.response.status_code == 404:
-            raise HTTPException(
-                503,
-                f"LLM 모델({settings.LLM_MODEL})을 찾을 수 없습니다. "
-                f"(ollama pull {settings.LLM_MODEL})",
+    if body.llm_mode == "rag":
+        # 순수 RAG: LLM 호출 없이 검색 청크만 반환
+        result = _rag_only_answer(body.question, docs)
+    else:
+        # LangGraph 에이전트 실행 (ollama: 서버 LLM / openai: 사용자 키)
+        try:
+            result = await run_agent(
+                db, llm, llm_model,
+                body.question, history,
+                rag_context=rag_context,
             )
-        raise HTTPException(503, f"Ollama 오류: {e.response.status_code}")
-    except httpx.ConnectError:
-        raise HTTPException(503, f"Ollama 서버({settings.OLLAMA_BASE_URL})에 연결할 수 없습니다.")
-    except httpx.TimeoutException:
-        raise HTTPException(504, "LLM 응답 시간이 초과되었습니다.")
-    except Exception as e:
-        raise HTTPException(500, f"에이전트 오류 (LLM_PROVIDER={settings.LLM_PROVIDER}): {str(e)[:200]}")
+            result["mode"] = body.llm_mode
+        except httpx.HTTPStatusError as e:
+            code = e.response.status_code
+            if body.llm_mode == "openai":
+                if code == 401:
+                    raise HTTPException(401, "OpenAI API 키가 유효하지 않습니다.")
+                if code == 429:
+                    raise HTTPException(429, "OpenAI 사용량 한도(rate limit/quota)를 초과했습니다.")
+                if code == 404:
+                    raise HTTPException(400, f"OpenAI 모델({llm_model})을 찾을 수 없습니다.")
+                raise HTTPException(502, f"OpenAI 오류: HTTP {code}")
+            if code == 404:
+                raise HTTPException(
+                    503,
+                    f"LLM 모델({llm_model})을 찾을 수 없습니다. "
+                    f"(ollama pull {llm_model})",
+                )
+            raise HTTPException(503, f"Ollama 오류: {code}")
+        except httpx.ConnectError:
+            target = settings.OPENAI_BASE_URL if body.llm_mode == "openai" else settings.OLLAMA_BASE_URL
+            raise HTTPException(503, f"{llm_label} 서버({target})에 연결할 수 없습니다.")
+        except httpx.TimeoutException:
+            raise HTTPException(504, "LLM 응답 시간이 초과되었습니다.")
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(500, f"에이전트 오류 ({llm_label}): {str(e)[:200]}")
 
     # PostgreSQL – 메시지 저장 (conversation_id 포함)
     try:

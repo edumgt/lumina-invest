@@ -367,6 +367,14 @@ docker compose run --rm ingest
 | `COOKIE_SECURE` / `COOKIE_SAMESITE` | `false` / `lax` | 세션 쿠키 속성. HTTPS 운영(Caddy 뒤)에서는 `COOKIE_SECURE=true` |
 | `JWT_REFRESH_TTL` | `604800` (7일) | API 클라이언트용 리프레시 토큰 수명. `/api/auth/token/refresh` 가 새 리프레시 토큰도 함께 돌려주므로(슬라이딩) 활동 중인 클라이언트는 재로그인이 필요 없다 |
 
+#### 로보 어드바이저 채팅 답변 엔진 선택 (`/app.html#agent-chat` 우측 상단)
+
+| 모드 | 동작 | 요청 필드 |
+|---|---|---|
+| Local Ollama 연동 사용 | 서버 `LLM_PROVIDER` 설정의 LLM 으로 LangGraph 에이전트 실행 (기본) | `llm_mode=ollama` |
+| OpenAI API Key 입력으로 사용 | 선택 시 나타나는 입력창의 키로 OpenAI Chat Completions 호출. 키는 브라우저 `localStorage` 에만 보관되고 요청 본문으로만 전달되며 서버에 저장·로그되지 않는다. 모델은 `OPENAI_MODEL` | `llm_mode=openai`, `openai_api_key`, `openai_model`(선택) |
+| 순수 RAG 청크 사용 | LLM 호출 없이 Qdrant 유사도 검색 결과(청크·출처·점수)를 그대로 반환 | `llm_mode=rag` |
+
 #### 로그인 세션 유지 동작
 
 - 브라우저: 로그인 시 `fin_session` 쿠키(`max_age=SESSION_TTL`)를 발급한다. 이후 인증된 요청이 들어오면 `SESSION_REFRESH_INTERVAL` 마다 Redis TTL 을 `SESSION_TTL` 로 되돌리고, 같은 응답에 쿠키를 다시 실어 브라우저 쪽 만료도 함께 연장한다 (`app/lib/session.py` 의 `SessionCookieRefreshMiddleware`). 브라우저를 닫았다 다시 열어도 `/`, `/login.html` 은 세션이 살아 있으면 바로 `/app.html` 로 보낸다.

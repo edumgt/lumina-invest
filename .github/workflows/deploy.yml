@@ -98,22 +98,25 @@ jobs:
             -e "ssh ${SSH_OPTS}" \
             ./ "${SSH_USER}@${SSH_HOST}:${APP_DIR}/"
 
+      # 주의: sudo -E 로 COMPOSE_FILE 을 넘기면 안 된다. Ubuntu 24.10+ 의 sudo-rs 는 -E 를 무시해
+      # 오버라이드(compose.fd.yml)가 빠진 채 docker-compose.yml 만으로 실행되고, --remove-orphans 가
+      # proxy(Caddy)·qdrant 컨테이너를 고아로 지워 서비스가 내려간다. `sudo env VAR=... cmd` 로 넘긴다.
       - name: 컨테이너 재빌드 및 재기동
         run: |
           ssh ${SSH_OPTS} "${SSH_USER}@${SSH_HOST}" \
-            "cd '${APP_DIR}' && export COMPOSE_FILE='${COMPOSE_FILE}' \
-             && sudo -E docker compose config --quiet \
-             && sudo -E docker compose up -d --build --remove-orphans \
+            "cd '${APP_DIR}' \
+             && sudo env COMPOSE_FILE='${COMPOSE_FILE}' docker compose config --quiet \
+             && sudo env COMPOSE_FILE='${COMPOSE_FILE}' docker compose up -d --build --remove-orphans \
              && sudo docker image prune -f >/dev/null \
-             && sudo -E docker compose ps"
+             && sudo env COMPOSE_FILE='${COMPOSE_FILE}' docker compose ps"
 
       # 운영 오버라이드(compose.fd.yml)는 앱 포트를 호스트에 노출하지 않으므로
       # 컨테이너 안에서 직접 확인한다 (이미지에 curl 포함).
       - name: 배포 확인 (app 컨테이너 내부 헬스체크)
         run: |
           ssh ${SSH_OPTS} "${SSH_USER}@${SSH_HOST}" \
-            "cd '${APP_DIR}' && export COMPOSE_FILE='${COMPOSE_FILE}' \
-             && sudo -E docker compose exec -T app \
+            "cd '${APP_DIR}' \
+             && sudo env COMPOSE_FILE='${COMPOSE_FILE}' docker compose exec -T app \
                   curl -sf --retry 12 --retry-delay 5 --retry-all-errors http://localhost:8000/api/health" \
             && echo "app OK (container)"
 
