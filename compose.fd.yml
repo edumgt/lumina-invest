@@ -16,7 +16,6 @@ services:
     image: lumina-invest-app:fd
     ports: !override []
     environment:
-      OLLAMA_BASE_URL: http://ollama:11434
       QDRANT_URL: http://qdrant:6333
       PUBLIC_BASE_URL: https://fd.edumgt.co.kr
       TRUST_PROXY: "true"
@@ -36,7 +35,6 @@ services:
   ingest:
     image: lumina-invest-app:fd
     environment:
-      OLLAMA_BASE_URL: http://ollama:11434
       QDRANT_URL: http://qdrant:6333
     depends_on:
       postgres:
@@ -51,7 +49,6 @@ services:
   celery-worker:
     image: lumina-invest-app:fd
     environment:
-      OLLAMA_BASE_URL: http://ollama:11434
       QDRANT_URL: http://qdrant:6333
     depends_on:
       postgres:
@@ -76,17 +73,6 @@ services:
     networks:
       - shared-net
 
-  ollama:
-    image: ollama/ollama:latest
-    restart: unless-stopped
-    environment:
-      OLLAMA_NUM_PARALLEL: "1"
-      OLLAMA_MAX_LOADED_MODELS: "1"
-    volumes:
-      - ollama_data:/root/.ollama
-    networks:
-      - shared-net
-
   proxy:
     image: caddy:2-alpine
     restart: unless-stopped
@@ -104,6 +90,5 @@ services:
 
 volumes:
   qdrant_data:
-  ollama_data:
   caddy_data:
   caddy_config:

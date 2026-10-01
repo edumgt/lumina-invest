@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     JWT_REFRESH_TTL: int = 604800   # 7일 (초)
 
     OLLAMA_BASE_URL: str = "http://127.0.0.1:11434"
-    LLM_MODEL: str = "llama3.1"
+    LLM_MODEL: str = "qwen2.5:1.5b"
     EMBED_MODEL: str = "nomic-embed-text"
     VLM_MODEL: str = "llava"          # Vision-Language Model for image/slide description
     OLLAMA_TIMEOUT: float = 300.0

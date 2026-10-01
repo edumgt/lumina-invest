@@ -66,6 +66,8 @@ services:
     environment:
     - DATABASE_URL=postgresql+asyncpg://fin_user:fin_pass@postgres:5432/fin_ai
     - REDIS_URL=redis://redis:6379
+    - OLLAMA_BASE_URL=${COMPOSE_OLLAMA_URL:-http://ollama:11434}
+    - LLM_MODEL=${COMPOSE_LLM_MODEL:-qwen2.5:1.5b}
     - NEO4J_URI=bolt://neo4j:7687
     - NEO4J_USER=neo4j
     - NEO4J_PASSWORD=finagent123
@@ -92,6 +94,8 @@ services:
         condition: service_healthy
       neo4j:
         condition: service_healthy
+      ollama:
+        condition: service_started
 
   ingest:
     build:
@@ -102,6 +106,8 @@ services:
     environment:
     - DATABASE_URL=postgresql+asyncpg://fin_user:fin_pass@postgres:5432/fin_ai
     - REDIS_URL=redis://redis:6379
+    - OLLAMA_BASE_URL=${COMPOSE_OLLAMA_URL:-http://ollama:11434}
+    - LLM_MODEL=${COMPOSE_LLM_MODEL:-qwen2.5:1.5b}
     - NEO4J_URI=bolt://neo4j:7687
     - NEO4J_USER=neo4j
     - NEO4J_PASSWORD=finagent123
@@ -123,6 +129,58 @@ services:
       redis:
         condition: service_healthy
 
+  # ── Ollama (채팅 LLM + 임베딩) ─────────────────────────────────────────────
+  # GPU 없는 서버 기준으로 소형 모델(qwen2.5:1.5b)을 기본으로 쓴다. 다른 모델을 쓰려면
+  # COMPOSE_LLM_MODEL=<모델> 로 기동. 호스트에 이미 Ollama 가 있으면
+  # COMPOSE_OLLAMA_URL=http://host.docker.internal:11434 로 기동하고 이 서비스는 무시해도 된다.
+  ollama:
+    image: ollama/ollama:latest
+    container_name: fin-ai-ollama
+    environment:
+    - OLLAMA_NUM_PARALLEL=1
+    - OLLAMA_MAX_LOADED_MODELS=1
+    - OLLAMA_KEEP_ALIVE=30m
+    # CPU 경합 시 앱 컨테이너보다 낮은 우선순위 (기본 1024). 유휴 시에는 제한 없음.
+    cpu_shares: 512
+    volumes:
+    - ollama_data:/root/.ollama
+    networks:
+    - shared-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+  # 기동 시 필요한 모델을 내려받는 일회성 작업. 이미 있으면 즉시 종료.
+  model-pull:
+    image: ollama/ollama:latest
+    container_name: fin-ai-model-pull
+    environment:
+    - OLLAMA_HOST=http://ollama:11434
+    # 네트워크가 불안정해도 완주하도록 모델별 최대 8회 재시도 (이어받기 지원)
+    entrypoint:
+    - sh
+    - -c
+    - |
+      set -e
+      for m in "${COMPOSE_LLM_MODEL:-qwen2.5:1.5b}" nomic-embed-text; do
+        n=0
+        until ollama pull "$$m"; do
+          n=$$((n+1)); [ "$$n" -ge 8 ] && { echo "pull 실패: $$m"; exit 1; }
+          echo "재시도 $$n/8: $$m"; sleep 15
+        done
+      done
+      echo "모델 준비 완료:"; ollama list
+    restart: 'no'
+    networks:
+    - shared-net
+    depends_on:
+      ollama:
+        condition: service_healthy
+
   # ── Celery Worker (AI 에이전트·인제스트 비동기 태스크) ────────────────────────
   celery-worker:
     build:
@@ -138,6 +196,8 @@ services:
     environment:
     - DATABASE_URL=postgresql+asyncpg://fin_user:fin_pass@postgres:5432/fin_ai
     - REDIS_URL=redis://redis:6379
+    - OLLAMA_BASE_URL=${COMPOSE_OLLAMA_URL:-http://ollama:11434}
+    - LLM_MODEL=${COMPOSE_LLM_MODEL:-qwen2.5:1.5b}
     - NEO4J_URI=bolt://neo4j:7687
     - NEO4J_USER=neo4j
     - NEO4J_PASSWORD=finagent123
@@ -185,6 +245,7 @@ volumes:
   neo4j_data: null
   postgres_data: null
   redis_data: null
+  ollama_data: null
   # 이름을 고정해 app 컨테이너가 Engine API로 `-v lean-workflows:/workspace` 를 요청할 때도
   # (Compose 프로젝트 접두사 없이) 같은 볼륨을 가리키게 한다.
   lean_workflows:

@@ -287,11 +287,14 @@ cp /path/to/.env.example .env && vi .env
 ### 1. 인프라 기동
 
 ```bash
-# Ollama 모델 포함 전체 기동
+# Ollama(qwen2.5:1.5b + nomic-embed-text) 포함 전체 기동
 docker compose up -d
 
-# 모델 준비 대기 (약 1~5분)
+# 모델 준비 대기 (약 1~5분, 이미 받아둔 모델이면 즉시 종료)
 docker compose logs -f model-pull
+
+# 다른 모델을 쓰려면: COMPOSE_LLM_MODEL=llama3.1 docker compose up -d
+# 호스트 Ollama 를 쓰려면: COMPOSE_OLLAMA_URL=http://host.docker.internal:11434 docker compose up -d app
 ```
 
 ### 2. Python 앱 로컬 실행
