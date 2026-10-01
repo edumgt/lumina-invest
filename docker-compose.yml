@@ -22,6 +22,10 @@ services:
   redis:
     image: redis:8-alpine
     container_name: fin-ai-redis
+    # 세션(fin_session:*)이 Redis 에 저장되므로 컨테이너 재시작/재배포 뒤에도 로그인 상태가 유지되도록
+    # AOF(appendonly) + RDB 스냅샷을 켠다. 기본 설정(RDB 만, 최대 1시간 간격)은 재시작 시
+    # 최근 세션이 사라져 사용자가 다시 로그인해야 하는 문제가 있다.
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec", "--save", "60", "1"]
     ports:
     - "16379:6379"
     volumes:

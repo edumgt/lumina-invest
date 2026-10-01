@@ -163,9 +163,15 @@
   </div>
 
   <script type="module">
-    import { api, setToast } from "/js/common.js";
+    import { api, getMe, safeNextPath, setToast } from "/js/common.js";
     import { initCompletionIndicator } from "/js/completion.js";
     initCompletionIndicator();
+
+    // 세션 쿠키가 아직 유효하면(브라우저를 닫았다 다시 열어도) 로그인 없이 바로 앱으로 이동
+    getMe({ redirectOnUnauthorized: false })
+      .then(() => location.replace(safeNextPath()))
+      .catch(() => {});
+
     document.getElementById("f").addEventListener("submit", async (e) => {
       e.preventDefault();
       const fd = new FormData(e.target);
@@ -174,7 +180,7 @@
           method: "POST",
           body: { email: fd.get("email"), password: fd.get("password") },
         });
-        location.href = "/app.html";
+        location.href = safeNextPath();
       } catch (err) {
         setToast(err.message, "error");
       }

@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from app.database.postgres import connect_postgres, close_postgres
 from app.lib.redis_cache import connect_redis, close_redis
+from app.lib.session import SessionCookieRefreshMiddleware
 from app.routes import auth
 
 # 스키마 마이그레이션(alembic upgrade head)은 이 Lambda의 콜드스타트가 아니라
@@ -30,5 +31,8 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
+
+# 세션 슬라이딩 만료: 서버 TTL 이 연장된 요청의 응답에 세션 쿠키를 다시 실어 브라우저 쿠키 만료도 연장한다.
+app.add_middleware(SessionCookieRefreshMiddleware)
 
 app.include_router(auth.router)

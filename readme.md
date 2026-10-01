@@ -108,7 +108,7 @@
 | LLM / 임베딩 | Ollama (`llama3.1` / `nomic-embed-text`) |
 | 벡터 DB | Qdrant |
 | 사용자 인증 DB | MongoDB (motor async driver) |
-| 세션 | Redis (`redis.asyncio`) + HTTP-only 쿠키 |
+| 세션 | Redis (`redis.asyncio`) + HTTP-only 쿠키, 슬라이딩 만료(활동 시 서버 TTL·브라우저 쿠키 만료 동시 연장) |
 | 관계형 / 시계열 | aiosqlite (CB 통계, 금융상품, 포트폴리오, 주문) |
 | 외부 HTTP | httpx (async) – Yahoo Finance, Ollama API |
 | HTML 파싱 | BeautifulSoup4 |
@@ -362,6 +362,17 @@ docker compose run --rm ingest
 | `TRADINGVIEW_ALLOWED_IPS` | TradingView 공식 4개 IP | 쉼표 구분 허용 IP |
 | `TRADINGVIEW_RATE_LIMIT_MAX` | `30` | API 키당 분당 Webhook 알림 수 |
 | `PUBLIC_BASE_URL` | (빈 값) | Webhook URL 안내에 쓰는 외부 공개 주소 |
+| `SESSION_TTL` | `2592000` (30일) | 로그인 세션 유효 기간(초). 슬라이딩 만료라 **마지막 활동**으로부터 이 시간이 지나야 로그아웃된다 |
+| `SESSION_REFRESH_INTERVAL` | `300` | 슬라이딩 갱신 최소 간격(초). 이 간격마다 1회만 Redis `EXPIRE` + 세션 쿠키 재발급(`Set-Cookie`)을 수행한다 |
+| `COOKIE_SECURE` / `COOKIE_SAMESITE` | `false` / `lax` | 세션 쿠키 속성. HTTPS 운영(Caddy 뒤)에서는 `COOKIE_SECURE=true` |
+| `JWT_REFRESH_TTL` | `604800` (7일) | API 클라이언트용 리프레시 토큰 수명. `/api/auth/token/refresh` 가 새 리프레시 토큰도 함께 돌려주므로(슬라이딩) 활동 중인 클라이언트는 재로그인이 필요 없다 |
+
+#### 로그인 세션 유지 동작
+
+- 브라우저: 로그인 시 `fin_session` 쿠키(`max_age=SESSION_TTL`)를 발급한다. 이후 인증된 요청이 들어오면 `SESSION_REFRESH_INTERVAL` 마다 Redis TTL 을 `SESSION_TTL` 로 되돌리고, 같은 응답에 쿠키를 다시 실어 브라우저 쪽 만료도 함께 연장한다 (`app/lib/session.py` 의 `SessionCookieRefreshMiddleware`). 브라우저를 닫았다 다시 열어도 `/`, `/login.html` 은 세션이 살아 있으면 바로 `/app.html` 로 보낸다.
+- 세션 만료 뒤 API 가 401 을 돌려주면 프런트(`public/js/common.js`)가 `/login.html?next=<원래 경로>` 로 보내고, 로그인 후 원래 화면으로 복귀한다.
+- Redis 는 `docker-compose.yml` 에서 AOF(`--appendonly yes`)로 기동하므로 컨테이너 재시작/재배포 후에도 세션이 남는다. Redis 가 잠시 내려가면 인증 요청은 500 이 아니라 503 을 돌려주고, 복구되면 재로그인 없이 이어서 동작한다.
+- JWT 블랙리스트 키는 토큰 전체의 SHA-256 이다 (과거 "토큰 앞 32자" 방식은 JWT 헤더가 모든 토큰에서 같아 토큰 하나를 폐기하면 전체 토큰이 폐기되는 버그가 있었다).
 
 자동매매는 인프로세스 루프가 아니라 **DB 플래그(`broker_settings.quant_auto_enabled`) + Celery Beat 10분 태스크(`quant.auto_trade_cycle`)**로 실행되므로 `celery-beat`, `celery-worker` 컨테이너가 반드시 떠 있어야 합니다. 사이클 로그는 `data_cache`에 공유 저장됩니다.
 

@@ -7,11 +7,13 @@
 4. 로그아웃 시 POST /api/auth/token/revoke → Redis 블랙리스트 등록
 
 세션 쿠키 방식과 병행 지원 – get_current_user_any()로 두 방식 모두 허용.
+쿠키로 인증된 요청은 세션 쿠키 전용 의존성과 동일하게 슬라이딩 만료(TTL·쿠키 갱신)를 적용한다.
 """
+import hashlib
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from fastapi import Cookie, Depends, HTTPException, status
+from fastapi import Cookie, Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 
@@ -81,8 +83,12 @@ def decode_token(token: str) -> dict:
 
 
 def _bl_key(token: str) -> str:
-    """블랙리스트 키: 토큰의 앞 32자 사용 (메모리 절약)."""
-    return token[:32]
+    """블랙리스트 키: 토큰 전체의 SHA-256 해시.
+
+    주의: 토큰 앞부분(prefix)을 키로 쓰면 안 된다. JWT 는 헤더(base64url)가 모든 토큰에서
+    동일해 앞 36자가 같으므로, 토큰 하나를 폐기하면 모든 사용자의 토큰이 폐기되는 결과가 된다.
+    """
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
 async def revoke_token(token: str) -> None:
@@ -129,21 +135,21 @@ async def get_current_user_jwt(
 
 
 async def get_current_user_any(
+    request: Request,
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(_bearer),
-    fin_session: Optional[str] = Cookie(default=None),
+    fin_session: Optional[str] = Cookie(default=None, alias=settings.SESSION_COOKIE_NAME),
 ) -> dict:
     """Bearer JWT 또는 세션 쿠키 중 하나로 인증합니다.
 
     JWT가 있으면 우선 처리, 없으면 쿠키 세션으로 폴백합니다.
+    쿠키 세션으로 인증되면 get_current_user 와 동일하게 슬라이딩 만료를 적용합니다.
     """
     if credentials and credentials.credentials:
         return await get_current_user_jwt(credentials)
 
     if fin_session:
-        from app.lib.session import get_session  # 순환 임포트 방지
-        user = await get_session(fin_session)
-        if user:
-            return user
+        from app.lib.session import get_current_user  # 순환 임포트 방지
+        return await get_current_user(request, fin_session)
 
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,

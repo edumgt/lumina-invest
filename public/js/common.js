@@ -1,4 +1,25 @@
-export async function api(path, { method = "GET", body, headers = {} } = {}) {
+// 세션이 만료된 상태(401)로 앱 API 를 호출하면 로그인 화면으로 보내고, 로그인 뒤 원래 화면으로 돌아온다.
+// 인증 엔드포인트(/api/auth/*)와 로그인/회원가입 화면의 세션 확인 호출은 redirectOnUnauthorized:false 로 제외한다.
+let _redirecting = false;
+export function redirectToLogin() {
+  if (_redirecting) return;
+  _redirecting = true;
+  const next = location.pathname + location.search + location.hash;
+  const qs = next && next !== "/" && !next.startsWith("/login.html") ? `?next=${encodeURIComponent(next)}` : "";
+  location.replace(`/login.html${qs}`);
+}
+
+// 로그인 후 돌아갈 경로: 같은 출처의 절대 경로만 허용 (오픈 리다이렉트 방지)
+export function safeNextPath(fallback = "/app.html") {
+  const next = new URLSearchParams(location.search).get("next") || "";
+  // "/" 로 시작하되 "//" · "/\" (브라우저가 프로토콜 상대 URL 로 해석) 는 거부
+  if (/^\/(?![\/\\])/.test(next) && !next.startsWith("/login.html") && !next.startsWith("/register.html")) {
+    return next;
+  }
+  return fallback;
+}
+
+export async function api(path, { method = "GET", body, headers = {}, redirectOnUnauthorized = true } = {}) {
   let res;
   try {
     res = await fetch(path, {
@@ -16,6 +37,10 @@ export async function api(path, { method = "GET", body, headers = {} } = {}) {
   let data = {};
   try { data = await res.json(); } catch (_) {}
 
+  if (res.status === 401 && redirectOnUnauthorized && !path.startsWith("/api/auth/")) {
+    redirectToLogin();
+  }
+
   if (!res.ok) {
     // FastAPI HTTPException → detail 필드
     // 일반 에러 → error 또는 message 필드
@@ -29,8 +54,8 @@ export async function api(path, { method = "GET", body, headers = {} } = {}) {
   return data;
 }
 
-export async function getMe() {
-  return api("/api/me");
+export async function getMe(opts = {}) {
+  return api("/api/me", opts);
 }
 
 export function setToast(msg, type = "ok") {

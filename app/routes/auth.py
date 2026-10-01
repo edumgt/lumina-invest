@@ -5,11 +5,13 @@
 쿠키 방식 (브라우저):
   POST /api/auth/register  – 회원가입 + 세션 쿠키 발급
   POST /api/auth/login     – 로그인 + 세션 쿠키 발급
-  POST /api/auth/logout    – 로그아웃 + 쿠키 삭제
+  POST /api/auth/logout    – 로그아웃 + 쿠키 삭제 (세션이 이미 만료돼 있어도 쿠키는 지운다)
+  세션은 슬라이딩 만료: 인증된 요청이 있을 때마다 서버 TTL 과 브라우저 쿠키 만료가 함께 연장된다
+  (app/lib/session.py 의 touch_session + SessionCookieRefreshMiddleware).
 
 JWT 방식 (API 클라이언트 / 모바일):
   POST /api/auth/token         – 로그인 → access_token + refresh_token 반환
-  POST /api/auth/token/refresh – refresh_token → 새 access_token 발급
+  POST /api/auth/token/refresh – refresh_token → 새 access_token + 새 refresh_token 발급(슬라이딩)
   POST /api/auth/token/revoke  – 토큰 폐기 (블랙리스트 등록)
 
 공용:
@@ -37,12 +39,14 @@ from app.lib.jwt_auth import (
     revoke_token,
 )
 from app.lib.session import (
+    COOKIE_NAME,
+    clear_session_cookie,
     create_session,
     delete_all_user_sessions,
     delete_session,
-    get_current_user,
     get_session,
     list_user_sessions,
+    set_session_cookie,
 )
 from app.lib.user_state import clear_user_state, mark_offline, mark_online
 
@@ -132,11 +136,7 @@ async def register(body: RegisterBody, response: Response):
     sid = await create_session(session_data)
     await mark_online(user_id)
 
-    response.set_cookie(
-        "fin_session", sid,
-        httponly=True, samesite=settings.COOKIE_SAMESITE,
-        secure=settings.COOKIE_SECURE, max_age=settings.SESSION_TTL,
-    )
+    set_session_cookie(response, sid)
     return {"ok": True, "user": {"name": body.name, "email": body.email,
                                   "clientId": client_id, "roles": roles}}
 
@@ -159,11 +159,7 @@ async def login(body: LoginBody, response: Response):
     sid = await create_session(session_data)
     await mark_online(user_id)
 
-    response.set_cookie(
-        "fin_session", sid,
-        httponly=True, samesite=settings.COOKIE_SAMESITE,
-        secure=settings.COOKIE_SECURE, max_age=settings.SESSION_TTL,
-    )
+    set_session_cookie(response, sid)
     return {"ok": True, "user": {"name": user_dict["name"], "email": user_dict["email"],
                                   "clientId": user_dict["client_id"],
                                   "roles": user_dict["roles"]}}
@@ -172,13 +168,19 @@ async def login(body: LoginBody, response: Response):
 @router.post("/auth/logout")
 async def logout(
     response: Response,
-    user=Depends(get_current_user),
-    fin_session: str | None = Cookie(default=None),
+    fin_session: str | None = Cookie(default=None, alias=COOKIE_NAME),
 ):
+    """세션을 삭제하고 쿠키를 지웁니다.
+
+    세션이 이미 만료됐거나 Redis 에 없어도 401 을 내지 않고 쿠키만 정리합니다
+    (만료된 쿠키가 브라우저에 남아 로그아웃이 실패하는 상황 방지).
+    """
     if fin_session:
-        await delete_session(fin_session)
-    await mark_offline(user["id"])
-    response.delete_cookie("fin_session")
+        session = await get_session(fin_session)
+        if session:
+            await delete_session(fin_session)
+            await mark_offline(session["id"])
+    clear_session_cookie(response)
     return {"ok": True}
 
 
@@ -221,14 +223,12 @@ async def refresh_token(body: TokenRefreshBody):
     if payload.get("type") != "refresh":
         raise HTTPException(401, "리프레시 토큰이 아닙니다.")
 
-    # 기존 리프레시 토큰은 유지, 새 액세스 토큰만 발급
-    from app.lib.jwt_auth import create_access_token
+    # 슬라이딩 만료: 새 액세스 토큰과 함께 만료가 연장된 새 리프레시 토큰을 발급한다.
+    # 활동 중인 클라이언트가 JWT_REFRESH_TTL(기본 7일) 마다 재로그인하지 않도록 하기 위함.
+    # 기존 리프레시 토큰은 폐기하지 않고 원래 만료 시각까지 유효하다 (새 토큰을 저장하지 않는
+    # 구형 클라이언트와의 호환). 즉시 무효화가 필요하면 /auth/token/revoke 를 호출한다.
     user_payload = {k: v for k, v in payload.items() if k not in ("type", "iat", "exp")}
-    return {
-        "access_token": create_access_token(user_payload),
-        "token_type": "bearer",
-        "expires_in": settings.JWT_ACCESS_TTL,
-    }
+    return create_token_pair(user_payload)
 
 
 @router.post("/auth/token/revoke")

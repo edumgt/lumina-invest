@@ -1,6 +1,6 @@
 /* 엔트리: 부트스트랩, 뷰 활성화 디스패치
  * app.html 인라인 스크립트에서 분리됨. 엔트리는 main.js */
-import { api, getMe, setToast, escHtml, fmt, fmtPct, colorPct } from "/js/common.js";
+import { api, getMe, redirectToLogin, setToast, escHtml, fmt, fmtPct, colorPct } from "/js/common.js";
 import { loadMarketTicker, loadSyncStatus, navigate, registerViewActivation } from "/js/core.js";
 import { loadCrawlList } from "/js/agent.js";
 import { loadCompanyCompare, loadCompanyDashboard, loadCompanySector } from "/js/company.js";
@@ -35,14 +35,16 @@ async function boot() {
     initFormulaView();                     // 자유 산식 지표 (js/formula.js)
     const hash = location.hash.replace("#", "");
     navigate(hash && document.querySelector(`[data-view="${hash}"]`) ? hash : "agent-chat");
-  } catch {
-    location.href = "/login.html";
+  } catch (err) {
+    // 세션 만료(401)는 api() 가 이미 로그인 화면으로 보냈다. 그 외(네트워크 등)도 로그인 화면으로.
+    console.error("[boot]", err);
+    redirectToLogin();
   }
 }
 
 document.getElementById("logout-btn").addEventListener("click", async () => {
   await api("/api/auth/logout", { method: "POST" }).catch(() => {});
-  location.href = "/";
+  location.replace("/login.html");
 });
 
 // ── View Activation ───────────────────────────────────────────────

@@ -173,9 +173,15 @@
   </div>
 
   <script type="module">
-    import { api, setToast } from "/js/common.js";
+    import { api, getMe, safeNextPath, setToast } from "/js/common.js";
     import { initCompletionIndicator } from "/js/completion.js";
     initCompletionIndicator();
+
+    // 이미 로그인된 상태면 회원가입 화면 대신 앱으로 이동
+    getMe({ redirectOnUnauthorized: false })
+      .then(() => location.replace(safeNextPath()))
+      .catch(() => {});
+
     document.getElementById("f").addEventListener("submit", async (e) => {
       e.preventDefault();
       const fd = new FormData(e.target);
@@ -184,7 +190,7 @@
           method: "POST",
           body: { name: fd.get("name"), email: fd.get("email"), password: fd.get("password") },
         });
-        location.href = "/app.html";
+        location.href = safeNextPath();
       } catch (err) {
         setToast(err.message, "error");
       }

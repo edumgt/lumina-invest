@@ -2,7 +2,9 @@
 import asyncio
 import os
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from typing import Optional
+
+from fastapi import Cookie, FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, RedirectResponse
 
@@ -13,6 +15,7 @@ from app.database.postgres import connect_postgres, close_postgres
 from app.config import settings
 from app.database.neo4j import connect_neo4j, close_neo4j, ensure_graph_schema
 from app.lib.redis_cache import connect_redis, close_redis
+from app.lib.session import COOKIE_NAME, SessionCookieRefreshMiddleware, get_session
 from app.routes import auth, health, chat, stocks, library, admin, system, quant, ml, macro, documents, notification, graph, conversations, tasks, ingest, paper, openapi, lean
 from app.services.graph_service import seed_graph
 from app.services.sync_scheduler import start_sync_scheduler, stop_sync_scheduler
@@ -68,6 +71,9 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# 세션 슬라이딩 만료: 서버 TTL 이 연장된 요청의 응답에 세션 쿠키를 다시 실어 브라우저 쿠키 만료도 연장한다.
+app.add_middleware(SessionCookieRefreshMiddleware)
+
 # 라우터 등록
 # auth/ingest는 프로덕션(AWS)에서 auth-service/crawl-service Lambda로도 분리 배포되지만,
 # 로컬 docker-compose 단일 앱 실행 시에도 동작하도록 메인 앱에도 등록한다.
@@ -108,16 +114,32 @@ if os.path.isdir(_public):
     app.mount("/js", StaticFiles(directory=os.path.join(_public, "js")), name="js")
     app.mount("/css", StaticFiles(directory=os.path.join(_public, "css")), name="css")
 
+    async def _has_valid_session(sid: Optional[str]) -> bool:
+        """세션 쿠키가 Redis 에 살아 있는지 확인합니다 (Redis 장애 시 False)."""
+        if not sid:
+            return False
+        try:
+            return await get_session(sid) is not None
+        except Exception:
+            return False
+
     @app.get("/", include_in_schema=False)
-    async def index():
+    async def index(fin_session: Optional[str] = Cookie(default=None, alias=COOKIE_NAME)):
+        # 로그인 세션이 살아 있으면 로그인 화면을 거치지 않고 바로 앱으로 보낸다.
+        if await _has_valid_session(fin_session):
+            return RedirectResponse(url="/app.html")
         return RedirectResponse(url="/login.html")
 
     @app.get("/login.html", include_in_schema=False)
-    async def login_page():
+    async def login_page(fin_session: Optional[str] = Cookie(default=None, alias=COOKIE_NAME)):
+        if await _has_valid_session(fin_session):
+            return RedirectResponse(url="/app.html")
         return FileResponse(os.path.join(_public, "login.html"))
 
     @app.get("/register.html", include_in_schema=False)
-    async def register_page():
+    async def register_page(fin_session: Optional[str] = Cookie(default=None, alias=COOKIE_NAME)):
+        if await _has_valid_session(fin_session):
+            return RedirectResponse(url="/app.html")
         return FileResponse(os.path.join(_public, "register.html"))
 
     @app.get("/app.html", include_in_schema=False)

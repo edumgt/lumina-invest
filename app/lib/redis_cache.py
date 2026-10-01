@@ -15,9 +15,26 @@ _redis: aioredis.Redis | None = None
 
 # ── 연결 관리 ──────────────────────────────────────────────────────────────────
 
+def _make_client() -> aioredis.Redis:
+    """재연결에 강한 클라이언트를 만듭니다.
+
+    - health_check_interval: 유휴 커넥션을 재사용하기 전 PING 으로 살아 있는지 확인해,
+      Redis 재시작/네트워크 단절 뒤 첫 요청이 끊어진 소켓으로 실패하는 일을 줄인다.
+    - socket_keepalive / retry_on_timeout: 장시간 유휴 후에도 세션 조회가 안정적으로 동작하도록 한다.
+    """
+    return aioredis.from_url(
+        settings.REDIS_URL,
+        decode_responses=True,
+        health_check_interval=30,
+        socket_keepalive=True,
+        socket_connect_timeout=5,
+        retry_on_timeout=True,
+    )
+
+
 async def connect_redis() -> None:
     global _redis
-    _redis = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
+    _redis = _make_client()
     await _redis.ping()
 
 
@@ -29,8 +46,15 @@ async def close_redis() -> None:
 
 
 def get_redis() -> aioredis.Redis:
+    """Redis 클라이언트를 반환합니다.
+
+    기동 시 connect_redis() 가 실패했더라도(Redis 가 앱보다 늦게 뜬 경우 등) 클라이언트를
+    지연 생성해 다음 요청부터 자동으로 연결을 시도합니다. 실제 연결 실패는 명령 실행 시
+    redis.exceptions.ConnectionError 로 전달되며, 세션 의존성에서 503 으로 변환합니다.
+    """
+    global _redis
     if _redis is None:
-        raise RuntimeError("Redis가 초기화되지 않았습니다.")
+        _redis = _make_client()
     return _redis
 
 

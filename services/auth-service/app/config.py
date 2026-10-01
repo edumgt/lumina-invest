@@ -5,7 +5,11 @@ import os
 class Settings(BaseSettings):
     PORT: int = 8000
     SESSION_SECRET: str = "change-me-super-secret"
-    SESSION_TTL: int = 604800  # 7 days
+    # 세션 유효 기간(초). 슬라이딩 만료: 마지막 요청 시각으로부터 SESSION_TTL 후 만료된다.
+    SESSION_TTL: int = 2592000  # 30일
+    # 슬라이딩 만료 갱신 최소 간격(초) – 이 간격마다 1회만 Redis TTL 과 브라우저 쿠키 만료를 연장한다.
+    SESSION_REFRESH_INTERVAL: int = 300  # 5분
+    SESSION_COOKIE_NAME: str = "fin_session"
 
     REDIS_URL: str = "redis://localhost:6379"
 
