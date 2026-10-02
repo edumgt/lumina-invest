@@ -22,7 +22,7 @@
 <!-- ══ GNB ══════════════════════════════════════════════════════════ -->
 <header id="gnb">
   <!-- 로고 -->
-  <a href="/" class="gnb-logo">
+  <a href="/app.html#dashboard" class="gnb-logo">
     <div class="gnb-logo-icon"><i class="fa-solid fa-chart-mixed"></i></div>
     <div class="gnb-logo-text">
       <strong>Lumina Invest</strong>
@@ -33,14 +33,7 @@
   <!-- GNB 탭 (스크롤 가능) -->
   <div class="gnb-tabs">
     <button class="gnb-item" data-gnb="agent"><i class="fa-solid fa-robot"></i> 로보 어드바이저</button>
-    <button class="gnb-item" data-gnb="crawl"><i class="fa-solid fa-spider"></i> 크롤링</button>
-    <button class="gnb-item" data-gnb="trading"><i class="fa-solid fa-chart-line"></i> 직접매매</button>
-    <button class="gnb-item" data-gnb="paper"><i class="fa-solid fa-graduation-cap"></i> 모의투자</button>
-    <button class="gnb-item" data-gnb="quant"><i class="fa-solid fa-bolt"></i> 퀀트자동매매</button>
-    <button class="gnb-item" data-gnb="us"><i class="fa-solid fa-flag-usa"></i> 미국주식</button>
     <button class="gnb-item" data-gnb="company"><i class="fa-solid fa-chart-pie"></i> 투자 인디케이터</button>
-    <button class="gnb-item" data-gnb="ml"><i class="fa-solid fa-microchip"></i> ML·딥러닝</button>
-    <button class="gnb-item" data-gnb="invest"><i class="fa-solid fa-magnifying-glass-dollar"></i> 투자분석</button>
   </div>
 
   <!-- 우측: 시세 + 사용자 -->
@@ -58,7 +51,7 @@
     <button id="logout-btn" class="btn-secondary" style="padding:6px 12px; font-size:14px;">
       <i class="fa-solid fa-arrow-right-from-bracket" style="margin-right:4px;"></i>로그아웃
     </button>
-    <!-- 더보기 (금융 지식·시스템 offcanvas) -->
+    <!-- 더보기 (2단계 메뉴 offcanvas) -->
     <button id="gnb-more-btn" class="btn-secondary" style="padding:6px 10px;" title="더보기" aria-label="더보기 메뉴">
       <i class="fa-solid fa-ellipsis-vertical"></i>
     </button>
@@ -69,17 +62,14 @@
   </div>
 </header>
 
-<!-- 더보기 offcanvas (금융 지식 / 시스템) -->
+<!-- 더보기 offcanvas (메뉴 그룹 / 세부 메뉴) -->
 <div id="gnb-offcanvas-backdrop"></div>
 <aside id="gnb-offcanvas">
   <div class="lnb-header">
     <div class="lnb-section-title">더보기</div>
     <button id="gnb-offcanvas-close" class="lnb-toggle" aria-label="닫기"><i class="fa-solid fa-xmark"></i></button>
   </div>
-  <nav class="lnb-nav">
-    <div class="lnb-item" data-gnb="finance"><i class="fa-solid fa-coins"></i><span>금융 지식</span></div>
-    <div class="lnb-item" data-gnb="sysadmin"><i class="fa-solid fa-gear"></i><span>시스템</span></div>
-  </nav>
+  <nav id="gnb-offcanvas-nav" class="lnb-nav" aria-label="더보기 메뉴"></nav>
 </aside>
 
 <!-- Toast는 common.js setToast()가 동적으로 생성 (#_toast_el) -->
@@ -102,6 +92,29 @@
     <!-- ── Main Content ── -->
     <main id="main-content">
       <div class="space-y-4">
+
+    <div class="view" data-view="dashboard">
+      <div class="overview-heading">
+        <div><p class="overview-eyebrow">LUMINA INVEST</p><h1>투자 대시보드</h1><p class="overview-note">로보 어드바이저와 투자 인디케이터의 기능 및 성과를 한눈에 확인하세요.</p></div>
+        <div><button id="overview-refresh" type="button" class="btn-secondary"><i class="fa-solid fa-rotate"></i> 새로고침</button><p id="overview-updated" class="overview-note" aria-live="polite"></p></div>
+      </div>
+      <div class="overview-columns">
+        <section class="card overview-section" aria-labelledby="overview-robo-title">
+          <div class="overview-section-heading"><i class="fa-solid fa-robot"></i><div><h2 id="overview-robo-title">로보 어드바이저</h2><p class="overview-note">투자 상담부터 자산배분과 리밸런싱까지</p></div></div>
+          <h3>계좌·운용 지표</h3><p class="overview-note">내 모의계좌 기준</p>
+          <div id="overview-robo-metrics" class="overview-metrics"></div>
+          <div id="overview-decision" class="overview-metrics"></div>
+          <h3>기능 바로가기</h3><div id="overview-robo-features" class="overview-features"></div>
+        </section>
+        <section class="card overview-section" aria-labelledby="overview-indicator-title">
+          <div class="overview-section-heading"><i class="fa-solid fa-chart-pie"></i><div><h2 id="overview-indicator-title">투자 인디케이터</h2><p class="overview-note">지표 개발부터 백테스트와 API 연동까지</p></div></div>
+          <h3>기본 전략 성능</h3><p class="overview-note">삼성전자 · 최근 1년 · RSI 역추세 · 수수료 10bp · 슬리피지 0bp<br>과거 데이터 백테스트 결과이며 내 계좌의 실현 수익률과 다릅니다.</p>
+          <div id="overview-indicator-metrics" class="overview-metrics"></div>
+          <div id="overview-saved" class="overview-metrics"></div>
+          <h3>기능 바로가기</h3><div id="overview-indicator-features" class="overview-features"></div>
+        </section>
+      </div>
+    </div>
 
     <!-- ══ 1. 로보 어드바이저 ══════════════════════════════════════ -->
     <!-- 1-1. AI 투자 상담 -->

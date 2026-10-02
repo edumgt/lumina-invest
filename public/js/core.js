@@ -7,6 +7,7 @@ const GNB_MENUS = {
   agent: {
     label: "<i class='fa-solid fa-robot'></i> 로보 어드바이저",
     items: [
+      { key: "dashboard", icon: "fa-solid fa-gauge-high", label: "통합 대시보드" },
       { key: "agent-chat",      icon: "fa-solid fa-comments",              label: "AI 투자 상담" },
       { key: "robo-portfolio",  icon: "fa-solid fa-chart-pie",             label: "자산배분·최적화" },
       { key: "robo-rebalance",  icon: "fa-solid fa-rotate",                label: "리밸런싱 엔진" },
@@ -372,24 +373,45 @@ function renderLnb(gnbKey) {
   });
 }
 
-// GNB 더보기 offcanvas (금융 지식 / 시스템 — LNB 스타일 재사용)
+// 더보기: 메뉴 그룹 → 세부 화면
 (function () {
   const backdrop = document.getElementById("gnb-offcanvas-backdrop");
   const panel = document.getElementById("gnb-offcanvas");
+  const trigger = document.getElementById("gnb-more-btn");
+  const nav = document.getElementById("gnb-offcanvas-nav");
+  trigger.setAttribute("aria-controls", panel.id);
+  trigger.setAttribute("aria-expanded", "false");
+  panel.inert = true;
+  nav.innerHTML = Object.entries(GNB_MENUS).filter(([key]) => !["agent", "company"].includes(key)).map(([key, menu]) => `
+    <details class="offcanvas-group" data-menu-group="${key}">
+      <summary class="lnb-item">${menu.label}<i class="fa-solid fa-chevron-down offcanvas-chevron"></i></summary>
+      <div class="offcanvas-submenu">${menu.items.map(it => `<button type="button" class="lnb-item" data-menu-view="${it.key}"><i class="${it.icon}"></i><span>${it.label}</span></button>`).join("")}</div>
+    </details>`).join("");
   function openOffcanvas() {
+    panel.inert = false;
     panel.classList.add("open");
     backdrop.classList.add("open");
+    trigger.setAttribute("aria-expanded", "true");
+    nav.querySelectorAll("details").forEach(group => { group.open = group.dataset.menuGroup === currentGnb; });
+    document.getElementById("gnb-offcanvas-close").focus();
   }
   function closeOffcanvas() {
+    trigger.focus();
     panel.classList.remove("open");
     backdrop.classList.remove("open");
+    panel.inert = true;
+    trigger.setAttribute("aria-expanded", "false");
   }
-  document.getElementById("gnb-more-btn").addEventListener("click", openOffcanvas);
+  trigger.addEventListener("click", openOffcanvas);
   document.getElementById("gnb-offcanvas-close").addEventListener("click", closeOffcanvas);
   backdrop.addEventListener("click", closeOffcanvas);
-  // 항목 선택(금융 지식/시스템)은 기존 [data-gnb] 클릭 리스너가 네비게이션을 처리하고,
-  // 여기서는 선택 후 패널만 닫아준다.
-  panel.querySelectorAll("[data-gnb]").forEach(el => el.addEventListener("click", closeOffcanvas));
+  nav.addEventListener("click", event => {
+    const item = event.target.closest("[data-menu-view]");
+    if (item) { navigate(item.dataset.menuView); closeOffcanvas(); }
+  });
+  document.addEventListener("keydown", event => {
+    if (event.key === "Escape" && panel.classList.contains("open")) closeOffcanvas();
+  });
 })();
 
 // LNB 토글 (접기/펼치기)
@@ -415,6 +437,17 @@ function navigate(viewKey) {
   document.querySelectorAll("[data-gnb]").forEach(el => {
     el.classList.toggle("active", el.dataset.gnb === currentGnb);
   });
+
+  document.querySelectorAll("[data-menu-group]").forEach(el => {
+    el.classList.toggle("active", el.dataset.menuGroup === currentGnb);
+  });
+  document.querySelectorAll("[data-menu-view]").forEach(el => {
+    const active = el.dataset.menuView === currentView;
+    el.classList.toggle("active", active);
+    if (active) el.setAttribute("aria-current", "page");
+    else el.removeAttribute("aria-current");
+  });
+  document.getElementById("gnb-more-btn").classList.toggle("active", !["agent", "company"].includes(currentGnb));
 
   // Update LNB
   renderLnb(currentGnb);
@@ -547,4 +580,4 @@ let _viewActivated = () => {};
 export function registerViewActivation(fn) { _viewActivated = fn; }
 
 
-export { compareTrayAdd, loadMarketTicker, loadSyncStatus, navigate, renderCompareTrayAll, tt };
+export { GNB_MENUS, compareTrayAdd, loadMarketTicker, loadSyncStatus, navigate, renderCompareTrayAll, tt };

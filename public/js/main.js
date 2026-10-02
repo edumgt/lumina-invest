@@ -18,6 +18,8 @@ import { initFormulaView, onFormulaViewActivated } from "/js/formula.js";
 import { loadUsChart, loadUsDashboard, loadUsPortfolio, renderUsOrders } from "/js/us.js";
 import { initCompletionIndicator } from "/js/completion.js";
 
+import { loadDashboard } from "/js/dashboard.js";
+
 // ── Boot ──────────────────────────────────────────────────────────
 async function boot() {
   try {
@@ -34,7 +36,7 @@ async function boot() {
     initTradingViewView();                 // TradingView 연동 (js/tradingview.js)
     initFormulaView();                     // 자유 산식 지표 (js/formula.js)
     const hash = location.hash.replace("#", "");
-    navigate(hash && document.querySelector(`[data-view="${hash}"]`) ? hash : "agent-chat");
+    navigate(hash && document.querySelector(`[data-view="${hash}"]`) ? hash : "dashboard");
   } catch (err) {
     // 세션 만료(401)는 api() 가 이미 로그인 화면으로 보냈다. 그 외(네트워크 등)도 로그인 화면으로.
     console.error("[boot]", err);
@@ -49,6 +51,7 @@ document.getElementById("logout-btn").addEventListener("click", async () => {
 
 // ── View Activation ───────────────────────────────────────────────
 function onViewActivated(view) {
+  if (view === "dashboard") loadDashboard();
   onPaperViewActivated(view); // 모의투자 · LEAN 백테스트 (js/paper.js)
   onRebalanceViewActivated(view); // 리밸런싱 엔진 (js/rebalance.js)
   onTradingViewViewActivated(view); // TradingView 연동 (js/tradingview.js)
