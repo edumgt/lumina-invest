@@ -445,7 +445,10 @@ cd /home/ubuntu/lumina-invest && .venv/bin/python -m pytest tests/test_spec_rule
 - 게이트웨이(`STOCK_COIN_TRADE_*`)가 설정돼 있으면 실주문은 종전처럼 stock-coin-trade 경유이고, Secrets Manager 자격증명은 가격·잔고 조회와 게이트웨이 폴백에 쓰인다. 둘 다 없으면 대시보드 버튼은 「미연동」으로 비활성
 - 기존 DB `broker_settings.app_key/app_secret` 에 남아 있는 KIS 키는 다음 저장(또는 원클릭) 시 빈 값으로 덮어써진다. 즉시 제거하려면 `UPDATE broker_settings SET app_key='', app_secret='', account_no='' WHERE broker='kis'`
 
-**미커밋** — 이 작업분은 아직 커밋·배포 전(7절 L6 기준 사용자 확인 후 커밋)
+**커밋·배포 (16:xx KST, 사용자 요청)**
+- 로컬 커밋 `ba9c240`. `git push origin main` 은 **보호 브랜치 규칙으로 거부**(`Cannot update this protected ref`) → 원격 반영은 PR 또는 보호 규칙 예외 필요. fd 배포는 커밋과 무관하게 로컬 작업 트리 rsync 로 수행
+- fd.edumgt.co.kr: rsync 14파일 → `compose up -d --build app celery-worker celery-beat` → 공개 `/api/health` 200, `/api/quant/kis/quickstart` 비로그인 401(라우트 등록 확인), `app.html` 에 `overview-kis-start`·`broker-managed` 포함, alembic 추가 마이그레이션 없음(스키마 변경 없음)
+- **Secrets Manager 미연동 상태**: 컨테이너에서 `kis_credentials.is_configured()=False`(`.env` 에 `KIS_SECRETS_NAME` 없음). 인스턴스 역할 `fd-edumgt-ssm-role` 로 `GetSecretValue lumina-invest/prod/kis` 시도 → **AccessDeniedException** → 위 "운영 적용 절차" 1·2·3 이 아직 필요. `STOCK_COIN_TRADE_API_KEY` 도 비어 있어 대시보드 버튼은 현재 「미연동」으로 비활성(의도된 안전 동작)
 
 ---
 
