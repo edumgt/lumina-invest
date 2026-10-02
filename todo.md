@@ -393,6 +393,7 @@ cd /home/ubuntu/lumina-invest && .venv/bin/python -m pytest tests/test_spec_rule
 | L5 | LEAN 백테스트 중복 구현 정리 | `app/services/lean_backtest.py` 삭제·domain-rag-lab 로 일원화 vs 유지 | domain-rag-lab 로 일원화(전략 API 가 그쪽) |
 | L6 | 변경분 커밋 시점·브랜치 | 20개 경로 미커밋 | 기능 단위 커밋 권장 |
 | L8 | Testbed 기존 보유 종목을 자동매도 대상으로 할지 | 가상 QUANT 장부에 Testbed 보유수량을 시드하면 매도 시그널 시 실매도 발생. 미시드면 자동매매가 산 수량만 매매 | 1주 관찰은 미시드(신규 매수분만), 이후 결정 |
+| L9 | 지정가 매수의 체결 프리미엄 | 첫 자동 주문(275,000 지정가)이 직후 현재가 276,000 으로 상승해 미체결. 선택: 현재가 그대로(현재) / +1~2틱 프리미엄 / Testbed 는 MARKET | Testbed 관찰 기간은 +1틱(`align_price_to_tick` 에 옵션 추가), 실전은 관찰 후 결정 |
 | L7 | libgomp 설치(sudo) | 설치 전까지 lightgbm 의존 테스트 5개 실행 불가 | `sudo apt-get install -y libgomp1` |
 
 ### 6-6. 2026-10-02 운영 시작 — 모의투자(Testbed) 자동매매 가동 (사용자 요청 + 7절 권고 수용)
@@ -415,4 +416,4 @@ cd /home/ubuntu/lumina-invest && .venv/bin/python -m pytest tests/test_spec_rule
 - Testbed 계좌의 기존 보유(KR모터스·POSCO·삼성전자 38주·카카오·펄어비스)는 가상 장부에 없으므로 **매도 시그널로 팔리지 않는다**. 자동매매가 산 수량만 자동매매가 판다(가상 장부 기준). 기존 보유를 자동매도 대상으로 하려면 가상 장부에 동일 수량을 시드해야 함(결정 필요, 7절 L8)
 - 테스트 4개 추가 (`tests/test_lean_remote.py`), 총 58 통과. 재배포 완료
 
-**체결 확인 결과**: (아래 갱신)
+**체결 확인 결과**: 15:12 `quant.confirm_fills` 가 게이트웨이 상태를 조회 → `holdings_inference` ACCEPTED(보유 38→38, 미체결). 지정가 275,000 접수 직후 현재가 276,000 으로 상승해 장중 미체결 상태. 15:30 장 마감 시 KIS 가 당일 미체결을 자동 취소하므로 다음 거래일 사이클에서 재시도된다 → 7절 L9(체결 프리미엄) 결정 필요
