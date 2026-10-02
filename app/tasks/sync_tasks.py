@@ -101,3 +101,25 @@ def quant_auto_trade_cycle() -> dict:
     result = asyncio.run(_async())
     logger.info("[beat] quant_auto_trade_cycle 완료: %s", result)
     return result
+
+
+@celery_app.task(name="quant.confirm_fills", time_limit=100)
+def quant_confirm_fills() -> dict:
+    """게이트웨이 경유 KIS 실주문(live_orders)의 열린 상태를 체결 조회로 갱신한다 (Celery Beat 2분)."""
+
+    async def _async() -> dict:
+        from app.database.postgres import connect_postgres, close_postgres
+        from app.lib.redis_cache import connect_redis, close_redis
+        from app.services.auto_trade import confirm_live_fills
+
+        await connect_redis()
+        await connect_postgres()
+        try:
+            return await confirm_live_fills()
+        finally:
+            await close_redis()
+            await close_postgres()
+
+    result = asyncio.run(_async())
+    logger.info("[beat] quant_confirm_fills 완료: %s", result)
+    return result

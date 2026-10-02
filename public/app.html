@@ -689,13 +689,14 @@
           실제 API 키를 입력하면 실시간 시세·계좌·주문을 사용합니다. 비워두면 Mockup 데이터로 동작합니다.
         </p>
         <div class="space-y-4">
-          <div class="grid md:grid-cols-2 gap-3">
+          <div class="grid md:grid-cols-3 gap-3">
             <div>
               <label class="text-sm text-slate-400 block mb-1">투자 모드</label>
               <select id="quant-mode" class="input">
                 <option value="paper">모의투자 (Paper)</option>
                 <option value="live">실전투자 (Live)</option>
               </select>
+              <p id="quant-live-route" class="text-xs mt-1" style="color:var(--text-mute);"></p>
             </div>
             <div>
               <label class="text-sm text-slate-400 block mb-1">종목 선택 방식</label>
@@ -703,6 +704,13 @@
                 <option value="ai">AI 추천 종목</option>
                 <option value="manual">직접 종목 선택</option>
               </select>
+            </div>
+            <div>
+              <label class="text-sm text-slate-400 block mb-1">전략 (백테스트 합격분)</label>
+              <select id="quant-strategy" class="input">
+                <option value="">기본 규칙 (기술지표 시그널)</option>
+              </select>
+              <p id="quant-strategy-hint" class="text-xs mt-1" style="color:var(--text-mute);"></p>
             </div>
           </div>
           <div>
@@ -796,6 +804,13 @@
             <button id="broker-test" class="btn-secondary">연결 테스트</button>
           </div>
           <div id="broker-status" class="text-sm text-slate-400"></div>
+          <div class="rounded-xl p-3" style="background:var(--surf2);border:1px solid var(--border);">
+            <div class="flex items-center justify-between mb-2">
+              <h4 class="text-sm font-semibold">📨 KIS 실주문 현황 (게이트웨이 경유 · 2분마다 체결 확인)</h4>
+              <button id="live-orders-refresh" class="btn-secondary text-xs">새로고침</button>
+            </div>
+            <div id="quant-live-orders" class="text-sm" style="color:var(--text-mute);">불러오는 중…</div>
+          </div>
         </div>
       </div>
     </div>

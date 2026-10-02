@@ -445,6 +445,28 @@ async def notify_order_placed(
     await dispatch(plain, html_message=html, subject=f"[매매 알림] {label} 주문 접수 – {symbol}", user_id=user_id)
 
 
+async def notify_order_filled(
+    symbol: str,
+    side: str,
+    quantity: int,
+    price: float,
+    environment: str = "paper",
+    user_id: str | None = None,
+) -> None:
+    """실주문 체결 확정 알림 (quant.confirm_fills)."""
+    label = "매수" if side == "buy" else "매도"
+    env_label = "KIS 모의" if environment == "paper" else "KIS 실전"
+    html = (
+        f"✅ <b>체결 확정</b> ({env_label})\n\n"
+        f"종목: <code>{symbol}</code>\n"
+        f"구분: {label}\n"
+        f"체결: {quantity:,}주 × 평균 {price:,.0f}원\n"
+        f"총액: {quantity * price:,.0f}원"
+    )
+    plain = f"[체결 확정/{env_label}] {label} {symbol} {quantity:,}주 × {price:,.0f}원 / 총 {quantity * price:,.0f}원"
+    await dispatch(plain, html_message=html, subject=f"[매매 알림] {label} 체결 확정 – {symbol}", user_id=user_id)
+
+
 async def notify_order_error(
     symbol: str,
     side: str,

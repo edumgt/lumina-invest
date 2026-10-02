@@ -951,3 +951,12 @@ AI의 Vector DB는 이 수많은 특징들을 가지고 무엇을 할까요? 핵
 인간은 공간의 축(X, Y, Z)으로 차원을 이해하지만, AI의 Vector DB는 **데이터가 가진 '특징의 개수'**로 차원을 이해합니다. 우리가 수천 개의 단어로 어떤 개념을 세밀하게 설명하듯, AI는 수천 개의 숫자로 이루어진 벡터로 개념을 정교하게 인지하는 것이죠.
 
 > 참고: 이 프로젝트의 Qdrant 컬렉션(`fin_chunks`)은 `nomic-embed-text` 임베딩 모델을 사용해 `VectorParams(size=768, distance=Distance.COSINE)`로 768차원 벡터를 저장합니다. 즉 각 금융 문서 청크가 768개의 특징 값으로 표현되며, 코사인 유사도로 의미가 가까운 문서를 검색하는 것입니다.
+
+
+## KIS 자동매매 연동 (3-repo)
+
+자동매매의 **최초 트리거는 이 웹앱의 종목 선정 화면**이다. Celery 10분 사이클이 시그널·위험관리를 거쳐 stock-coin-trade 게이트웨이로 KIS 주문을 내고, 2분 주기 `quant.confirm_fills` 가 체결을 확인한다.
+- 진행 상태·인수인계: [todo.md](todo.md) — 특히 6절 "작업 보고(AI 에이전트 인수인계용)"
+- 저장소 간 API 계약: [docs/contracts/kis-autotrade-api.md](docs/contracts/kis-autotrade-api.md) (세 저장소 동일 사본)
+- 게이트웨이 설정: `STOCK_COIN_TRADE_BASE_URL`, `STOCK_COIN_TRADE_API_KEY`, `STOCK_COIN_TRADE_KIS_ENVIRONMENT=paper|real` (app/config.py)
+- 테스트: `.venv/bin/python -m pytest tests/test_live_order_gateway_path.py tests/test_stock_coin_trade_gateway.py tests/test_strategy_loader.py tests/test_strategy_spec_apply.py tests/test_risk_guard.py tests/test_session_auth.py -q`

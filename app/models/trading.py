@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import Boolean, Float, ForeignKey, Integer, String, UniqueConstraint, Index
+from sqlalchemy import Boolean, Float, ForeignKey, Integer, String, Text, UniqueConstraint, Index
 from sqlalchemy.dialects.postgresql import ARRAY, UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -63,6 +63,9 @@ class BrokerSettings(Base, UUIDPkMixin, UpdatedAtMixin):
     quant_per_trade_budget: Mapped[float] = mapped_column(Float, nullable=False, default=1_000_000)
     quant_buy_ratio: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
     quant_sell_ratio: Mapped[float] = mapped_column(Float, nullable=False, default=0.5)
+    # domain-rag-lab 백테스트 합격 전략 (종목 선정 화면 드롭다운). 비어 있으면 기존 하드코딩 시그널 규칙 사용
+    quant_strategy_id: Mapped[str] = mapped_column(String(40), nullable=False, default="")
+    quant_strategy_version: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     # ── 자동매매 위험관리 ──────────────────────────────────────────────────
     risk_daily_loss_limit_pct: Mapped[float] = mapped_column(Float, nullable=False, default=3.0)   # 일중 손실 한도(%) 초과 시 비상 정지
@@ -96,3 +99,39 @@ class CustomIndicator(Base, UUIDPkMixin, CreatedAtMixin):
     mid_window: Mapped[int] = mapped_column(Integer, nullable=False, default=20)
     rsi_period: Mapped[int] = mapped_column(Integer, nullable=False, default=14)
     buy_threshold: Mapped[float] = mapped_column(Float, nullable=False, default=35.0)
+
+
+LIVE_ORDER_OPEN_STATUSES = ("PENDING", "ACCEPTED", "PARTIALLY_FILLED", "CANCEL_REQUESTED", "UNKNOWN")
+LIVE_ORDER_TERMINAL_STATUSES = ("FILLED", "CANCELLED", "REJECTED", "ERROR")
+
+
+class LiveOrder(Base, UUIDPkMixin, CreatedAtMixin, UpdatedAtMixin):
+    """자동매매가 stock-coin-trade 게이트웨이를 통해 KIS에 낸 실주문 1건의 추적 기록.
+
+    가상계좌 Order(source=QUANT)와 별도다. quant.confirm_fills 태스크가 열린 상태(LIVE_ORDER_OPEN_STATUSES)를
+    주기적으로 체결 조회해 갱신한다. status 값은 계약서(docs/contracts/kis-autotrade-api.md)의 정규화 표를 따르고,
+    게이트웨이 호출 자체가 실패한 경우만 ERROR 를 쓴다.
+    """
+
+    __tablename__ = "live_orders"
+    __table_args__ = (
+        UniqueConstraint("client_order_id", name="uq_live_orders_client_order_id"),
+        Index("ix_live_orders_user_status", "user_id", "status"),
+    )
+
+    user_id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    client_order_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    environment: Mapped[str] = mapped_column(String(10), nullable=False, default="paper")   # paper | real
+    broker: Mapped[str] = mapped_column(String(20), nullable=False, default="kis")
+    symbol: Mapped[str] = mapped_column(String(20), nullable=False)
+    name: Mapped[str] = mapped_column(String(100), nullable=False, default="")
+    side: Mapped[str] = mapped_column(String(4), nullable=False)                           # BUY | SELL
+    order_type: Mapped[str] = mapped_column(String(6), nullable=False, default="LIMIT")
+    quantity: Mapped[int] = mapped_column(Integer, nullable=False)
+    price: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    order_no: Mapped[str] = mapped_column(String(20), nullable=False, default="")
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="PENDING")
+    filled_quantity: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    avg_filled_price: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    message: Mapped[str] = mapped_column(String(300), nullable=False, default="")
+    raw: Mapped[str] = mapped_column(Text, nullable=False, default="")                    # 마지막 게이트웨이 응답 JSON

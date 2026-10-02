@@ -31,8 +31,86 @@ async function loadSettings() {
     toggleManualSymbols();
     document.getElementById("broker-status").textContent =
       cfg.connected ? `✅ 연결됨 (${cfg.broker})` : "⚠️ API 키 미설정 – Mockup 모드";
+    renderLiveRoute(cfg.live_gateway);
+    await loadStrategies(cfg.strategy_id || "", cfg.strategy_version || 0);
+    loadLiveOrders();
   } catch {}
 }
+
+// ── 실주문 경로 안내 (live 모드 주문이 어디로 나가는지) ─────────────────
+function renderLiveRoute(gw) {
+  const el = document.getElementById("quant-live-route");
+  if (!el) return;
+  if (!gw) { el.textContent = ""; return; }
+  if (gw.configured) {
+    const env = gw.environment === "real" ? "KIS 실전" : "KIS 모의(Testbed)";
+    el.textContent = `live 주문 → stock-coin-trade 게이트웨이 → ${env} · ${gw.order_type}`;
+  } else {
+    el.textContent = "live 주문 → 증권사 직접 호출(레거시). 게이트웨이 미설정";
+  }
+}
+
+// ── domain-rag-lab 백테스트 합격 전략 드롭다운 ───────────────────────────
+async function loadStrategies(selectedId, selectedVersion) {
+  const sel = document.getElementById("quant-strategy");
+  const hint = document.getElementById("quant-strategy-hint");
+  if (!sel) return;
+  try {
+    const data = await api("/api/quant/strategies");
+    const list = data.strategies || [];
+    sel.innerHTML = `<option value="">기본 규칙 (기술지표 시그널)</option>` + list.map((s) => {
+      const br = s.backtest_result || {};
+      const label = `${escHtml(s.name)} v${s.version} · 연 ${fmtPct(br.annualized_return_pct ?? 0)} · MDD ${fmtPct(br.max_drawdown_pct ?? 0)}`;
+      return `<option value="${escHtml(s.strategy_id)}" data-version="${s.version}">${label}</option>`;
+    }).join("");
+    if (selectedId && [...sel.options].some((o) => o.value === selectedId)) sel.value = selectedId;
+    else if (selectedId) {
+      sel.insertAdjacentHTML("beforeend", `<option value="${escHtml(selectedId)}" data-version="${selectedVersion}">${escHtml(selectedId)} v${selectedVersion} (목록에 없음)</option>`);
+      sel.value = selectedId;
+    }
+    if (hint) hint.textContent = data.configured
+      ? (list.length ? `${list.length}개 합격 전략 (domain-rag-lab)` : "domain-rag-lab 에 합격 전략이 없습니다")
+      : "DOMAIN_RAG_LAB_BASE_URL 미설정 – 기본 규칙만 사용";
+  } catch (e) {
+    if (hint) hint.textContent = "전략 목록을 불러오지 못했습니다";
+  }
+}
+
+// ── KIS 실주문 현황 (live_orders) ────────────────────────────────────────
+const LIVE_STATUS_BADGE = {
+  FILLED: "badge-buy", PARTIALLY_FILLED: "badge-buy", ACCEPTED: "badge-hold", PENDING: "badge-hold",
+  CANCEL_REQUESTED: "badge-hold", CANCELLED: "badge-sell", REJECTED: "badge-sell", ERROR: "badge-sell", UNKNOWN: "badge-sell",
+};
+async function loadLiveOrders() {
+  const el = document.getElementById("quant-live-orders");
+  if (!el) return;
+  try {
+    const data = await api("/api/quant/live-orders?limit=30");
+    const rows = data.orders || [];
+    if (!rows.length) {
+      el.innerHTML = data.gateway?.configured
+        ? "아직 게이트웨이로 나간 실주문이 없습니다."
+        : "게이트웨이(STOCK_COIN_TRADE_BASE_URL/API_KEY)가 설정되지 않아 실주문 추적이 꺼져 있습니다.";
+      return;
+    }
+    el.innerHTML = `<div class="overflow-x-auto"><table class="w-full text-xs">
+      <thead><tr class="text-slate-400"><th class="text-left py-1">시각</th><th class="text-left">환경</th><th class="text-left">종목</th><th>구분</th><th class="text-right">수량</th><th class="text-right">가격</th><th>상태</th><th class="text-right">체결</th><th class="text-left">주문번호 / 메시지</th></tr></thead>
+      <tbody>${rows.map((r) => `<tr style="border-top:1px solid var(--border);">
+        <td class="py-1">${escHtml((r.created_at || "").slice(5, 16).replace("T", " "))}</td>
+        <td>${r.environment === "real" ? "실전" : "모의"}</td>
+        <td>${escHtml(r.name || r.symbol)}</td>
+        <td class="text-center">${r.side === "BUY" ? "매수" : "매도"}</td>
+        <td class="text-right">${fmt(r.quantity)}</td>
+        <td class="text-right">${fmt(Math.round(r.price))}</td>
+        <td class="text-center"><span class="${LIVE_STATUS_BADGE[r.status] || "badge-hold"}">${escHtml(r.status)}</span></td>
+        <td class="text-right">${r.filled_quantity ? `${fmt(r.filled_quantity)} @ ${fmt(Math.round(r.avg_filled_price))}` : "-"}</td>
+        <td class="truncate max-w-[16rem]" title="${escHtml(r.message || "")}">${escHtml(r.order_no || "")}${r.message ? " · " + escHtml(r.message) : ""}</td>
+      </tr>`).join("")}</tbody></table></div>`;
+  } catch (e) {
+    el.textContent = "실주문 현황을 불러오지 못했습니다.";
+  }
+}
+document.getElementById("live-orders-refresh")?.addEventListener("click", loadLiveOrders);
 
 function toggleManualSymbols() {
   const source = document.getElementById("quant-symbol-source")?.value || "ai";
@@ -58,6 +136,8 @@ document.getElementById("broker-save")?.addEventListener("click", async () => {
         per_trade_budget: Number(document.getElementById("quant-per-trade-budget").value || 1000000),
         buy_ratio:  buyRatio,
         sell_ratio: sellRatio,
+        strategy_id: document.getElementById("quant-strategy")?.value || "",
+        strategy_version: Number(document.getElementById("quant-strategy")?.selectedOptions?.[0]?.dataset?.version || 0),
         broker:     document.getElementById("broker-type").value,
         app_key:    document.getElementById("broker-app-key").value,
         app_secret: document.getElementById("broker-app-secret").value,

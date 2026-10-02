@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database.postgres import get_pg_session
-from app.models import Portfolio, Order, BrokerSettings, CustomIndicator, QuantVirtualAccount, PORTFOLIO_BOOK_PAPER, PORTFOLIO_BOOK_QUANT
+from app.models import Portfolio, Order, BrokerSettings, CustomIndicator, QuantVirtualAccount, LiveOrder, PORTFOLIO_BOOK_PAPER, PORTFOLIO_BOOK_QUANT
 from app.lib.session import get_current_user
 from app.services.stock import (
     get_quote, get_candles, get_market_summary,
@@ -16,6 +16,8 @@ from app.services.stock import (
 from app.services.krx_companies import search_companies
 from app.services import auto_trade
 from app.services import risk_guard
+from app.services import strategy_loader
+from app.services.brokers import stock_coin_trade_gateway
 from app.services.quant_pipeline import backtest_custom_indicator
 from app.services.investment_research import backtest_strategy, screen_pattern
 from app.services.brokers.factory import get_broker_client
@@ -365,6 +367,9 @@ class QuantSettingsBody(BaseModel):
     per_trade_budget: float = Field(default=1_000_000, ge=10_000, le=10_000_000)
     buy_ratio: float = Field(default=1.0, ge=0.1, le=1.0)
     sell_ratio: float = Field(default=0.5, ge=0.1, le=1.0)
+    # domain-rag-lab 합격 전략 (비우면 기존 규칙)
+    strategy_id: str = Field(default="", max_length=40)
+    strategy_version: int = Field(default=0, ge=0)
     # 위험관리
     risk_daily_loss_limit_pct: float = Field(default=3.0, ge=0, le=50, description="0이면 비활성")
     risk_max_position_pct: float = Field(default=30.0, ge=0, le=100, description="0이면 비활성")
@@ -438,6 +443,42 @@ async def get_broker_settings(
     }
 
 
+def _live_gateway_info() -> dict:
+    """종목 선정 화면 표시용: live 모드 주문이 어디로 나가는지."""
+    if stock_coin_trade_gateway.is_configured():
+        return {"configured": True, "via": "stock-coin-trade", "environment": stock_coin_trade_gateway.environment(),
+                "order_type": stock_coin_trade_gateway.default_order_type()}
+    return {"configured": False, "via": "legacy-direct", "environment": "real", "order_type": "LIMIT"}
+
+
+@router.get("/quant/strategies")
+async def list_quant_strategies(user=Depends(get_current_user)):
+    """domain-rag-lab 백테스트 합격 전략 목록 (종목 선정 화면 드롭다운)."""
+    return {"configured": strategy_loader.is_configured(), "strategies": await strategy_loader.list_strategies()}
+
+
+@router.get("/quant/live-orders")
+async def list_live_orders(
+    limit: int = Query(50, ge=1, le=200),
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_pg_session),
+):
+    """게이트웨이 경유 KIS 실주문 추적 목록 (quant.confirm_fills 가 갱신)."""
+    result = await db.execute(
+        select(LiveOrder).where(LiveOrder.user_id == _uid(user["id"])).order_by(LiveOrder.created_at.desc()).limit(limit)
+    )
+    rows = result.scalars().all()
+    return {"gateway": _live_gateway_info(), "orders": [
+        {
+            "id": str(r.id), "client_order_id": r.client_order_id, "environment": r.environment, "symbol": r.symbol, "name": r.name,
+            "side": r.side, "order_type": r.order_type, "quantity": r.quantity, "price": r.price, "order_no": r.order_no,
+            "status": r.status, "filled_quantity": r.filled_quantity, "avg_filled_price": r.avg_filled_price,
+            "message": r.message, "created_at": r.created_at.isoformat() if r.created_at else None,
+            "updated_at": r.updated_at.isoformat() if r.updated_at else None,
+        } for r in rows
+    ]}
+
+
 @router.get("/quant/settings")
 async def get_quant_settings(
     user=Depends(get_current_user),
@@ -452,6 +493,8 @@ async def get_quant_settings(
             "account_no": "", "paper": True, "symbol_source": "ai", "selected_symbols": [],
             "ai_top_n": 3, "per_trade_budget": 1_000_000.0, "buy_ratio": 1.0, "sell_ratio": 0.5,
             "risk": risk_guard.RiskLimits().to_dict(), "risk_halt_reason": "",
+            "strategy_id": "", "strategy_version": 0,
+            "live_gateway": _live_gateway_info(),
             "brokers": catalog, "stocks": stocks,
         }
 
@@ -474,6 +517,9 @@ async def get_quant_settings(
         "sell_ratio": row.quant_sell_ratio,
         "risk": risk_guard.RiskLimits.from_row(row).to_dict(),
         "risk_halt_reason": row.risk_halt_reason,
+        "strategy_id": row.quant_strategy_id or "",
+        "strategy_version": row.quant_strategy_version or 0,
+        "live_gateway": _live_gateway_info(),
         "brokers": catalog,
         "stocks": stocks,
     }
@@ -513,6 +559,16 @@ async def save_quant_settings(
     row.quant_per_trade_budget = body.per_trade_budget
     row.quant_buy_ratio = body.buy_ratio
     row.quant_sell_ratio = body.sell_ratio
+    strategy_id = (body.strategy_id or "").strip().lower()
+    if strategy_id:
+        spec = await strategy_loader.get_strategy(strategy_id, body.strategy_version or None)
+        if spec is None:
+            raise HTTPException(422, f"domain-rag-lab 에 합격한 전략이 없습니다: {strategy_id}")
+        row.quant_strategy_id = strategy_id
+        row.quant_strategy_version = int(spec.get("version") or body.strategy_version or 0)
+    else:
+        row.quant_strategy_id = ""
+        row.quant_strategy_version = 0
     row.risk_daily_loss_limit_pct = body.risk_daily_loss_limit_pct
     row.risk_max_position_pct = body.risk_max_position_pct
     row.risk_max_orders_per_day = body.risk_max_orders_per_day

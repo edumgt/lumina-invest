@@ -52,6 +52,11 @@ celery_app.conf.update(
             "schedule": 600.0,            # 10분 — 자동매매 활성 사용자 사이클
             "options": {"expires": 540},
         },
+        "quant-confirm-fills-2min": {
+            "task": "quant.confirm_fills",
+            "schedule": 120.0,            # 2분 — 게이트웨이 경유 KIS 실주문의 체결 확인 (live_orders)
+            "options": {"expires": 110},
+        },
         "rebalance-check-hourly": {
             "task": "rebalance.check_triggers",
             "schedule": 3600.0,           # 1시간 — 시간·이탈률 리밸런싱 트리거 점검
