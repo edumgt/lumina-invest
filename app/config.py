@@ -101,6 +101,16 @@ class Settings(BaseSettings):
     KRX_EXTRA_HOLIDAYS: str = ""                        # 추가 휴장일 (YYYY-MM-DD 쉼표 구분). 내장 2026 캘린더에 더해진다
     ML_SCORE_SCALE_PCT: float = 30.0                    # SageMaker 예측 연수익률(%)을 [-1,1]로 정규화할 때의 분모
 
+    # ── KIS 자격증명 (서버 관리 — 사용자는 화면에서 입력하지 않는다, app/services/kis_credentials.py) ──
+    # Secrets Manager 시크릿 이름/ARN. JSON: {"app_key","app_secret","account_no","environment": "paper|real"}
+    KIS_SECRETS_NAME: str = ""                      # 예: lumina-invest/prod/kis
+    KIS_SECRETS_CACHE_TTL: int = 600                # 초. 조회 성공값 캐시 (실패는 60초)
+    KIS_ENVIRONMENT: str = "paper"                  # 시크릿에 environment 가 없을 때의 기본값. paper=Testbed, real=실전
+    # Secrets Manager 를 못 쓰는 로컬 개발·장애 시 폴백 (운영에서는 비워 둔다)
+    KIS_APP_KEY: str = ""
+    KIS_APP_SECRET: str = ""
+    KIS_ACCOUNT_NO: str = ""
+
     # ── 전략 스펙 API (domain-rag-lab /backtests/strategies) ───────────────────
     DOMAIN_RAG_LAB_BASE_URL: str = ""
     DOMAIN_RAG_LAB_API_KEY: str = ""

@@ -27,6 +27,7 @@ from datetime import timedelta
 from app.services import risk_guard
 from app.services.audit import audit
 from app.services.brokers.factory import get_broker_client
+from app.services import kis_credentials
 from app.services.brokers import stock_coin_trade_gateway as gateway
 from app.services.data_cache import cache_get, cache_set
 
@@ -215,13 +216,22 @@ async def _place_live_order(
     if broker == "kis" and gateway.is_configured():
         # 구축안 경로: stock-coin-trade Open API(승인 토큰 → 주문 → 감사로그) 경유. 체결은 quant.confirm_fills 가 확인한다.
         return await _place_live_order_via_gateway(db, broker_row, symbol, name, side, quantity, price, user_id)
-    app_key = broker_row.app_key
-    app_secret = broker_row.app_secret
-    account_no = broker_row.account_no
+    paper = False
+    if kis_credentials.is_managed(broker):
+        # KIS 자격증명은 서버(Secrets Manager)가 관리한다. DB 행의 키는 쓰지 않는다.
+        creds = await kis_credentials.get_credentials()
+        if creds is None:
+            logger.warning("KIS 자격증명 미연동 — live 주문 생략 (%s %s)", side, symbol)
+            return {"status": "skipped", "broker": broker, "reason": "kis_credentials_not_configured"}
+        app_key, app_secret, account_no, paper = creds.app_key, creds.app_secret, creds.account_no, creds.paper
+    else:
+        app_key = broker_row.app_key
+        app_secret = broker_row.app_secret
+        account_no = broker_row.account_no
     if broker == "mock" or not app_key or not app_secret or not account_no:
         return None
 
-    client = get_broker_client(broker, app_key, app_secret, paper=False)
+    client = get_broker_client(broker, app_key, app_secret, paper=paper)
     try:
         result = await client.place_order(account_no, symbol, side, quantity, price)
         await notification.notify_order_placed(

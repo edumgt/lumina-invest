@@ -395,6 +395,8 @@ cd /home/ubuntu/lumina-invest && .venv/bin/python -m pytest tests/test_spec_rule
 | L8 | Testbed 기존 보유 종목을 자동매도 대상으로 할지 | 가상 QUANT 장부에 Testbed 보유수량을 시드하면 매도 시그널 시 실매도 발생. 미시드면 자동매매가 산 수량만 매매 | 1주 관찰은 미시드(신규 매수분만), 이후 결정 |
 | L9 | 지정가 매수의 체결 프리미엄 | 첫 자동 주문(275,000 지정가)이 직후 현재가 276,000 으로 상승해 미체결. 선택: 현재가 그대로(현재) / +1~2틱 프리미엄 / Testbed 는 MARKET | Testbed 관찰 기간은 +1틱(`align_price_to_tick` 에 옵션 추가), 실전은 관찰 후 결정 |
 | L7 | libgomp 설치(sudo) | 설치 전까지 lightgbm 의존 테스트 5개 실행 불가 | `sudo apt-get install -y libgomp1` |
+| L10 | KIS 자격증명 Secrets Manager 시크릿 이름·IAM | fd EC2 역할에 `secretsmanager:GetSecretValue` 를 붙이고 `.env KIS_SECRETS_NAME` 기입 vs 당분간 게이트웨이(stock-coin-trade 가 KIS 키 보유)만 사용 | 실주문은 게이트웨이가 정본이므로 `KIS_SECRETS_NAME` 은 가격·잔고 조회용으로 기입. 시크릿 이름 `lumina-invest/prod/kis`, environment=paper |
+| L11 | 대시보드 「KIS 모의투자 시작」 원클릭 노출 범위 | 모든 로그인 사용자 vs 운영 계정만. 버튼은 경로가 Testbed(paper)일 때만 활성화되지만 누르면 그 계정의 자동매매가 live+KIS 로 바뀐다 | Phase 4 관찰 기간에는 운영 계정 1개로만 사용 |
 
 ### 6-6. 2026-10-02 운영 시작 — 모의투자(Testbed) 자동매매 가동 (사용자 요청 + 7절 권고 수용)
 
@@ -417,6 +419,33 @@ cd /home/ubuntu/lumina-invest && .venv/bin/python -m pytest tests/test_spec_rule
 - 테스트 4개 추가 (`tests/test_lean_remote.py`), 총 58 통과. 재배포 완료
 
 **체결 확인 결과**: 15:12 `quant.confirm_fills` 가 게이트웨이 상태를 조회 → `holdings_inference` ACCEPTED(보유 38→38, 미체결). 지정가 275,000 접수 직후 현재가 276,000 으로 상승해 장중 미체결 상태. 15:30 장 마감 시 KIS 가 당일 미체결을 자동 취소하므로 다음 거래일 사이클에서 재시도된다 → 7절 L9(체결 프리미엄) 결정 필요
+
+
+### 6-7. 2026-10-02 6차 작업 — KIS 자격증명 서버 관리(Secrets Manager) + 대시보드 「KIS 모의투자 시작」 원클릭 (사용자 요청)
+
+**요구**: ① 종목 선정 화면에서 증권사 KIS 를 고르면 App Key/Secret/계좌를 사용자가 입력하지 않고 Secrets Manager 값으로 자동 처리, 화면에는 연동 여부만 표시. ② 통합 대시보드 상단 버튼 한 번으로 AI 추천 기반 KIS 모의투자 자동매매 시작.
+
+**구현**
+| 항목 | 내용 |
+|------|------|
+| `app/services/kis_credentials.py` 신설 | `KIS_SECRETS_NAME` 시크릿(JSON `app_key/app_secret/account_no/environment`)을 boto3 로 조회, 성공 600초·실패 60초 캐시, 실패 시 `KIS_APP_KEY/SECRET/ACCOUNT_NO` env 폴백. `status()` 는 연동 여부·소스·계좌 마스킹(`5012****01`)·환경만 반환(키 원문 없음). 관리 대상은 `MANAGED_BROKERS={"kis"}` |
+| `app/config.py` | `KIS_SECRETS_NAME`, `KIS_SECRETS_CACHE_TTL`, `KIS_ENVIRONMENT`, `KIS_APP_KEY/APP_SECRET/ACCOUNT_NO` 추가 (`.env.example` 에 설명) |
+| `app/routes/stocks.py` | `_apply_credentials`: broker=kis 면 사용자가 보낸 키·계좌를 **DB 에 저장하지 않고 빈 값으로 초기화**. `_resolve_credentials`: kis 는 Secrets Manager, 그 외는 DB 행. `GET /quant/settings`·`/broker/settings` 응답에 `kis_managed`(연동 상태)·`managed_brokers` 추가, kis 는 `app_key` 마스킹 대신 빈 문자열. `/broker/price·balance·order·test` 가 모두 서버 자격증명 사용 |
+| `app/services/auto_trade.py` | 레거시 직접 호출 경로(게이트웨이 미설정)도 kis 는 Secrets Manager 자격증명·환경(paper→Testbed URL) 사용. 미연동이면 `{"status":"skipped","reason":"kis_credentials_not_configured"}` 로 사이클 로그에 남김 |
+| `app/services/kis_quickstart.py` 신설 + `GET/POST /api/quant/kis/quickstart` | 원클릭: 경로 판정(게이트웨이 → 없으면 서버 KIS 자격증명) 후 **Testbed(paper) 경로일 때만** 시작. 설정을 `broker=kis, quant_mode=live, symbol_source=ai, ai_top_n=3, 1회 30만 원, 쿨다운 30분, 일 주문 10건, 종목 비중 20%, 일손실 3%`(7절 L1 권고)로 저장하고 `auto_trade.start_auto_trade`(DB 플래그 + 즉시 1회 사이클). 차단: 미연동 / 경로 real / 비상 정지 → 409 |
+| `public/app.html` · `public/js/dashboard.js` | 통합 대시보드 상단 「KIS 모의투자 (Testbed)」 카드: 연동 배지(연동됨/미연동 + 경로 설명)·시작 버튼(준비됐을 때만 활성, confirm 후 POST)·실행 중이면 버튼 비활성 + 자동매매 현황 링크 |
+| `public/js/settings.js` | 증권사 KIS 선택 시 App Key/Secret/계좌/모의체크 입력 그리드(`#broker-credentials-wrap`) 숨김, `#broker-managed` 박스에 연동 여부·소스(Secrets Manager 이름)·환경·계좌 마스킹·오류 표시. 저장 시 kis 면 키 필드를 비워 보냄. 중복 등록돼 있던 `broker-test` 핸들러 1개 제거 |
+| 테스트 | `tests/test_kis_credentials.py`(10) · `tests/test_kis_quickstart.py`(11) · `tests/test_legacy_kis_order_managed.py`(2) · `tests/test_kis_quickstart_http.py`(4, TestClient + 의존성 오버라이드) 추가, `test_live_order_gateway_path.py` 레거시 케이스를 새 동작(kis 미연동 → skipped, 타 증권사 → None)으로 갱신. **총 147 통과** |
+
+**운영 적용 절차 (fd.edumgt.co.kr)**
+1. 시크릿 생성: `aws secretsmanager create-secret --name lumina-invest/prod/kis --secret-string '{"app_key":"...","app_secret":"...","account_no":"50123456-01","environment":"paper"}' --region ap-northeast-2`
+2. fd EC2 인스턴스 역할에 `secretsmanager:GetSecretValue`(해당 시크릿 ARN) 허용. 컨테이너는 인스턴스 메타데이터로 자격증명을 받으므로 compose 변경 없음
+3. `.env` 에 `KIS_SECRETS_NAME=lumina-invest/prod/kis` 기입 후 `docker compose up -d app celery-worker celery-beat`
+4. 확인: 증권사 API 설정 화면에서 KIS 선택 → 「🔐 KIS 자격증명 · 서버 관리 **연동됨** · 소스 AWS Secrets Manager · 환경 모의(Testbed) · 계좌 5012****01」. 「연결 테스트」가 삼성전자 현재가를 돌려주면 끝
+- 게이트웨이(`STOCK_COIN_TRADE_*`)가 설정돼 있으면 실주문은 종전처럼 stock-coin-trade 경유이고, Secrets Manager 자격증명은 가격·잔고 조회와 게이트웨이 폴백에 쓰인다. 둘 다 없으면 대시보드 버튼은 「미연동」으로 비활성
+- 기존 DB `broker_settings.app_key/app_secret` 에 남아 있는 KIS 키는 다음 저장(또는 원클릭) 시 빈 값으로 덮어써진다. 즉시 제거하려면 `UPDATE broker_settings SET app_key='', app_secret='', account_no='' WHERE broker='kis'`
+
+**미커밋** — 이 작업분은 아직 커밋·배포 전(7절 L6 기준 사용자 확인 후 커밋)
 
 ---
 

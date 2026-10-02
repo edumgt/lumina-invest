@@ -98,6 +98,16 @@
         <div><p class="overview-eyebrow">LUMINA INVEST</p><h1>투자 대시보드</h1><p class="overview-note">로보 어드바이저와 투자 인디케이터의 기능 및 성과를 한눈에 확인하세요.</p></div>
         <div><button id="overview-refresh" type="button" class="btn-secondary"><i class="fa-solid fa-rotate"></i> 새로고침</button><p id="overview-updated" class="overview-note" aria-live="polite"></p></div>
       </div>
+      <section class="card overview-section mb-4" aria-labelledby="overview-kis-title" style="margin-bottom:16px;">
+        <div class="flex items-center justify-between gap-4 flex-wrap">
+          <div class="overview-section-heading" style="margin:0;"><i class="fa-solid fa-play"></i><div><h2 id="overview-kis-title">KIS 모의투자 (Testbed)</h2><p class="overview-note">AI 추천 종목 · 10분 자동매매 · 한국투자증권 모의투자 계좌로 주문. 자격증명은 서버(Secrets Manager)가 관리합니다.</p></div></div>
+          <div class="flex items-center gap-2">
+            <button id="overview-kis-start" type="button" class="btn-green" disabled><i class="fa-solid fa-play"></i> KIS 모의투자 시작</button>
+            <a class="btn-secondary text-xs" href="#settings">설정 보기</a>
+          </div>
+        </div>
+        <p id="overview-kis-status" class="overview-note mt-2" role="status" aria-live="polite">연동 상태를 확인하는 중입니다…</p>
+      </section>
       <div class="overview-columns">
         <section class="card overview-section" aria-labelledby="overview-robo-title">
           <div class="overview-section-heading"><i class="fa-solid fa-robot"></i><div><h2 id="overview-robo-title">로보 어드바이저</h2><p class="overview-note">투자 상담부터 자산배분과 리밸런싱까지</p></div></div>
@@ -725,8 +735,9 @@
               <option value="meritz">메리츠증권 (출시 예정)</option>
               <option value="shinhan">신한투자증권</option>
             </select>
+            <div id="broker-managed" class="hidden rounded-xl p-3 mt-2 text-sm" style="background:var(--surf2);border:1px solid var(--border);"></div>
           </div>
-          <div class="grid md:grid-cols-2 gap-3">
+          <div id="broker-credentials-wrap" class="grid md:grid-cols-2 gap-3">
             <div>
               <label class="text-xs text-slate-400">App Key</label>
               <input id="broker-app-key" type="text" class="input mt-1" placeholder="API App Key" />

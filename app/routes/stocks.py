@@ -18,6 +18,8 @@ from app.services import auto_trade
 from app.services import risk_guard
 from app.services import strategy_loader
 from app.services.brokers import stock_coin_trade_gateway
+from app.services import kis_credentials
+from app.services import kis_quickstart
 from app.services.quant_pipeline import backtest_custom_indicator
 from app.services.investment_research import backtest_strategy, screen_pattern
 from app.services.brokers.factory import get_broker_client
@@ -394,6 +396,40 @@ async def _get_or_create_broker_settings_row(db: AsyncSession, user_id: uuid.UUI
     return row
 
 
+def _apply_credentials(row: BrokerSettings, broker: str, app_key: str, app_secret: str, account_no: str) -> None:
+    """서버 관리 증권사(KIS)는 사용자가 보낸 키·계좌를 저장하지 않는다 — Secrets Manager 값을 쓴다."""
+    if kis_credentials.is_managed(broker):
+        row.app_key = row.app_secret = row.account_no = ""
+        return
+    row.app_key = app_key
+    row.app_secret = app_secret
+    row.account_no = account_no
+
+
+async def _resolve_credentials(row: BrokerSettings | None) -> tuple[str, str, str, str, bool]:
+    """(broker, app_key, app_secret, account_no, paper). KIS 는 Secrets Manager, 그 외는 DB 행."""
+    if not row:
+        return "mock", "", "", "", True
+    broker = (row.broker or DEFAULT_BROKER).strip().lower()
+    if kis_credentials.is_managed(broker):
+        creds = await kis_credentials.get_credentials()
+        if creds is None:
+            return broker, "", "", "", True
+        return broker, creds.app_key, creds.app_secret, creds.account_no, creds.paper
+    return broker, row.app_key, row.app_secret, row.account_no, row.paper
+
+
+async def _connection_view(row: BrokerSettings | None) -> dict:
+    """화면 표시용 연동 정보. 키 원문은 포함하지 않는다."""
+    if not row:
+        return {"connected": False, "app_key": "", "account_no": "", "kis_managed": None}
+    if kis_credentials.is_managed(row.broker):
+        st = await kis_credentials.get_status()
+        return {"connected": st["configured"], "app_key": "", "account_no": st["account_masked"], "kis_managed": st}
+    return {"connected": bool(row.app_key), "app_key": row.app_key[:4] + "****" if row.app_key else "",
+            "account_no": row.account_no, "kis_managed": None}
+
+
 @router.get("/broker/catalog")
 async def broker_catalog():
     return {"brokers": get_broker_catalog()}
@@ -411,12 +447,11 @@ async def save_broker_settings(
 
     row = await _get_or_create_broker_settings_row(db, _uid(user["id"]))
     row.broker = broker
-    row.app_key = body.app_key
-    row.app_secret = body.app_secret
-    row.account_no = body.account_no
+    _apply_credentials(row, broker, body.app_key, body.app_secret, body.account_no)
     row.paper = body.paper
     await db.commit()
-    await audit(user["id"], "", "broker.settings.save", {"broker": broker, "paper": body.paper})
+    await audit(user["id"], "", "broker.settings.save", {"broker": broker, "paper": body.paper,
+                                                          "managed": kis_credentials.is_managed(broker)})
     return {"ok": True}
 
 
@@ -435,12 +470,13 @@ async def get_broker_settings(
             "paper": True,
             "brokers": catalog,
         }
-    masked = row.app_key[:4] + "****" if row.app_key else ""
+    view = await _connection_view(row)
     return {
         "broker":     row.broker,
-        "connected":  bool(row.app_key),
-        "app_key":    masked,
-        "account_no": row.account_no,
+        "connected":  view["connected"],
+        "app_key":    view["app_key"],
+        "account_no": view["account_no"],
+        "kis_managed": view["kis_managed"],
         "paper":      row.paper,
         "brokers": catalog,
     }
@@ -498,19 +534,22 @@ async def get_quant_settings(
             "risk": risk_guard.RiskLimits().to_dict(), "risk_halt_reason": "",
             "strategy_id": "", "strategy_version": 0,
             "live_gateway": _live_gateway_info(),
+            "kis_managed": None, "managed_brokers": sorted(kis_credentials.MANAGED_BROKERS),
             "brokers": catalog, "stocks": stocks,
         }
 
     mode = row.quant_mode if row.quant_mode in ("paper", "live") else ("live" if row.paper is False else "paper")
     source = row.quant_symbol_source if row.quant_symbol_source in ("ai", "manual") else "ai"
-    masked = row.app_key[:4] + "****" if row.app_key else ""
+    view = await _connection_view(row)
 
     return {
         "mode": mode,
         "broker": row.broker,
-        "connected": bool(row.app_key),
-        "app_key": masked,
-        "account_no": row.account_no,
+        "connected": view["connected"],
+        "app_key": view["app_key"],
+        "account_no": view["account_no"],
+        "kis_managed": view["kis_managed"],
+        "managed_brokers": sorted(kis_credentials.MANAGED_BROKERS),
         "paper": mode == "paper",
         "symbol_source": source,
         "selected_symbols": list(row.quant_selected_symbols or []),
@@ -559,9 +598,7 @@ async def save_quant_settings(
 
     row = await _get_or_create_broker_settings_row(db, _uid(user["id"]))
     row.broker = broker
-    row.app_key = body.app_key
-    row.app_secret = body.app_secret
-    row.account_no = body.account_no
+    _apply_credentials(row, broker, body.app_key, body.app_secret, body.account_no)
     row.paper = mode == "paper"
     row.quant_mode = mode
     row.quant_symbol_source = symbol_source
@@ -587,20 +624,22 @@ async def save_quant_settings(
     await db.commit()
     await audit(user["id"], "", "quant.settings.save", {
         "broker": broker, "mode": mode, "symbol_source": symbol_source,
+        "managed": kis_credentials.is_managed(broker),
     })
     return {"ok": True}
 
 
 async def _get_broker_client(user: dict, db: AsyncSession):
     row = await _get_broker_settings_row(db, _uid(user["id"]))
-    if not row:
-        return get_broker_client("mock")
-    return get_broker_client(
-        broker     = row.broker or "mock",
-        app_key    = row.app_key,
-        app_secret = row.app_secret,
-        paper      = row.paper,
-    )
+    broker, app_key, app_secret, _account_no, paper = await _resolve_credentials(row)
+    return get_broker_client(broker=broker, app_key=app_key, app_secret=app_secret, paper=paper)
+
+
+async def _get_broker_client_and_account(user: dict, db: AsyncSession):
+    """(client, broker, account_no). KIS 는 계좌번호도 Secrets Manager 값을 쓴다."""
+    row = await _get_broker_settings_row(db, _uid(user["id"]))
+    broker, app_key, app_secret, account_no, paper = await _resolve_credentials(row)
+    return get_broker_client(broker=broker, app_key=app_key, app_secret=app_secret, paper=paper), broker, account_no
 
 
 # ── 증권사 API 실시간 조회 ────────────────────────────────────────────
@@ -629,9 +668,7 @@ async def broker_balance(
     user=Depends(get_current_user),
     db: AsyncSession = Depends(get_pg_session),
 ):
-    client = await _get_broker_client(user, db)
-    row = await _get_broker_settings_row(db, _uid(user["id"]))
-    account_no = row.account_no if row else ""
+    client, _broker_name, account_no = await _get_broker_client_and_account(user, db)
     try:
         bal = await client.get_balance(account_no)
         return {
@@ -679,10 +716,7 @@ async def broker_order(
     user=Depends(get_current_user),
     db: AsyncSession = Depends(get_pg_session),
 ):
-    client = await _get_broker_client(user, db)
-    row = await _get_broker_settings_row(db, _uid(user["id"]))
-    account_no = row.account_no if row else ""
-    broker_name = row.broker if row else "mock"
+    client, broker_name, account_no = await _get_broker_client_and_account(user, db)
 
     # ── 매수 주문 시 예수금 사전 확인 ──────────────────────────────────────
     if body.side == "buy":
@@ -846,6 +880,23 @@ async def quant_kill_switch(body: KillSwitchBody, user=Depends(get_current_user)
         await notification.notify_risk_halt(row.risk_halt_reason, user_id=user.get("id"))
     await audit(user["id"], "", "quant.kill_switch", {"enabled": body.enabled, "reason": row.risk_halt_reason})
     return {"ok": True, "kill_switch": row.risk_kill_switch, "auto_trade_stopped": stopped}
+
+
+# ── 통합 대시보드: KIS 모의투자 원클릭 ───────────────────────────────
+
+@router.get("/quant/kis/quickstart")
+async def kis_quickstart_readiness(user=Depends(get_current_user), db: AsyncSession = Depends(get_pg_session)):
+    """시작 가능 여부(연동·환경·비상정지)와 현재 자동매매 상태."""
+    return await kis_quickstart.readiness(db, _uid(user["id"]))
+
+
+@router.post("/quant/kis/quickstart")
+async def kis_quickstart_start(user=Depends(get_current_user), db: AsyncSession = Depends(get_pg_session)):
+    """KIS 모의투자(Testbed) 원클릭 시작: 설정 저장(AI 추천 · live · Testbed 권장 한도) + 자동매매 ON."""
+    try:
+        return await kis_quickstart.start(db, user["id"])
+    except kis_quickstart.QuickstartBlocked as e:
+        raise HTTPException(409, e.message)
 
 
 @router.post("/quant/auto/start")

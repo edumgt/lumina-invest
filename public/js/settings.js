@@ -31,14 +31,46 @@ async function loadSettings() {
       el.checked = selected.has(el.value);
     });
     toggleManualSymbols();
-    document.getElementById("broker-status").textContent =
-      cfg.connected ? `✅ 연결됨 (${cfg.broker})` : "⚠️ API 키 미설정 – Mockup 모드";
+    managedBrokers = new Set(cfg.managed_brokers || ["kis"]);
+    lastKisManaged = cfg.kis_managed || null;
+    renderManagedBroker();
+    document.getElementById("broker-status").textContent = cfg.kis_managed
+      ? (cfg.connected ? `✅ 연결됨 (KIS · 서버 관리 자격증명)` : "⚠️ KIS 자격증명 미연동 – Mockup 모드")
+      : (cfg.connected ? `✅ 연결됨 (${cfg.broker})` : "⚠️ API 키 미설정 – Mockup 모드");
     renderLiveRoute(cfg.live_gateway);
     await loadStrategies(cfg.strategy_id || "", cfg.strategy_version || 0);
     loadLiveOrders();
     loadCycleStatus();
   } catch {}
 }
+
+// ── 서버 관리 증권사(KIS): 키 입력칸 숨기고 연동 여부만 표시 ──────────────
+let managedBrokers = new Set(["kis"]);
+let lastKisManaged = null;
+function renderManagedBroker() {
+  const broker = document.getElementById("broker-type")?.value || "mock";
+  const wrap = document.getElementById("broker-credentials-wrap");
+  const box = document.getElementById("broker-managed");
+  if (!wrap || !box) return;
+  const managed = managedBrokers.has(broker);
+  wrap.classList.toggle("hidden", managed);
+  box.classList.toggle("hidden", !managed);
+  if (!managed) return;
+  const st = lastKisManaged;
+  if (!st) {
+    box.innerHTML = `<b>🔐 자격증명 서버 관리</b> · App Key / Secret / 계좌번호는 입력하지 않습니다. 저장 후 연동 여부가 표시됩니다.`;
+    return;
+  }
+  const badge = st.configured ? `<span class="badge-buy">연동됨</span>` : `<span class="badge-sell">미연동</span>`;
+  const src = st.source === "secrets-manager" ? `AWS Secrets Manager${st.secret_name ? " · " + escHtml(st.secret_name) : ""}`
+            : st.source === "env" ? "서버 환경변수" : "소스 미설정";
+  const env = st.environment === "real" ? "실전" : "모의(Testbed)";
+  box.innerHTML = `<b>🔐 KIS 자격증명 · 서버 관리</b> ${badge}<br>` +
+    `<span style="color:var(--text-mute);">소스: ${src} · 환경: ${env}` +
+    (st.account_masked ? ` · 계좌 ${escHtml(st.account_masked)}` : (st.configured ? " · 계좌번호 없음" : "")) +
+    (st.error ? `<br>오류: ${escHtml(st.error)}` : "") + `</span>`;
+}
+document.getElementById("broker-type")?.addEventListener("change", renderManagedBroker);
 
 // ── 실주문 경로 안내 (live 모드 주문이 어디로 나가는지) ─────────────────
 function renderLiveRoute(gw) {
@@ -172,9 +204,9 @@ document.getElementById("broker-save")?.addEventListener("click", async () => {
         strategy_id: document.getElementById("quant-strategy")?.value || "",
         strategy_version: Number(document.getElementById("quant-strategy")?.selectedOptions?.[0]?.dataset?.version || 0),
         broker:     document.getElementById("broker-type").value,
-        app_key:    document.getElementById("broker-app-key").value,
-        app_secret: document.getElementById("broker-app-secret").value,
-        account_no: document.getElementById("broker-account").value,
+        app_key:    managedBrokers.has(document.getElementById("broker-type").value) ? "" : document.getElementById("broker-app-key").value,
+        app_secret: managedBrokers.has(document.getElementById("broker-type").value) ? "" : document.getElementById("broker-app-secret").value,
+        account_no: managedBrokers.has(document.getElementById("broker-type").value) ? "" : document.getElementById("broker-account").value,
         paper:      document.getElementById("broker-paper").checked,
         risk_daily_loss_limit_pct: Number(document.getElementById("risk-daily-loss").value || 0),
         risk_max_position_pct:     Number(document.getElementById("risk-max-position").value || 0),
@@ -185,19 +217,6 @@ document.getElementById("broker-save")?.addEventListener("click", async () => {
     setToast("증권사 API 설정이 저장되었습니다.", "ok");
     loadSettings();
   } catch (e) { setToast(e.message, "error"); }
-});
-
-document.getElementById("broker-test")?.addEventListener("click", async () => {
-  const el = document.getElementById("broker-status");
-  el.textContent = "연결 테스트 중...";
-  try {
-    const data = await api("/api/broker/price?symbol=005930.KS");
-    el.textContent = `✅ 연결 성공 – 삼성전자 현재가: ${fmt(data.current)}원`;
-    setToast("연결 성공", "ok");
-  } catch (e) {
-    el.textContent = `❌ 연결 실패: ${e.message}`;
-    setToast(e.message, "error");
-  }
 });
 
 document.getElementById("broker-test")?.addEventListener("click", async () => {

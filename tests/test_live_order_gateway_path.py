@@ -119,8 +119,17 @@ def test_market_closed_skips_without_db_write(env):
 
 def test_legacy_path_when_gateway_not_configured(monkeypatch):
     monkeypatch.setattr(settings, "STOCK_COIN_TRADE_BASE_URL", "")
+    for k in ("KIS_SECRETS_NAME", "KIS_APP_KEY", "KIS_APP_SECRET"):
+        monkeypatch.setattr(settings, k, "")
+    from app.services import kis_credentials
+    kis_credentials.invalidate()
     broker = FakeBroker()
-    broker.app_key = broker.app_secret = ""   # 자격증명 없음 → 레거시 경로는 None
+    broker.app_key = broker.app_secret = ""
+    # KIS 자격증명은 서버 관리(Secrets Manager). 미연동이면 레거시 경로는 주문을 내지 않고 생략 사유를 남긴다
+    out = asyncio.run(auto_trade._place_live_order(broker, "005930.KS", "삼성전자", "buy", 1, 70_000.0, str(UID), db=FakeDb()))
+    assert out == {"status": "skipped", "broker": "kis", "reason": "kis_credentials_not_configured"}
+    # 서버 관리 대상이 아닌 증권사는 종전대로 자격증명 없으면 None
+    broker.broker = "kb"
     assert asyncio.run(auto_trade._place_live_order(broker, "005930.KS", "삼성전자", "buy", 1, 70_000.0, str(UID), db=FakeDb())) is None
 
 
