@@ -111,8 +111,10 @@
       <div class="overview-columns">
         <section class="card overview-section" aria-labelledby="overview-robo-title">
           <div class="overview-section-heading"><i class="fa-solid fa-robot"></i><div><h2 id="overview-robo-title">로보 어드바이저</h2><p class="overview-note">투자 상담부터 자산배분과 리밸런싱까지</p></div></div>
-          <h3>계좌·운용 지표</h3><p class="overview-note">내 모의계좌 기준</p>
-          <div id="overview-robo-metrics" class="overview-metrics"></div>
+          <h3>투자 사이트별 현재 투자액</h3><p class="overview-note">탭을 눌러 사이트별 계좌를 확인하세요. KIS 모의투자가 기본입니다.</p>
+          <div id="overview-account-tabs" class="overview-tabs" role="tablist" aria-label="투자 사이트"></div>
+          <div id="overview-account-panel" class="overview-metrics" role="tabpanel"><p class="overview-note" role="status">계좌를 불러오는 중입니다…</p></div>
+          <div id="overview-robo-metrics" class="overview-metrics hidden"></div>
           <div id="overview-decision" class="overview-metrics"></div>
           <h3>기능 바로가기</h3><div id="overview-robo-features" class="overview-features"></div>
         </section>

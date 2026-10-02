@@ -29,8 +29,7 @@ export async function loadDashboard() {
   loadKisQuickstart();
   try {
     await Promise.allSettled([
-      fill('overview-robo-metrics', () => api('/api/rebalance/status'), ({ snapshot: s, plan }) =>
-        metric('모의계좌 총 자산', number(s.total_asset, '원', 0)) + metric('현금 비중', number(s.cash_weight_pct, '%')) + metric('최대 비중 이탈', number(s.max_drift_pct, '%p')) + metric('리밸런싱 계획', plan.is_active ? '활성' : '비활성', plan.auto_execute ? '자동 체결' : '수동 승인')),
+      loadAccountTabs(),
       fill('overview-decision', () => api('/api/quant/auto/status'), data =>
         metric('모의 투자 의사결정', data.running ? '실행 중' : '중지됨') + metric('현재 판단 신호', number(data.signals?.length, '개', 0))),
       fill('overview-indicator-metrics', () => api('/api/quant/pipeline?symbol=005930.KS&period=1y&strategy=rsi&cost_bps=10&slippage_bps=0'), data =>
@@ -41,6 +40,62 @@ export async function loadDashboard() {
   } finally { loading = false; button.disabled = false; }
 }
 document.getElementById('overview-refresh').addEventListener('click', loadDashboard);
+
+// ── 투자 사이트별 현재 투자액 탭 (KIS 모의투자가 가장 왼쪽) ─────────────────
+let accountTabs = [];
+let activeTab = 'kis';
+try { activeTab = localStorage.getItem('overview.accountTab') || 'kis'; } catch {}
+const money = (v, cur = 'KRW') => v === null || v === undefined || !Number.isFinite(Number(v)) ? '데이터 없음'
+  : cur === 'USD' ? '$' + Number(v).toLocaleString('en-US', { maximumFractionDigits: 0 }) : Number(v).toLocaleString('ko-KR', { maximumFractionDigits: 0 }) + '원';
+const signed = (v, suffix) => v === null || v === undefined || !Number.isFinite(Number(v)) ? '' : (Number(v) >= 0 ? '+' : '') + Number(v).toLocaleString('ko-KR', { maximumFractionDigits: 2 }) + suffix;
+function renderAccountPanel() {
+  const panel = document.getElementById('overview-account-panel');
+  const tab = accountTabs.find(t => t.key === activeTab) || accountTabs[0];
+  if (!panel || !tab) return;
+  document.querySelectorAll('#overview-account-tabs .overview-tab').forEach(b => {
+    const on = b.dataset.key === tab.key; b.classList.toggle('active', on); b.setAttribute('aria-selected', on ? 'true' : 'false');
+  });
+  if (tab.key === 'robo') { panel.innerHTML = tab.html || '<p class="overview-note">데이터를 불러오지 못했습니다.</p>'; return; }
+  if (!tab.connected) {
+    panel.innerHTML = `<div class="overview-metric wide"><span>${escHtml(tab.site)}</span><strong>미연동</strong><small>${escHtml(tab.error || tab.note || '')}</small>${tab.link ? `<a class="underline text-xs" href="${tab.link}">설정으로 이동</a>` : ''}</div>`;
+    return;
+  }
+  const pnlNote = signed(tab.pnl_pct, '%') ? `손익 ${signed(tab.pnl, tab.currency === 'USD' ? ' USD' : '원')} (${signed(tab.pnl_pct, '%')})` : (tab.pnl !== null && tab.pnl !== undefined ? `손익 ${signed(tab.pnl, '원')}` : '');
+  let html = metric('현재 투자액 (보유 평가)', money(tab.invested, tab.currency), tab.note || '') +
+    metric('현금 · 예수금', money(tab.cash, tab.currency)) +
+    metric('총 자산', money(tab.total, tab.currency), pnlNote) +
+    metric('보유 종목', tab.positions === null || tab.positions === undefined ? '데이터 없음' : number(tab.positions, '개', 0));
+  if (tab.key === 'kis') html += metric('자동매매', tab.auto_trade_running ? '실행 중 (live · KIS)' : '꺼짐', `미체결 실주문 ${number(tab.open_live_orders, '건', 0)} · ${escHtml(tab.environment === 'real' ? '실전' : '모의(Testbed)')}`);
+  if (tab.key === 'paper' && tab.breakdown) html += metric('자산별 평가', `주식 ${money(tab.breakdown.stocks)}`, `코인 ${money(tab.breakdown.crypto)} · 대체 ${money(tab.breakdown.alternatives)}`);
+  panel.innerHTML = html;
+}
+function renderAccountTabBar() {
+  const bar = document.getElementById('overview-account-tabs');
+  if (!bar) return;
+  bar.innerHTML = accountTabs.map(t => `<button type="button" role="tab" class="overview-tab" data-key="${t.key}" aria-selected="false"><span class="dot ${t.connected ? 'on' : ''}"></span>${escHtml(t.label)}</button>`).join('');
+  bar.querySelectorAll('.overview-tab').forEach(b => b.addEventListener('click', () => {
+    activeTab = b.dataset.key;
+    try { localStorage.setItem('overview.accountTab', activeTab); } catch {}
+    renderAccountPanel();
+  }));
+}
+async function loadAccountTabs() {
+  const panel = document.getElementById('overview-account-panel');
+  if (!panel) return;
+  const [acc, robo] = await Promise.allSettled([api('/api/dashboard/accounts'), api('/api/rebalance/status')]);
+  accountTabs = acc.status === 'fulfilled' ? (acc.value.tabs || []) : [
+    { key: 'kis', label: 'KIS 모의투자', site: '한국투자증권 Testbed', connected: false, error: acc.reason?.message || '불러오지 못했습니다' },
+  ];
+  const roboTab = { key: 'robo', label: '로보 모의계좌', site: '리밸런싱 엔진', connected: robo.status === 'fulfilled' };
+  if (robo.status === 'fulfilled') {
+    const { snapshot: s, plan } = robo.value;
+    roboTab.html = metric('모의계좌 총 자산', number(s.total_asset, '원', 0)) + metric('현금 비중', number(s.cash_weight_pct, '%')) + metric('최대 비중 이탈', number(s.max_drift_pct, '%p')) + metric('리밸런싱 계획', plan.is_active ? '활성' : '비활성', plan.auto_execute ? '자동 체결' : '수동 승인');
+  }
+  accountTabs.push(roboTab);
+  if (!accountTabs.some(t => t.key === activeTab)) activeTab = 'kis';
+  renderAccountTabBar();
+  renderAccountPanel();
+}
 
 // ── KIS 모의투자 원클릭 ─────────────────────────────────────────────────
 const KIS_BLOCK_TEXT = {

@@ -130,6 +130,9 @@ app.include_router(conversations.router)
 app.include_router(tasks.router)
 # 모의투자(주식·코인·대체자산) + Open API 키 — stock-coin-trade 이식
 app.include_router(paper.router)
+# 통합 대시보드 — 투자 사이트별 현재 투자액 탭
+from app.routes import dashboard as dashboard_routes  # noqa: E402
+app.include_router(dashboard_routes.router)
 app.include_router(openapi.router)
 # QuantConnect LEAN 백테스트 — domain-rag-lab 이식
 app.include_router(lean.router)

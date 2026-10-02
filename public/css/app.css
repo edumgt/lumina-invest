@@ -668,6 +668,14 @@
 .overview-metric { background:var(--surf2); border:1px solid var(--border); border-radius:10px; padding:14px; min-width:0; }
 .overview-metric span,.overview-metric small { display:block; color:var(--text-mute); font-size:12px; }
 .overview-metric strong { display:block; font-size:22px; margin:6px 0; overflow-wrap:anywhere; }
+.overview-tabs { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px; }
+.overview-tab { display:inline-flex; align-items:center; gap:6px; padding:7px 12px; border:1px solid var(--border); border-radius:999px; background:var(--surf2); color:var(--text-dim); font-size:12.5px; cursor:pointer; }
+.overview-tab:hover { color:var(--accent); border-color:var(--accent); }
+.overview-tab.active { background:var(--accent); color:#fff; border-color:var(--accent); }
+.overview-tab .dot { width:7px; height:7px; border-radius:50%; background:var(--text-mute); }
+.overview-tab .dot.on { background:#22c55e; }
+.overview-tab.active .dot.on { background:#bbf7d0; }
+.overview-metric.wide { grid-column:1 / -1; }
 .overview-features { display:grid; gap:6px; }
 .overview-feature { display:flex; align-items:center; gap:10px; padding:12px; border:1px solid var(--border); border-radius:8px; color:var(--text-dim); font-size:13px; }
 .overview-feature > i:first-child { color:var(--accent); width:18px; }

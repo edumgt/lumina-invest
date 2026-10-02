@@ -395,8 +395,10 @@ cd /home/ubuntu/lumina-invest && .venv/bin/python -m pytest tests/test_spec_rule
 | L8 | Testbed 기존 보유 종목을 자동매도 대상으로 할지 | 가상 QUANT 장부에 Testbed 보유수량을 시드하면 매도 시그널 시 실매도 발생. 미시드면 자동매매가 산 수량만 매매 | 1주 관찰은 미시드(신규 매수분만), 이후 결정 |
 | L9 | 지정가 매수의 체결 프리미엄 | 첫 자동 주문(275,000 지정가)이 직후 현재가 276,000 으로 상승해 미체결. 선택: 현재가 그대로(현재) / +1~2틱 프리미엄 / Testbed 는 MARKET | Testbed 관찰 기간은 +1틱(`align_price_to_tick` 에 옵션 추가), 실전은 관찰 후 결정 |
 | L7 | libgomp 설치(sudo) | 설치 전까지 lightgbm 의존 테스트 5개 실행 불가 | `sudo apt-get install -y libgomp1` |
-| L10 | KIS 자격증명 Secrets Manager 시크릿 이름·IAM | fd EC2 역할에 `secretsmanager:GetSecretValue` 를 붙이고 `.env KIS_SECRETS_NAME` 기입 vs 당분간 게이트웨이(stock-coin-trade 가 KIS 키 보유)만 사용 | 실주문은 게이트웨이가 정본이므로 `KIS_SECRETS_NAME` 은 가격·잔고 조회용으로 기입. 시크릿 이름 `lumina-invest/prod/kis`, environment=paper |
+| L10 | KIS 자격증명 Secrets Manager 시크릿 이름·IAM (**진행 중** — 6-8절 사용자 수행 명령 참고) | fd EC2 역할에 `secretsmanager:GetSecretValue` 를 붙이고 `.env KIS_SECRETS_NAME` 기입 vs 당분간 게이트웨이(stock-coin-trade 가 KIS 키 보유)만 사용 | 실주문은 게이트웨이가 정본이므로 `KIS_SECRETS_NAME` 은 가격·잔고 조회용으로 기입. 시크릿 이름 `lumina-invest/prod/kis`, environment=paper |
 | L11 | 대시보드 「KIS 모의투자 시작」 원클릭 노출 범위 | 모든 로그인 사용자 vs 운영 계정만. 버튼은 경로가 Testbed(paper)일 때만 활성화되지만 누르면 그 계정의 자동매매가 live+KIS 로 바뀐다 | Phase 4 관찰 기간에는 운영 계정 1개로만 사용 |
+| L12 | 포지션 단위 청산 규칙(손절·익절·트레일링) 도입 여부 | 현재 매도는 시그널(지표/전략 exit)에만 의존, 일손실 한도만 존재. 손절 −5%·익절 +10% 같은 규칙을 risk_guard 에 추가하면 Testbed 체결 데이터 해석이 바뀜 | Testbed 1주 관찰 뒤 도입, 값은 관찰 결과로 결정 |
+| L13 | 운영 계정에 LEAN 합격 전략 적용 시점 | pr(domain-rag-lab) 합격 전략 0건. 전략 선택 전까지 매수·매도 모두 기술지표 규칙만 사용(ML·LEAN 미적용) | domain-rag-lab 에서 ma_cross/momentum 백테스트 → export 후 종목 선정 화면에서 선택 |
 
 ### 6-6. 2026-10-02 운영 시작 — 모의투자(Testbed) 자동매매 가동 (사용자 요청 + 7절 권고 수용)
 
@@ -449,6 +451,47 @@ cd /home/ubuntu/lumina-invest && .venv/bin/python -m pytest tests/test_spec_rule
 - 로컬 커밋 `ba9c240`. `git push origin main` 은 **보호 브랜치 규칙으로 거부**(`Cannot update this protected ref`) → 원격 반영은 PR 또는 보호 규칙 예외 필요. fd 배포는 커밋과 무관하게 로컬 작업 트리 rsync 로 수행
 - fd.edumgt.co.kr: rsync 14파일 → `compose up -d --build app celery-worker celery-beat` → 공개 `/api/health` 200, `/api/quant/kis/quickstart` 비로그인 401(라우트 등록 확인), `app.html` 에 `overview-kis-start`·`broker-managed` 포함, alembic 추가 마이그레이션 없음(스키마 변경 없음)
 - **Secrets Manager 미연동 상태**: 컨테이너에서 `kis_credentials.is_configured()=False`(`.env` 에 `KIS_SECRETS_NAME` 없음). 인스턴스 역할 `fd-edumgt-ssm-role` 로 `GetSecretValue lumina-invest/prod/kis` 시도 → **AccessDeniedException** → 위 "운영 적용 절차" 1·2·3 이 아직 필요. `STOCK_COIN_TRADE_API_KEY` 도 비어 있어 대시보드 버튼은 현재 「미연동」으로 비활성(의도된 안전 동작)
+
+
+### 6-8. 2026-10-02 7차 작업 — 사이트 연동(st API 키·KIS 시크릿), 매도 로직 점검, 대시보드 사이트별 투자액 탭 (사용자 요청)
+
+**① 연동 결과**
+| 항목 | 결과 |
+|------|------|
+| st.edumgt.co.kr → lumina API 키 | st MariaDB `api_key` 에 `lumina-autotrade`(member_id=1, scopes `kis:order`, is_active=1) 발급. **원문은 어디에도 출력·저장하지 않고** 해시만 DB, 원문은 fd `.env STOCK_COIN_TRADE_API_KEY` 에 직접 기입(백업 `.env.bak.*`). 발급 키로 `GET https://st.edumgt.co.kr/openapi/v1/kis/balance` → **200** |
+| fd 재기동 | app·celery-worker·celery-beat 재기동 → 컨테이너에서 `gateway.is_configured()=True, env=paper, LIMIT`. 공개 `/api/health` 200. **이제 live 모드 실주문은 stock-coin-trade 게이트웨이 → KIS Testbed 로 나간다**(레거시 폴백 종료) |
+| pr.edumgt.co.kr | 이미 연동됨: 컨테이너에서 `strategy_loader.is_configured()=True`, 합격 전략 0건(백테스트 통과 전략이 아직 없음) |
+| st 서버 `.env` | `KIS_PAPER_*`·`KIS_REAL_*` 환경변수가 **없고** `AWS_REGION` 만 있음 → stock-coin-trade 는 KIS 키를 Secrets Manager 에서 읽는 것으로 보임. 계정 086015456585 ap-northeast-2 에 시크릿 `stock-coin-trade/kis`·`stock-coin-trade/kb`·`stock-coin-trade/alpaca` 존재(이름만 확인, 값은 미열람) |
+| `KIS_SECRETS_NAME` | **미완료 — 사용자 수행 필요**(아래). 에이전트의 IAM 정책 부여·fd `.env` 시크릿 참조 기입·시크릿 값/구조 확인은 자동 모드 정책으로 차단됨 |
+
+**사용자 수행 (KIS_SECRETS_NAME 연동 마무리)**
+```bash
+# 1) fd 인스턴스 역할에 시크릿 읽기 허용 (stock-coin-trade/kis 재사용. 별도 시크릿을 만들려면 lumina-invest/prod/kis 로 생성 후 Resource 에 포함)
+aws iam put-role-policy --role-name fd-edumgt-ssm-role --policy-name lumina-kis-secret-read --policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["secretsmanager:GetSecretValue","secretsmanager:DescribeSecret"],"Resource":["arn:aws:secretsmanager:ap-northeast-2:086015456585:secret:stock-coin-trade/kis-*","arn:aws:secretsmanager:ap-northeast-2:086015456585:secret:lumina-invest/*"]}]}'
+# 2) 시크릿 JSON 키 이름 확인 — lumina 파서가 받는 이름: app_key/appkey/KIS_APP_KEY/appKey, app_secret/…, account_no/account/cano/…, environment/env (paper|real)
+aws secretsmanager get-secret-value --secret-id stock-coin-trade/kis --region ap-northeast-2 --query SecretString --output text | python3 -c "import sys,json;print(list(json.load(sys.stdin).keys()))"
+#    이름이 다르면(예: paper_app_key) app/services/kis_credentials.py 의 _ALIASES 에 추가하거나 lumina-invest/prod/kis 를 위 형식으로 새로 만든다
+# 3) fd .env 에 참조 기입 후 재기동 (시크릿은 60초 네거티브 캐시라 권한 부여 직후 1분 내 반영)
+ssh -i lumina-invest/fd.edumgt.co.kr.pem ubuntu@43.201.229.188 "cd /home/ubuntu/lumina-invest && printf '\nKIS_SECRETS_NAME=stock-coin-trade/kis\nKIS_ENVIRONMENT=paper\n' >> .env && sudo env COMPOSE_FILE='docker-compose.yml:compose.fd.yml' docker compose up -d app celery-worker celery-beat"
+# 4) 확인: 증권사 API 설정 화면에서 KIS 선택 → 「연동됨 · 소스 AWS Secrets Manager」, 대시보드 KIS 탭이 잔고를 표시
+```
+- `KIS_SECRETS_NAME` 없이도 **게이트웨이가 켜져 있어 실주문·잔고 조회(대시보드 KIS 탭)는 동작**한다. 시크릿은 게이트웨이 장애 시 폴백과 「연결 테스트」(KIS 직접 시세)용
+
+**② 매도도 AI·LEAN 기반인가 — 점검 결과 (`app/services/auto_trade.py`)**
+| 모드 | 매수 | 매도 | 비고 |
+|------|------|------|------|
+| 기본 규칙(전략 미선택, **현재 Testbed 설정**) | `stock._generate_signal` 기술지표 점수(RSI 과매도 +2, 골든크로스 +3, 단기>중기 +1, BB 하단 +1) ≥ 임계 → 매수/강력 매수 | 같은 함수의 **대칭 규칙**(RSI 과매수 −2, 데드크로스 −3, 단기<중기 −1, BB 상단 −1) ≤ 임계 → 매도/강력 매도 | **ML·LEAN 미사용**. 화면 문구의 "AI 종합 시그널"은 지표 규칙 합산을 뜻함 |
+| 전략 선택(domain-rag-lab **LEAN 합격 스펙**) | `apply_strategy_spec_to_signal`: 지표 점수 + LightGBM(SageMaker 배치 `ml_scores_by_symbol`, 없으면 종목별 Ridge `symbol_ml_score`) 가중 합산 → `buy_threshold` 이상 매수. 스펙 `entry` 규칙(ma_cross/momentum) 평가 가능하면 규칙이 우선 | 같은 가중 점수 ≤ `sell_threshold` 매도. 스펙 `exit` 규칙 평가 가능하면 **청산 규칙 우선**(exit=True → 매도) | 매수·매도 **동일 경로·동일 가중치**로 AI(ML)·LEAN 스펙 기반 |
+| 실행 | 1회 투자금×buy_ratio 수량, 비중 한도·쿨다운·일 주문 수 게이트 → 가상 체결 → 게이트웨이 실주문 | **가상 QUANT 장부 보유분만** 대상, 수량 = 보유×`sell_ratio`(기본 50%), 쿨다운·일 주문 수 게이트 → 가상 체결 → 게이트웨이 실주문 | 보유가 없으면 매도 시그널은 "보유 수량 없음" 으로 생략(Testbed 기존 보유 미시드 — 7절 L8) |
+
+**부족한 점(결정 필요, 7절 L12·L13)**: 손절·익절·트레일링 스탑 등 **포지션 단위 청산 규칙이 없다**(일손실 한도만 포트폴리오 단위 kill switch). 또 현재 운영 계정은 전략 미선택이라 매수·매도 모두 ML·LEAN 을 쓰지 않는다 — LEAN 합격 전략이 pr 에 아직 0건이므로 domain-rag-lab 에서 전략을 백테스트·export 해야 적용된다
+
+**③ 통합 대시보드 「투자 사이트별 현재 투자액」 탭**
+| 항목 | 내용 |
+|------|------|
+| `app/routes/dashboard.py` 신설, `GET /api/dashboard/accounts` | 탭 순서 고정 `kis → quant → paper → us`. **KIS 모의투자**: 게이트웨이 잔고(`cashBalance`/`totalEvalAmount`/`holdings[].evalAmount`) + 자동매매 실행 여부 + 미체결 실주문 수; 게이트웨이 없으면 서버 관리 자격증명으로 KIS 직접 조회; 둘 다 없으면 미연동. **퀀트 가상계좌**: QUANT 장부 현금+보유 평가(현재가, 실패 시 평균단가). **모의투자 계좌**: `paper_trading.account_snapshot`(주식·코인·대체 분해). **미국주식**: Alpaca Paper `/account`(서버 키 있을 때). 탭 하나가 실패해도 나머지 반환(`connected=False, error`) |
+| `public/app.html`·`dashboard.js`·`app.css` | 로보 어드바이저 섹션의 「계좌·운용 지표」를 탭 바(`#overview-account-tabs`, 가장 왼쪽 KIS 모의투자)와 패널로 교체. 5번째 탭 「로보 모의계좌」는 기존 `/api/rebalance/status` 지표 유지. 연동 여부 점(초록) 표시, 선택 탭은 localStorage 기억 |
+| 테스트 | `tests/test_dashboard_accounts.py`(5) 추가 — 탭 순서·KIS 첫 탭·게이트웨이/직접 조회/미연동·탭 격리·Alpaca. **총 152 통과** |
 
 ---
 
