@@ -392,4 +392,27 @@ cd /home/ubuntu/lumina-invest && .venv/bin/python -m pytest tests/test_spec_rule
 | L4 | 전략 action 결정 방식 | 규칙 평가 가능 시 규칙 우선(현재) vs 임계값 점수 우선 vs 둘 다 만족 시만 매수 | 현재 유지, Phase 4 체결 로그로 재평가 |
 | L5 | LEAN 백테스트 중복 구현 정리 | `app/services/lean_backtest.py` 삭제·domain-rag-lab 로 일원화 vs 유지 | domain-rag-lab 로 일원화(전략 API 가 그쪽) |
 | L6 | 변경분 커밋 시점·브랜치 | 20개 경로 미커밋 | 기능 단위 커밋 권장 |
+| L8 | Testbed 기존 보유 종목을 자동매도 대상으로 할지 | 가상 QUANT 장부에 Testbed 보유수량을 시드하면 매도 시그널 시 실매도 발생. 미시드면 자동매매가 산 수량만 매매 | 1주 관찰은 미시드(신규 매수분만), 이후 결정 |
 | L7 | libgomp 설치(sudo) | 설치 전까지 lightgbm 의존 테스트 5개 실행 불가 | `sudo apt-get install -y libgomp1` |
+
+### 6-6. 2026-10-02 운영 시작 — 모의투자(Testbed) 자동매매 가동 (사용자 요청 + 7절 권고 수용)
+
+**적용한 결정 (7절)**
+| # | 적용 |
+|---|------|
+| L1 | 계정 `tester@test.com`(broker_settings 보유 2계정 중 선택; 다른 계정 `aaaaa@aaaaa.com` 은 paper/mock 유지) 를 DB 로 설정: `quant_mode=live, broker=kis, symbol_source=manual, selected=[005930.KS, 035720.KS](Testbed 보유 종목 중 QUANT_STOCKS 에 있는 것), 1회 투자금 300,000, 쿨다운 30분, 일 주문 10건, 종목 비중 20%, 일손실 3%, strategy 없음(기본 규칙), quant_auto_enabled=true`. 서버 env 가 paper 이므로 주문은 KIS Testbed 로 간다 |
+| L2 | `STOCK_COIN_TRADE_CANCEL_OPEN_AFTER_MIN` 0 유지 → 관찰 1주 후 20분 |
+| L5/R1 | LEAN 정본 domain-rag-lab: `app/services/lean_remote.py` 신설, `routes/lean.py` 가 `DOMAIN_RAG_LAB_BASE_URL` 설정 시 `POST /backtests/run` 으로 위임(422 는 검증 오류, 연결 실패 시 로컬 폴백). 로컬 `lean_backtest.py` 는 폴백으로 유지(삭제는 Phase 4 후) |
+| R5 | `.env DOMAIN_RAG_LAB_API_KEY` 설정(domain-rag-lab `STRATEGY_API_KEY` 와 동일) |
+| L6 | 커밋: 이 세션에서 기능 단위로 수행(아래) |
+
+**가동 기록**
+- 15:08 KST 첫 사이클(수동 트리거 `celery call quant.auto_trade_cycle`): 삼성전자 매수 시그널이지만 가상 QUANT 장부가 이전 paper 운용으로 삼성전자 29.6% 보유 → 비중 한도 20% 로 생략. 카카오는 매도 시그널이나 가상 포지션 없음
+- 가상 QUANT 장부 초기화(`portfolio book=QUANT` 삭제, 현금 10,000,000) 후 15:10 재실행 → 삼성전자 1주 가상 체결 → 게이트웨이 → **KIS Testbed 주문 0000030540 ACCEPTED (LIMIT 275,000)**. `live_orders` 1행 기록
+- 체결 확인(`quant.confirm_fills` 2분)은 아래 "체결 확인 결과" 참고
+
+**주의**
+- Testbed 계좌의 기존 보유(KR모터스·POSCO·삼성전자 38주·카카오·펄어비스)는 가상 장부에 없으므로 **매도 시그널로 팔리지 않는다**. 자동매매가 산 수량만 자동매매가 판다(가상 장부 기준). 기존 보유를 자동매도 대상으로 하려면 가상 장부에 동일 수량을 시드해야 함(결정 필요, 7절 L8)
+- 테스트 4개 추가 (`tests/test_lean_remote.py`), 총 58 통과. 재배포 완료
+
+**체결 확인 결과**: (아래 갱신)
