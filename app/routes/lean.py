@@ -18,6 +18,7 @@ from app.lib.jwt_auth import get_current_user_any
 from app.models import LeanBacktestRun
 from app.services.audit import audit
 from app.services.lean_backtest import STRATEGY_LABELS, LeanBacktestError, lean_status, service
+from app.services import lean_remote
 
 router = APIRouter(prefix="/api/backtests/lean", tags=["lean-backtest"])
 
@@ -62,14 +63,16 @@ class BacktestRequest(BaseModel):
 
 @router.get("/status")
 async def status():
-    return lean_status()
+    local = lean_status()
+    return {**local, "remote": lean_remote.remote_status(), "effective": "remote:domain-rag-lab" if lean_remote.is_enabled() else local.get("mode")}
 
 
 @router.post("/run")
 async def run_backtest(payload: BacktestRequest, user=Depends(get_current_user_any),
                        db: AsyncSession = Depends(get_pg_session)):
     try:
-        result = await service.run(**payload.model_dump())
+        # LEAN 백테스트 정본은 domain-rag-lab(결정 L5/R1). 설정돼 있으면 원격 API로 실행하고, 실패 시에만 로컬 구현으로 폴백한다.
+        result = await lean_remote.run_or_fallback(payload.model_dump(), local_run=service.run)
     except LeanBacktestError as exc:
         raise HTTPException(422, str(exc))
     except Exception as exc:
