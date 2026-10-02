@@ -351,6 +351,9 @@ class BrokerSettingsBody(BaseModel):
     paper: bool = Field(default=True, alias="paper_trading")
 
 
+QUANT_MAX_SELECTED_SYMBOLS = 10
+
+
 class QuantSettingsBody(BaseModel):
     """퀀트 자동매매 설정 저장용 입력 모델."""
 
@@ -544,7 +547,15 @@ async def save_quant_settings(
         raise HTTPException(422, "symbol_source는 ai 또는 manual 이어야 합니다.")
 
     valid_symbols = {s["symbol"] for s in QUANT_STOCKS}
-    selected = [s for s in (body.selected_symbols or []) if s in valid_symbols]
+    requested = [str(s).strip() for s in (body.selected_symbols or []) if str(s).strip()]
+    invalid = [s for s in requested if s not in valid_symbols]
+    if invalid:
+        raise HTTPException(422, f"지원하지 않는 종목코드: {', '.join(invalid[:5])}")
+    if len(requested) > QUANT_MAX_SELECTED_SYMBOLS:
+        raise HTTPException(422, f"직접 선택 종목은 최대 {QUANT_MAX_SELECTED_SYMBOLS}개까지 가능합니다.")
+    if symbol_source == "manual" and not requested:
+        raise HTTPException(422, "직접 선택 모드에서는 종목을 1개 이상 선택하세요.")
+    selected = list(dict.fromkeys(requested))
 
     row = await _get_or_create_broker_settings_row(db, _uid(user["id"]))
     row.broker = broker

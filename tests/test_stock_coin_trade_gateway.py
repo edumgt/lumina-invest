@@ -151,3 +151,9 @@ def test_krx_holidays_close_the_market(monkeypatch):
     monkeypatch.setattr(settings, "KRX_EXTRA_HOLIDAYS", "2026-10-08, 2026-11-02")
     assert not gw.is_krx_market_open(datetime(2026, 10, 8, 10, 0, tzinfo=KST))
     assert "2026-11-02" in gw.krx_holidays() and "2026-05-01" in gw.krx_holidays()
+
+
+def test_krx_2026_holidays_match_published_list():
+    assert len(gw.KRX_HOLIDAYS_2026) == 17
+    assert "2026-07-17" in gw.KRX_HOLIDAYS_2026 and "2026-09-28" not in gw.KRX_HOLIDAYS_2026
+    assert not gw.is_krx_market_open(datetime(2026, 7, 17, 10, 0, tzinfo=KST))

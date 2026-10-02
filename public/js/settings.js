@@ -3,9 +3,11 @@
 import { api, getMe, setToast, escHtml, fmt, fmtPct, colorPct } from "/js/common.js";
 
 // ── 설정 (증권사 Open API) ────────────────────────────────────────
+let lastLoadedMode = "paper";
 async function loadSettings() {
   try {
     const cfg = await api("/api/quant/settings");
+    lastLoadedMode = cfg.mode || "paper";
     document.getElementById("quant-mode").value = cfg.mode || "paper";
     document.getElementById("quant-symbol-source").value = cfg.symbol_source || "ai";
     document.getElementById("broker-type").value   = cfg.broker || "mock";
@@ -34,6 +36,7 @@ async function loadSettings() {
     renderLiveRoute(cfg.live_gateway);
     await loadStrategies(cfg.strategy_id || "", cfg.strategy_version || 0);
     loadLiveOrders();
+    loadCycleStatus();
   } catch {}
 }
 
@@ -73,6 +76,31 @@ async function loadStrategies(selectedId, selectedVersion) {
       : "DOMAIN_RAG_LAB_BASE_URL 미설정 – 기본 규칙만 사용";
   } catch (e) {
     if (hint) hint.textContent = "전략 목록을 불러오지 못했습니다";
+  }
+}
+
+// ── 자동매매 사이클 상태: 마지막 실행·다음 예정·마지막 결과 ────────────────
+async function loadCycleStatus() {
+  const el = document.getElementById("quant-cycle-status");
+  if (!el) return;
+  try {
+    const st = await api("/api/auto-trade/status");
+    const intervalMin = Math.round((st.interval_sec || 600) / 60);
+    const last = st.last_cycle_at ? new Date(st.last_cycle_at.replace(" ", "T") + "Z") : null;   // 서버 로그 시각은 UTC
+    const fmtK = (d) => d.toLocaleString("ko-KR", { timeZone: "Asia/Seoul", hour12: false, month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+    const next = last && st.running ? new Date(last.getTime() + intervalMin * 60000) : null;
+    const lastLog = (st.log || []).slice(-1)[0] || {};
+    const trades = (lastLog.trades || []).filter((t) => t.type === "auto");
+    const skipped = (lastLog.risk?.skipped || []).length;
+    const strat = lastLog.settings?.strategy;
+    const stratText = strat?.applied ? `전략 ${escHtml(strat.id)} v${strat.version}` : "기본 규칙";
+    el.innerHTML = `<b>⏱ 자동매매 사이클</b> · ${st.running ? "실행 중 (Celery Beat " + intervalMin + "분)" : "중지"}<br>` +
+      `마지막 실행: ${last ? fmtK(last) : "없음"} · 다음 예정: ${next ? fmtK(next) + " 이전" : "-"}<br>` +
+      `마지막 결과: 체결 ${trades.length}건 · 위험관리 생략 ${skipped}건 · ${stratText}` +
+      (lastLog.risk?.halted ? ` · <span class="badge-sell">비상 정지: ${escHtml(lastLog.risk.reason || "")}</span>` : "") +
+      (lastLog.risk?.live ? ` · 실계좌 당일 ${fmtPct(lastLog.risk.live.day_pnl_pct ?? 0)}` : "");
+  } catch (e) {
+    el.textContent = "사이클 상태를 불러오지 못했습니다.";
   }
 }
 
@@ -122,6 +150,11 @@ function toggleManualSymbols() {
 document.getElementById("quant-symbol-source")?.addEventListener("change", toggleManualSymbols);
 
 document.getElementById("broker-save")?.addEventListener("click", async () => {
+  const modeNow = document.getElementById("quant-mode").value;
+  if (modeNow === "live" && lastLoadedMode !== "live") {
+    const route = document.getElementById("quant-live-route")?.textContent || "";
+    if (!confirm(`실전투자(live) 모드로 전환합니다.\n매수/매도 시그널이 나오면 가상계좌 체결과 함께 실제 KIS 주문이 나갑니다.\n경로: ${route || "증권사 직접 호출"}\n\n계속하시겠습니까?`)) return;
+  }
   try {
     const selectedSymbols = [...document.querySelectorAll(".quant-symbol:checked")].map((el) => el.value);
     const buyRatio = Math.max(10, Math.min(100, Number(document.getElementById("quant-buy-ratio").value || 100))) / 100;

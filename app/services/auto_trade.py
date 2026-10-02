@@ -250,12 +250,31 @@ def apply_strategy_spec_to_symbols(target_symbols: list[str], spec: dict) -> lis
     return restricted[:max_symbols] if max_symbols > 0 else restricted
 
 
+_ml_meta: dict = {}   # 마지막으로 로드한 배치 학습 메타(generated_at 등) — 사이클 로그에 기록
+
+
+async def symbol_ml_score(symbol: str) -> float | None:
+    """배치 점수가 없는 종목의 보조 ML 점수: 캔들로 Ridge 5일 수익률 예측(ml_symbol_score). 실패 시 None."""
+    try:
+        from app.services.stock import get_candles
+        from app.services.ml_symbol_score import symbol_score
+
+        data = await get_candles(symbol, period="2y")
+        return symbol_score(data.get("candles") or [])
+    except Exception as exc:
+        logger.info("종목별 ML 점수 계산 생략 (%s): %s", symbol, exc)
+        return None
+
+
 async def ml_scores_by_symbol() -> dict[str, float]:
     """SageMaker 배치 학습 예측(연수익률 %)을 [-1,1]로 정규화한 종목별 점수. 없으면 빈 dict (기술지표만 사용)."""
     try:
         data = await get_batch_training_scores()
     except Exception:
         return {}
+    _ml_meta.clear()
+    if data:
+        _ml_meta.update(generated_at=data.get("generated_at"), model=data.get("model") or "lightgbm-batch")
     scale = float(getattr(app_settings, "ML_SCORE_SCALE_PCT", 30.0) or 30.0)
     out: dict[str, float] = {}
     for symbol, row in ((data or {}).get("scores") or {}).items():
@@ -269,7 +288,54 @@ async def ml_scores_by_symbol() -> dict[str, float]:
     return out
 
 
-def apply_strategy_spec_to_signal(signal: dict, spec: dict, ml_score: float | None = None) -> dict:
+def _sma_last(values: list[float], window: int, offset: int = 0) -> float | None:
+    """values[-1-offset] 기준 단순이동평균. 데이터 부족이면 None."""
+    end = len(values) - offset
+    if window <= 0 or end - window < 0:
+        return None
+    seg = values[end - window:end]
+    return sum(seg) / window
+
+
+def evaluate_spec_rules(spec: dict, indicators: dict) -> dict | None:
+    """스펙 entry/exit 규칙(ma_cross / momentum / buy_hold / dca)을 지표의 종가 시계열로 직접 평가한다.
+
+    반환 {"entry": bool, "exit": bool, "detail": str} 또는 평가 불가(지원하지 않는 indicator·데이터 부족)면 None.
+    """
+    closes = [float(c) for c in (indicators.get("closes") or []) if c is not None]
+    if not closes:
+        return None
+
+    def _eval(rule: dict) -> bool | None:
+        ind = str(rule.get("indicator") or "")
+        cond = str(rule.get("condition") or "")
+        params = rule.get("params") or {}
+        if cond == "always":
+            return True
+        if cond == "never":
+            return False
+        if ind == "ma_cross":
+            s, l = int(params.get("short_window", 5)), int(params.get("long_window", 20))
+            ss, ll = _sma_last(closes, s), _sma_last(closes, l)
+            if ss is None or ll is None:
+                return None
+            return ss > ll if cond == "short_above_long" else ss < ll if cond == "short_below_long" else None
+        if ind == "momentum":
+            w = int(params.get("breakout_window", 20))
+            if len(closes) < w + 1:
+                return None
+            window = closes[-w - 1:-1]
+            return closes[-1] > max(window) if cond == "breakout_high" else closes[-1] < min(window) if cond == "breakdown_low" else None
+        return None
+
+    entry, exit_ = _eval(spec.get("entry") or {}), _eval(spec.get("exit") or {})
+    if entry is None and exit_ is None:
+        return None
+    detail = f"규칙 {((spec.get('entry') or {}).get('indicator'))}: 진입={entry} 청산={exit_}"
+    return {"entry": bool(entry), "exit": bool(exit_), "detail": detail}
+
+
+def apply_strategy_spec_to_signal(signal: dict, spec: dict, ml_score: float | None = None, indicators: dict | None = None) -> dict:
     """지표 점수를 [-1,1]로 정규화하고(LightGBM 점수가 있으면 스펙 가중 합산) buy/sell 임계값으로 action 을 다시 판정한다."""
     weights = spec.get("signal_weights") or {}
     buy_th = float(weights.get("buy_threshold", 0.6))
@@ -285,6 +351,7 @@ def apply_strategy_spec_to_signal(signal: dict, spec: dict, ml_score: float | No
         normalized = technical
         ml_tag = "" if w_ml <= 0 else " (ML 점수 없음 → 지표만)"
     normalized = round(max(-1.0, min(1.0, normalized)), 4)
+    rules = evaluate_spec_rules(spec, indicators) if indicators else None
     if normalized >= buy_th:
         action = "강력 매수" if normalized >= min(1.0, buy_th + 0.25) else "매수"
     elif normalized <= sell_th:
@@ -292,7 +359,12 @@ def apply_strategy_spec_to_signal(signal: dict, spec: dict, ml_score: float | No
     else:
         action = "관망"
     tag = f"전략 {spec.get('strategy_id')} v{spec.get('version')}: 정규화 점수 {normalized:+.2f} (매수≥{buy_th:+.2f} / 매도≤{sell_th:+.2f}){ml_tag}"
-    return {**signal, "action": action, "normalized_score": normalized, "reasons": [*(signal.get("reasons") or []), tag]}
+    reasons = [*(signal.get("reasons") or []), tag]
+    if rules is not None:
+        # 스펙의 entry/exit 규칙을 직접 평가할 수 있으면 규칙이 action 을 결정한다(청산 우선). 임계값 점수는 참고로만 남긴다.
+        action = "매도" if rules["exit"] else "매수" if rules["entry"] else "관망"
+        reasons.append(rules["detail"] + " → " + action)
+    return {**signal, "action": action, "normalized_score": normalized, "rule_based": rules is not None, "reasons": reasons}
 
 
 async def _place_live_order_via_gateway(
@@ -315,6 +387,10 @@ async def _place_live_order_via_gateway(
     if gateway.enforce_market_hours() and not gateway.is_krx_market_open():
         logger.info("장 운영시간 외 — 실주문 생략 (%s %s x%d)", side, symbol, quantity)
         return {"status": "skipped", "broker": "kis", "via": "stock-coin-trade", "environment": env, "reason": "market_closed"}
+    if env == "real" and risk_guard._redis() is None:
+        # 쿨다운·일 주문 수가 메모리 폴백(프로세스 재시작 시 초기화) 상태면 실전 주문은 내지 않는다. 모의(paper)는 허용.
+        logger.warning("Redis 미연결(위험관리 메모리 폴백) — 실전 주문 생략 (%s %s x%d)", side, symbol, quantity)
+        return {"status": "skipped", "broker": "kis", "via": "stock-coin-trade", "environment": env, "reason": "risk_store_unavailable"}
     try:
         client_order_id = gateway.make_client_order_id(str(uid), symbol, side)
     except gateway.GatewayError as e:
@@ -355,6 +431,19 @@ async def _place_live_order_via_gateway(
                                            broker=f"KIS({env}) via stock-coin-trade", user_id=user_id)
     return {"status": "submitted", "broker": "kis", "via": "stock-coin-trade", "environment": env,
             "order_no": order.get("orderNo"), "client_order_id": client_order_id, "duplicate": result["duplicate"], "response": order}
+
+
+async def open_live_order_exposure(db: AsyncSession, uid: uuid.UUID) -> dict[str, float]:
+    """미체결 매수 실주문의 (잔여수량 × 주문가) 합을 종목별로 돌려준다."""
+    result = await db.execute(
+        select(LiveOrder).where(LiveOrder.user_id == uid, LiveOrder.side == "BUY", LiveOrder.status.in_(LIVE_ORDER_OPEN_STATUSES))
+    )
+    exposure: dict[str, float] = {}
+    for row in result.scalars().all():
+        remaining = max(0, int(row.quantity) - int(row.filled_quantity or 0))
+        if remaining and row.price:
+            exposure[row.symbol] = exposure.get(row.symbol, 0.0) + remaining * float(row.price)
+    return exposure
 
 
 async def live_account_daily_loss(user_id: str, limit_pct: float) -> dict:
@@ -577,6 +666,7 @@ async def _run_quant_cycle(user_id: str = "quant_system") -> None:
 
         strategy_spec: dict | None = None
         ml_scores: dict[str, float] = {}
+        ml_weight_on = False
         strategy_log = {"id": "", "version": 0, "applied": False}
         if broker_row and broker_row.quant_strategy_id:
             strategy_log.update(id=broker_row.quant_strategy_id, version=broker_row.quant_strategy_version or 0)
@@ -585,8 +675,11 @@ async def _run_quant_cycle(user_id: str = "quant_system") -> None:
                 target_symbols = apply_strategy_spec_to_symbols(target_symbols, strategy_spec)
                 strategy_log.update(version=int(strategy_spec.get("version") or strategy_log["version"]), applied=True)
                 if float((strategy_spec.get("signal_weights") or {}).get("lightgbm", 0) or 0) > 0:
+                    ml_weight_on = True
                     ml_scores = await ml_scores_by_symbol()
                     strategy_log["ml_scores_loaded"] = bool(ml_scores)
+                    strategy_log["ml_generated_at"] = _ml_meta.get("generated_at")
+                    strategy_log["ml_model"] = _ml_meta.get("model")
             else:
                 strategy_log["error"] = "domain-rag-lab 에서 스펙을 받지 못해 기본 규칙 사용"
 
@@ -618,6 +711,12 @@ async def _run_quant_cycle(user_id: str = "quant_system") -> None:
 
         # ── 실계좌(게이트웨이) 기준 일손실: live 모드에서 가상계좌와 별도로 KIS 계좌 평가액을 본다 ──
         if mode == "live" and gateway.is_configured():
+            # 미체결 매수 실주문은 체결되면 비중이 되므로 종목 비중 한도 계산에 미리 포함한다.
+            open_exposure = await open_live_order_exposure(db, uid)
+            for sym, value in open_exposure.items():
+                position_values[sym] = position_values.get(sym, 0.0) + value
+            if open_exposure:
+                cycle_log["risk"]["open_live_exposure"] = {k: round(v, 2) for k, v in open_exposure.items()}
             live_risk = await live_account_daily_loss(user_id, limits.daily_loss_limit_pct)
             cycle_log["risk"]["live"] = live_risk
             if live_risk.get("breached"):
@@ -657,7 +756,12 @@ async def _run_quant_cycle(user_id: str = "quant_system") -> None:
             indicators = indicator_map.get(symbol) or {}
             signal = indicators.get("signal", {})
             if strategy_spec:
-                signal = apply_strategy_spec_to_signal(signal, strategy_spec, ml_scores.get(symbol, ml_scores.get(str(symbol)[:6])))
+                ml_score = ml_scores.get(symbol, ml_scores.get(str(symbol)[:6]))
+                if ml_score is None and ml_weight_on:
+                    ml_score = await symbol_ml_score(symbol)
+                    if ml_score is not None:
+                        strategy_log["ml_source"] = "symbol_ridge"
+                signal = apply_strategy_spec_to_signal(signal, strategy_spec, ml_score, indicators)
             price = indicators.get("current_price")
             if not price:
                 continue
