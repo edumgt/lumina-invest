@@ -216,10 +216,11 @@ async def get_fundamentals(symbol: str) -> dict:
     return fundamentals
 
 
-async def get_candles(symbol: str, period: str = "1y", interval: str = "1d") -> dict:
-    """캔들 차트 데이터 (OHLCV). 반복 스캔 시 Yahoo 호출을 줄이기 위해 캐시를 우선 사용한다."""
+async def get_candles(symbol: str, period: str = "1y", interval: str = "1d", max_age_hours: float = 6) -> dict:
+    """캔들 차트 데이터 (OHLCV). 반복 스캔 시 Yahoo 호출을 줄이기 위해 캐시를 우선 사용한다.
+    max_age_hours: 캐시 허용 나이. 분봉(공격 모드)은 사이클보다 짧게 준다."""
     cache_key = f"candles:{symbol}:{period}:{interval}"
-    cached = await cache_get(cache_key, max_age_hours=6)
+    cached = await cache_get(cache_key, max_age_hours=max_age_hours)
     if cached is not None:
         return cached
 

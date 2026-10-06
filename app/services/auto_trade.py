@@ -30,6 +30,7 @@ from app.services.brokers.factory import get_broker_client
 from app.services import kis_credentials
 from app.services.brokers import stock_coin_trade_gateway as gateway
 from app.services.data_cache import cache_get, cache_set
+from app.services import aggressive_mode
 
 logger = logging.getLogger(__name__)
 
@@ -410,14 +411,14 @@ async def _place_live_order_via_gateway(
     if db is not None:
         row = LiveOrder(
             user_id=uid, client_order_id=client_order_id, environment=env, broker="kis",
-            symbol=symbol, name=name, side=side.upper(), order_type=gateway.default_order_type(),
+            symbol=symbol, name=name, side=side.upper(), order_type=_live_order_type(),
             quantity=quantity, price=float(price), status="PENDING",
         )
         db.add(row)
         await db.commit()
 
     try:
-        result = await gateway.place_order(symbol, side, quantity, price, client_order_id=client_order_id)
+        result = await gateway.place_order(symbol, side, quantity, price, client_order_id=client_order_id, order_type=_live_order_type())
     except gateway.GatewayError as e:
         logger.warning("게이트웨이 실주문 실패 (%s %s x%d): [%s] %s", side, symbol, quantity, e.code, e)
         if row is not None:
@@ -441,6 +442,15 @@ async def _place_live_order_via_gateway(
                                            broker=f"KIS({env}) via stock-coin-trade", user_id=user_id)
     return {"status": "submitted", "broker": "kis", "via": "stock-coin-trade", "environment": env,
             "order_no": order.get("orderNo"), "client_order_id": client_order_id, "duplicate": result["duplicate"], "response": order}
+
+
+def _live_order_type() -> str:
+    """게이트웨이 주문 유형: 공격 모드면 QUANT_AGGRESSIVE_ORDER_TYPE(기본 MARKET), 아니면 env 기본값."""
+    if aggressive_mode.is_enabled():
+        ot = aggressive_mode.order_type()
+        if ot:
+            return ot
+    return gateway.default_order_type()
 
 
 async def open_live_order_exposure(db: AsyncSession, uid: uuid.UUID) -> dict[str, float]:
@@ -635,6 +645,9 @@ async def _run_quant_cycle(user_id: str = "quant_system") -> None:
         sell_ratio = max(0.1, min(sell_ratio, 1.0))
 
         limits = risk_guard.RiskLimits.from_row(broker_row)
+        aggressive = aggressive_mode.is_enabled()
+        if aggressive:
+            limits = aggressive_mode.apply_limits(limits)   # 쿨다운·일 주문 수만 덮어씀
         if limits.kill_switch:
             cycle_log["risk"] = {"halted": True, "reason": (broker_row.risk_halt_reason if broker_row else "") or "비상 정지 스위치 ON"}
             cycle_log["note"] = "비상 정지 상태 — 주문을 내지 않습니다."
@@ -648,7 +661,8 @@ async def _run_quant_cycle(user_id: str = "quant_system") -> None:
 
         for stock in QUANT_STOCKS:
             try:
-                indicators = await get_quant_indicators(stock["symbol"], "2y")
+                indicators = (await aggressive_mode.get_intraday_indicators(stock["symbol"]) if aggressive
+                              else await get_quant_indicators(stock["symbol"], "2y"))
                 indicator_map[stock["symbol"]] = indicators
                 signal = indicators.get("signal", {})
                 price = indicators.get("current_price")
@@ -672,7 +686,8 @@ async def _run_quant_cycle(user_id: str = "quant_system") -> None:
                 score = sig.get("score", 0)
                 ranked.append((stock["symbol"], score))
             ranked.sort(key=lambda item: item[1], reverse=True)
-            target_symbols = [sym for sym, _ in ranked[:ai_top_n]]
+            pool = max(ai_top_n, 2 * int(app_settings.QUANT_AGGRESSIVE_MAX_BUYS_PER_CYCLE), 5) if aggressive else ai_top_n
+            target_symbols = [sym for sym, _ in ranked[:pool]]
 
         strategy_spec: dict | None = None
         ml_scores: dict[str, float] = {}
@@ -693,8 +708,30 @@ async def _run_quant_cycle(user_id: str = "quant_system") -> None:
             else:
                 strategy_log["error"] = "domain-rag-lab 에서 스펙을 받지 못해 기본 규칙 사용"
 
+        # ── 공격 모드: 보유분 점검 + 이번 사이클 매수/매도 계획 ──
+        forced_action: dict[str, dict] = {}
+        if aggressive:
+            holdings: dict[str, tuple[int, float]] = {}
+            for p in (await db.execute(select(Portfolio).where(Portfolio.user_id == uid, Portfolio.book == PORTFOLIO_BOOK_QUANT))).scalars().all():
+                if p.quantity > 0:
+                    holdings[p.symbol] = (int(p.quantity), float(p.avg_price or 0))
+            ag_plan = aggressive_mode.plan(indicator_map, target_symbols, holdings, price_map)
+            for sym in ag_plan["buy"]:
+                forced_action[sym] = {"action": "매수", "ratio": None, "note": "공격 모드 매수"}
+            for sym, info in ag_plan["sell"].items():
+                forced_action[sym] = {"action": "매도", "ratio": info["ratio"], "note": info["reason"]}
+            for sym in list(forced_action):
+                if sym not in target_symbols and sym in stock_map:
+                    target_symbols.append(sym)
+            cycle_log["aggressive"] = {"buy": ag_plan["buy"], "sell": {k: v["reason"] for k, v in ag_plan["sell"].items()},
+                                       "ranked": ag_plan["ranked"][:10], "notes": ag_plan["notes"],
+                                       "interval": app_settings.QUANT_AGGRESSIVE_CANDLE_INTERVAL,
+                                       "take_profit_pct": app_settings.QUANT_AGGRESSIVE_TAKE_PROFIT_PCT,
+                                       "stop_loss_pct": app_settings.QUANT_AGGRESSIVE_STOP_LOSS_PCT}
+
         cycle_log["settings"] = {
             "mode": mode,
+            "aggressive": aggressive,
             "symbol_source": symbol_source,
             "strategy": strategy_log,
             "symbols": target_symbols,
@@ -779,6 +816,16 @@ async def _run_quant_cycle(user_id: str = "quant_system") -> None:
             action = signal.get("action", "관망")
             reasons = signal.get("reasons", [])
             score = signal.get("score", 0)
+            sell_ratio_here = sell_ratio
+            if aggressive:
+                forced = forced_action.get(symbol)
+                if forced:
+                    action = forced["action"]
+                    reasons = [forced["note"], *reasons]
+                    if forced["ratio"] is not None:
+                        sell_ratio_here = float(forced["ratio"])
+                else:
+                    action = "관망"   # 공격 모드에서는 plan 이 정한 종목만 거래한다(사이클당 매수·매도 수 한도)
             cycle_log["signals"].append({
                 "symbol": stock["symbol"], "name": stock["name"],
                 "price": price, "action": action, "score": score,
@@ -825,7 +872,9 @@ async def _run_quant_cycle(user_id: str = "quant_system") -> None:
                 )
                 existing = port_result.scalar_one_or_none()
                 if existing and existing.quantity > 0:
-                    qty = max(1, int(existing.quantity * sell_ratio))
+                    qty = max(1, int(existing.quantity * sell_ratio_here))
+                    if sell_ratio_here >= 1.0:
+                        qty = int(existing.quantity)
                     qty, risk_note = await _risk_gate(stock["symbol"], stock["name"], "sell", qty, price)
                     if qty <= 0:
                         await _risk_skip(stock["symbol"], stock["name"], "sell", price, risk_note or "위험관리 규칙")

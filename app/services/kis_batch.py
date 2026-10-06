@@ -11,6 +11,8 @@ Testbed 권장값(:data:`kis_quickstart.TESTBED_DEFAULTS`)으로 만들고 ``qua
   - 비상 정지(``risk_kill_switch``) 된 행은 자동으로 재가동하지 않는다. 사람이 해제해야 한다.
   - 기존 행의 한도·종목은 덮어쓰지 않는다(최초 생성 시에만 시드). ``broker=kis``, ``quant_mode=live`` 만 보장.
   - ``KIS_PAPER_BATCH_ENABLED=false`` 로 바꾸면 다음 사이클에 시스템 행(kis·live)을 끈다. 사용자 계정 행은 건드리지 않는다.
+  - ``KIS_PAPER_BATCH_EXCLUSIVE=true``(기본) 면 배치가 켜져 있는 동안 **다른 사용자 계정의 kis·live 자동매매 행을 끈다**.
+    같은 KIS Testbed 계좌로 두 사이클이 주문을 내는 것을 막기 위함. 사용자 계정의 paper/mock 행은 건드리지 않는다.
 """
 from __future__ import annotations
 
@@ -44,6 +46,34 @@ async def _row(db: AsyncSession) -> BrokerSettings | None:
 
 def _is_batch_row(row: BrokerSettings | None) -> bool:
     return bool(row and row.broker == "kis" and row.quant_mode == "live")
+
+
+async def _other_live_kis_rows(db: AsyncSession) -> list[BrokerSettings]:
+    """시스템 행이 아닌데 kis·live 자동매매가 켜진 사용자 행."""
+    stmt = select(BrokerSettings).where(
+        BrokerSettings.user_id != SYSTEM_USER_ID,
+        BrokerSettings.quant_auto_enabled.is_(True),
+        BrokerSettings.broker == "kis",
+        BrokerSettings.quant_mode == "live",
+    )
+    return list((await db.execute(stmt)).scalars().all())
+
+
+async def _enforce_exclusive(db: AsyncSession) -> list[str]:
+    """배치 단독 실행: 다른 사용자 계정의 kis·live 자동매매를 끈다. 끈 user_id 목록 반환."""
+    if not settings.KIS_PAPER_BATCH_EXCLUSIVE:
+        return []
+    rows = await _other_live_kis_rows(db)
+    if not rows:
+        return []
+    disabled = []
+    for row in rows:
+        row.quant_auto_enabled = False
+        disabled.append(str(row.user_id))
+    await db.commit()
+    await audit(BATCH_USER, "", "quant.kis_batch.exclusive", {"disabled_users": disabled})
+    logger.warning("KIS 모의투자 배치 단독 실행 — 사용자 계정 kis·live 자동매매 %d건 해제: %s", len(disabled), disabled)
+    return disabled
 
 
 async def system_status(db: AsyncSession) -> dict:
@@ -120,10 +150,12 @@ async def ensure_system_batch(db: AsyncSession) -> dict:
         row.quant_auto_enabled, changed, started = True, True, True
     if changed:
         await db.commit()
+    disabled_users = await _enforce_exclusive(db)
     if started:
         await audit(BATCH_USER, "", "quant.kis_batch.start",
                     {"route": route.via, "environment": route.environment, "created": created,
                      "symbol_source": row.quant_symbol_source, "symbols": list(row.quant_selected_symbols or [])})
         logger.info("KIS 모의투자 배치 ON — route=%s env=%s created=%s", route.via, route.environment, created)
     return {"enabled": True, "running": True, "created": created, "started": started,
-            "route": route.via, "environment": route.environment, "symbol_source": row.quant_symbol_source}
+            "route": route.via, "environment": route.environment, "symbol_source": row.quant_symbol_source,
+            "exclusive_disabled_users": disabled_users}

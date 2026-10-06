@@ -1,5 +1,6 @@
 """KIS 모의투자 백그라운드 배치(kis_batch): 계정·로그인 없이 시스템 행을 켜고 끄는 규칙."""
 import asyncio
+import uuid
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
@@ -16,6 +17,8 @@ from app.services import kis_quickstart as qs
 class Result:
     def __init__(self, one=None): self._one = one
     def scalar_one_or_none(self): return self._one
+    def scalars(self): return self
+    def all(self): return []          # _other_live_kis_rows 기본: 다른 kis·live 행 없음
 
 
 class FakeDb:
@@ -39,6 +42,7 @@ def row(**over):
 @pytest.fixture(autouse=True)
 def _env(monkeypatch):
     monkeypatch.setattr(settings, "KIS_PAPER_BATCH_ENABLED", True)
+    monkeypatch.setattr(settings, "KIS_PAPER_BATCH_EXCLUSIVE", True)
     monkeypatch.setattr(settings, "KIS_PAPER_BATCH_SYMBOLS", "")
     monkeypatch.setattr(settings, "KIS_PAPER_BATCH_AI_TOP_N", 3)
     monkeypatch.setattr(settings, "KIS_PAPER_BATCH_PER_TRADE_BUDGET", 300_000)
@@ -153,6 +157,24 @@ def test_not_connected_does_not_start(monkeypatch):
     db = FakeDb(None)
     out = run(db)
     assert out["running"] is False and out["reason"] == "not_connected" and db.added == []
+
+
+def test_exclusive_disables_other_live_kis_rows(monkeypatch):
+    other = row(user_id=uuid.UUID("11111111-1111-1111-1111-111111111111"), quant_auto_enabled=True)
+    with patch.object(kb, "_other_live_kis_rows", AsyncMock(return_value=[other])):
+        out = run(FakeDb(None))
+    assert out["running"] and out["exclusive_disabled_users"] == [str(other.user_id)]
+    assert other.quant_auto_enabled is False
+    actions = [c.args[2] for c in kb.audit.await_args_list]
+    assert "quant.kis_batch.exclusive" in actions and "quant.kis_batch.start" in actions
+
+
+def test_exclusive_off_leaves_other_rows(monkeypatch):
+    monkeypatch.setattr(settings, "KIS_PAPER_BATCH_EXCLUSIVE", False)
+    other = row(user_id=uuid.UUID("11111111-1111-1111-1111-111111111111"), quant_auto_enabled=True)
+    with patch.object(kb, "_other_live_kis_rows", AsyncMock(return_value=[other])):
+        out = run(FakeDb(row(quant_auto_enabled=True)))
+    assert out["exclusive_disabled_users"] == [] and other.quant_auto_enabled is True
 
 
 def test_system_status_shape():

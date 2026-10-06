@@ -399,6 +399,7 @@ cd /home/ubuntu/lumina-invest && .venv/bin/python -m pytest tests/test_spec_rule
 | L11 | 대시보드 「KIS 모의투자 시작」 원클릭 노출 범위 | 모든 로그인 사용자 vs 운영 계정만. 버튼은 경로가 Testbed(paper)일 때만 활성화되지만 누르면 그 계정의 자동매매가 live+KIS 로 바뀐다 | Phase 4 관찰 기간에는 운영 계정 1개로만 사용 |
 | L12 | 포지션 단위 청산 규칙(손절·익절·트레일링) 도입 여부 | 현재 매도는 시그널(지표/전략 exit)에만 의존, 일손실 한도만 존재. 손절 −5%·익절 +10% 같은 규칙을 risk_guard 에 추가하면 Testbed 체결 데이터 해석이 바뀜 | Testbed 1주 관찰 뒤 도입, 값은 관찰 결과로 결정 |
 | L14 | (2026-10-06) 백그라운드 배치 종목 | `KIS_PAPER_BATCH_SYMBOLS` 비움(AI 추천 상위 3, 기본) vs 고정 종목 | 1주 관찰은 AI 추천 유지, 체결 로그 보고 고정 여부 결정 |
+| L16 | (2026-10-06) 공격 모드 파라미터 | 익절 1.5%/손절 1.0%/사이클 매수 2·매도 3/강제 로테이션 매수 ON/시장가. 6-11 참고 | 1~2일 체결 로그 보고 TP/SL·강제 매수 조정 |
 | L15 | (2026-10-06) 비상 정지 후 배치 재가동 주체 | 사람이 kill switch 해제(현재) vs 다음 영업일 자동 재가동 | 손실 반복 위험으로 수동 유지 |
 | L13 | 운영 계정에 LEAN 합격 전략 적용 시점 | pr(domain-rag-lab) 합격 전략 0건. 전략 선택 전까지 매수·매도 모두 기술지표 규칙만 사용(ML·LEAN 미적용) | domain-rag-lab 에서 ma_cross/momentum 백테스트 → export 후 종목 선정 화면에서 선택 |
 
@@ -621,3 +622,30 @@ ssh -i lumina-invest/fd.edumgt.co.kr.pem ubuntu@43.201.229.188 "cd /home/ubuntu/
 - 5분 사이클이 31종목 지표를 계산하므로 캔들 캐시(6h) 미스 시 첫 사이클이 길어질 수 있음 → time_limit 280 초과 시 해당 사이클만 중단되고 다음 주기에 재시도. 운영 로그에서 `자동매매 사이클 실패`·`TimeLimitExceeded` 확인 권장.
 - 체결 확인 `quant.confirm_fills` 는 2분 그대로.
 - 배포는 push → `deploy.yml` 자동. celery-beat 재기동으로 새 스케줄 적용.
+
+### 6-11. 2026-10-06 공격 모드 — 5분봉 시그널로 매 사이클 매수·매도 (사용자 요청 "카카오 이후 거래 없음, 공격적으로")
+
+**원인 진단**: 기본 사이클은 **일봉** 지표(`get_quant_indicators`, 캔들 캐시 6h)라 하루 종일 같은 시그널 → 5분 주기여도 새 주문이 없음. 매도는 가상 QUANT 장부 보유분만 대상(카카오 보유 0 → 생략), 쿨다운 30분, 운영 계정 종목 2개. 삼성전자 1주 주문 뒤 거래가 멈춘 이유.
+
+| 변경 | 내용 |
+|------|------|
+| `app/services/aggressive_mode.py` 신설 | `get_intraday_indicators`: Yahoo **5분봉**(range 5d, 캐시 4분) → 점수 = 추세(MA5 vs MA20 ±1, 교차 ±2) + 30분 모멘텀(±1, ≥1% ±2) + RSI 보조(±1) + 거래량 급증(+1). `plan()`: 보유분 **익절 +1.5% / 손절 −1.0% 전량 매도**, 약세 시그널(score ≤ −1) sell_ratio 매도(사이클 최대 3건); 대상 종목 (score, 모멘텀) 정렬 → score ≥ 1 상위 최대 2건 매수, **매수 시그널이 없으면 모멘텀 1위 로테이션 매수**. `apply_limits`: 쿨다운 5분·일 주문 200건으로 덮어씀(비중·일손실·kill switch 유지). `order_type()`: 실주문 **MARKET** |
+| `app/services/auto_trade.py` | `QUANT_AGGRESSIVE_MODE` 면 지표 소스·한도·대상 pool(≥5)·행동을 plan 으로 교체. 공격 모드에선 plan 이 고른 종목만 거래(나머지 관망). 보유 종목은 대상 밖이어도 매도 점검. `_live_order_type()` 로 LiveOrder 기록·게이트웨이 주문 유형 통일. 사이클 로그 `aggressive{buy,sell,ranked,notes}` |
+| `app/services/stock.py` | `get_candles(..., max_age_hours=6)` 파라미터 추가(분봉은 4분 캐시) |
+| `app/config.py`·`.env.example` | `QUANT_AGGRESSIVE_*` 12개(기본 OFF) + `KIS_PAPER_BATCH_EXCLUSIVE`(기본 true) |
+| `app/services/kis_batch.py` | **배치 단독 실행**: 배치가 켜지면 다른 사용자 계정의 kis·live 자동매매 행을 끈다(같은 Testbed 계좌 중복 주문 방지, audit `quant.kis_batch.exclusive`). paper/mock 행은 유지 |
+| `compose.fd.yml` | app·celery-worker·celery-beat 에 `QUANT_AGGRESSIVE_MODE=${…:-true}`, `KIS_PAPER_BATCH_ENABLED=${…:-true}` → **fd 서버는 배포만으로 공격 모드 + 배치 ON**. 끄려면 서버 `.env` 에 `=false` 기입(compose 치환이 .env 를 읽는다) |
+| `app/routes/health.py` | `/api/health` 에 `quant{cycle_sec, aggressive_mode, aggressive_interval, kis_paper_batch, kis_environment}` 노출(비민감) — 배포 후 외부에서 활성화 확인용 |
+| 테스트 | `tests/test_aggressive_mode.py` 17건(점수·분봉 조회·한도·주문유형·plan 6건·사이클 통합 4건: 전부 관망이어도 모멘텀 1위 MARKET 매수, 익절 전량 매도(대상 밖 종목), 사이클 매수 한도, OFF 시 무영향), `test_kis_batch.py` +2(단독 실행 on/off). 전체 **192 passed** |
+
+**동작 요약(fd, 5분마다)**: 배치 점검(시스템 행 ON, tester 행 kis·live OFF) → 31종목 5분봉 지표 → 보유분 익절/손절/약세 매도(최대 3) → 모멘텀 상위 매수(최대 2, 없으면 1위 강제) → 가상 체결 → 게이트웨이 **시장가** 실주문(장중만) → 2분 후 confirm_fills.
+
+**안전장치 유지**: 종목 비중 20%, 일손실 3%(가상·실계좌 각각) 초과 시 비상 정지, kill switch 수동 해제, real 경로면 배치 자체가 켜지지 않음. 일 주문 200건은 5분×2건 상한(장중 78사이클×≤5건)보다 작게 둔 값.
+
+**주의**
+- 시장가 체결은 호가 스프레드만큼 불리할 수 있다(Testbed 라 손익 무관하나 지표 해석 시 참고).
+- 로테이션 강제 매수는 시그널 없이도 매수한다 → 하락장에선 손절(−1%)이 자주 걸릴 수 있음. 끄려면 `QUANT_AGGRESSIVE_FORCE_BUY=false`.
+- Testbed 기존 보유(KR모터스·POSCO·삼성전자 38주 등)는 가상 장부에 없어 여전히 매도 대상이 아니다(L8).
+- tester 계정의 kis·live 자동매매는 배치 단독 실행으로 **자동 OFF** 된다. 계정 기준으로 돌리고 싶으면 `.env KIS_PAPER_BATCH_EXCLUSIVE=false`.
+
+**검증(배포 후)**: `curl https://fd.edumgt.co.kr/api/health` → `quant.aggressive_mode=true, kis_paper_batch=true`. 거래 발생은 다음 5분 사이클부터(장중 09:00~15:30 KST). 서버 로그 `KIS 모의투자 배치 ON`, `공격 모드 매수`, `live_orders` 증가로 확인.

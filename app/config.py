@@ -108,6 +108,24 @@ class Settings(BaseSettings):
     KIS_PAPER_BATCH_SYMBOLS: str = ""                   # 비우면 AI 추천 상위 N. "005930.KS,035720.KS" 처럼 주면 수동 종목
     KIS_PAPER_BATCH_AI_TOP_N: int = 3
     KIS_PAPER_BATCH_PER_TRADE_BUDGET: float = 300_000   # 1회 투자금(원). 나머지 한도는 kis_quickstart.TESTBED_DEFAULTS
+    KIS_PAPER_BATCH_EXCLUSIVE: bool = True              # true 면 배치가 켜질 때 다른 사용자 계정의 kis·live 자동매매를 끈다(같은 Testbed 계좌 중복 주문 방지)
+
+    # ── 공격 모드: 5분봉 단기 시그널로 매 사이클 매수·매도 (app/services/aggressive_mode.py) ──────
+    # true 면 자동매매 사이클이 일봉 지표 대신 5분봉(RSI·MA·모멘텀·거래량) 시그널을 쓰고, 매 사이클
+    # 모멘텀 상위 종목을 매수(시그널이 없어도 1위 로테이션 매수), 보유분은 익절·손절·약세 시그널로 매도한다.
+    # 쿨다운·일 주문 수는 아래 값으로 덮어쓴다(종목 비중·일손실 한도는 그대로 — 안전장치 유지).
+    QUANT_AGGRESSIVE_MODE: bool = False
+    QUANT_AGGRESSIVE_CANDLE_INTERVAL: str = "5m"      # Yahoo 분봉 (1m/2m/5m/15m)
+    QUANT_AGGRESSIVE_CANDLE_RANGE: str = "5d"         # 분봉 조회 범위(5m 은 최대 60d)
+    QUANT_AGGRESSIVE_CACHE_MIN: int = 4               # 분봉 캐시(분). 5분 사이클마다 새로 받도록 주기보다 짧게
+    QUANT_AGGRESSIVE_COOLDOWN_MIN: int = 5            # 같은 종목·방향 재주문 간격(분) — 사이클당 1회
+    QUANT_AGGRESSIVE_MAX_ORDERS_PER_DAY: int = 200
+    QUANT_AGGRESSIVE_MAX_BUYS_PER_CYCLE: int = 2
+    QUANT_AGGRESSIVE_MAX_SELLS_PER_CYCLE: int = 3
+    QUANT_AGGRESSIVE_FORCE_BUY: bool = True           # 매수 시그널이 하나도 없으면 모멘텀 1위를 매수(로테이션)
+    QUANT_AGGRESSIVE_TAKE_PROFIT_PCT: float = 1.5     # 보유 평균단가 대비 +N% 면 전량 매도
+    QUANT_AGGRESSIVE_STOP_LOSS_PCT: float = 1.0       # 보유 평균단가 대비 -N% 면 전량 매도
+    QUANT_AGGRESSIVE_ORDER_TYPE: str = "MARKET"       # 게이트웨이 실주문 유형(체결 우선). 비우면 STOCK_COIN_TRADE_ORDER_TYPE
 
     # ── KIS 자격증명 (서버 관리 — 사용자는 화면에서 입력하지 않는다, app/services/kis_credentials.py) ──
     # Secrets Manager 시크릿 이름/ARN. JSON: {"app_key","app_secret","account_no","environment": "paper|real"}

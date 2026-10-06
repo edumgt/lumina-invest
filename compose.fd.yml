@@ -17,6 +17,8 @@ services:
     ports: !override []
     environment:
       QDRANT_URL: http://qdrant:6333
+      QUANT_AGGRESSIVE_MODE: ${QUANT_AGGRESSIVE_MODE:-true}          # 5분봉 공격 모드 (2026-10-06). .env 로 끌 수 있다
+      KIS_PAPER_BATCH_ENABLED: ${KIS_PAPER_BATCH_ENABLED:-true}      # 로그인 무관 KIS 모의투자 배치. .env 로 끌 수 있다
       PUBLIC_BASE_URL: https://fd.edumgt.co.kr
       TRUST_PROXY: "true"
       COOKIE_SECURE: "true"
@@ -50,6 +52,8 @@ services:
     image: lumina-invest-app:fd
     environment:
       QDRANT_URL: http://qdrant:6333
+      QUANT_AGGRESSIVE_MODE: ${QUANT_AGGRESSIVE_MODE:-true}          # 5분봉 공격 모드 (2026-10-06). .env 로 끌 수 있다
+      KIS_PAPER_BATCH_ENABLED: ${KIS_PAPER_BATCH_ENABLED:-true}      # 로그인 무관 KIS 모의투자 배치. .env 로 끌 수 있다
     depends_on:
       postgres:
         condition: service_healthy
@@ -64,6 +68,9 @@ services:
 
   celery-beat:
     image: lumina-invest-app:fd
+    environment:
+      QUANT_AGGRESSIVE_MODE: ${QUANT_AGGRESSIVE_MODE:-true}          # 5분봉 공격 모드 (2026-10-06). .env 로 끌 수 있다
+      KIS_PAPER_BATCH_ENABLED: ${KIS_PAPER_BATCH_ENABLED:-true}      # 로그인 무관 KIS 모의투자 배치. .env 로 끌 수 있다
 
   qdrant:
     image: qdrant/qdrant:latest
