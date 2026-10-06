@@ -683,3 +683,25 @@
 .overview-feature:hover { background:var(--accent-glow); color:var(--accent); }
 @media(max-width:1000px) { .overview-columns { grid-template-columns:1fr; } }
 @media(max-width:480px) { .overview-heading { align-items:flex-start; flex-direction:column; } .overview-metric strong { font-size:18px; } }
+
+/* 로보 스크리닝: 실행 중 모래시계(CSS 애니메이션) + 경과 시간 */
+.screen-loading { grid-column:1 / -1; display:flex; align-items:center; gap:14px; padding:18px 16px; border:1px dashed var(--border); border-radius:10px; background:var(--surf2); }
+.hourglass { display:inline-block; font-size:34px; line-height:1; animation: hg-flip 1.8s ease-in-out infinite; transform-origin:50% 55%; filter: drop-shadow(0 0 6px var(--accent-glow)); }
+@keyframes hg-flip { 0%,42% { transform:rotate(0deg); } 50%,92% { transform:rotate(180deg); } 100% { transform:rotate(360deg); } }
+.screen-loading .elapsed { font-variant-numeric: tabular-nums; font-size:22px; font-weight:700; color:var(--accent); }
+.screen-loading .sand { height:4px; border-radius:2px; background:var(--border); overflow:hidden; margin-top:6px; }
+.screen-loading .sand > i { display:block; height:100%; width:40%; background:var(--accent); animation: sand-slide 1.4s linear infinite; }
+@keyframes sand-slide { 0% { transform:translateX(-100%); } 100% { transform:translateX(260%); } }
+@media (prefers-reduced-motion: reduce) { .hourglass, .screen-loading .sand > i { animation:none; } }
+
+/* 스크리닝 XAI 설명 모달 */
+#xai-modal { position:fixed; inset:0; z-index:1200; display:flex; align-items:center; justify-content:center; padding:16px; }
+#xai-modal[hidden] { display:none; }
+#xai-modal .xai-modal-backdrop { position:absolute; inset:0; background:rgba(0,0,0,.55); backdrop-filter: blur(2px); }
+#xai-modal .xai-modal-panel { position:relative; width:min(820px, 100%); max-height:88vh; display:flex; flex-direction:column; background:var(--surf); color:var(--text); border:1px solid var(--border); border-radius:14px; box-shadow:0 20px 60px rgba(0,0,0,.45); animation: xai-pop .18s ease-out; }
+@keyframes xai-pop { from { transform:translateY(8px) scale(.98); opacity:0; } to { transform:none; opacity:1; } }
+#xai-modal .xai-modal-head { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 18px; border-bottom:1px solid var(--border); }
+#xai-modal .xai-modal-close { border:0; background:transparent; color:var(--text-mute); font-size:18px; line-height:1; cursor:pointer; padding:4px 8px; border-radius:8px; }
+#xai-modal .xai-modal-close:hover { background:var(--surf2); color:var(--text); }
+#xai-modal .xai-modal-body { padding:16px 18px; overflow:auto; }
+body.xai-modal-open { overflow:hidden; }

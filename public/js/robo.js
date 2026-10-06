@@ -208,21 +208,178 @@ async function runGoalSimulation() {
 }
 document.getElementById("gs-run")?.addEventListener("click", runGoalSimulation);
 // ── 로보 어드바이저: 종목 스크리닝 ──────────────────────────────────
+let screenTimer = null;
+let screenRunning = false;
+const fmtSec = (ms) => (ms / 1000).toFixed(1);
+
+let screenWaitOpen = false;   // 스크리닝 대기 모달이 열려 있는지
+
+function renderScreenIdle() {
+  const cards = document.getElementById("screen-signal-cards");
+  if (cards && !cards.innerHTML.trim()) {
+    cards.innerHTML = `<div class="col-span-5 text-xs" style="color:var(--text-mute);padding:10px 4px;">조건을 고르고 <b>「스크리닝 실행」</b>을 누르면 대표 31종목을 계산합니다. 보통 30초 안팎 걸리며, 실행 중에는 모래시계 창에 대기 시간이 표시됩니다.</div>`;
+  }
+}
+
+let screenStopRequested = false;
+
+const SIGNAL_LABEL = { all: "전체", buy: "매수", sell: "매도" };
+
+function screenProgressHtml(model, signal, confidence, total) {
+  return `<div class="screen-loading" style="margin:0;align-items:flex-start;">
+      <span class="hourglass" aria-hidden="true">⏳</span>
+      <div style="flex:1;min-width:0;">
+        <div class="flex items-center justify-between gap-2 flex-wrap">
+          <div class="font-semibold" style="font-size:13px;">대기 시간 <span class="elapsed" data-elapsed>0.0초</span></div>
+          <button type="button" id="screen-modal-stop" class="btn-red text-xs" style="padding:4px 10px;">■ 중지</button>
+        </div>
+        <div style="color:var(--text-mute);margin-top:2px;">모델 ${escHtml(model)} · 신호 ${escHtml(SIGNAL_LABEL[signal] || signal)} · 신뢰도 ${escHtml(confidence)}% 이상 — 종목을 한 개씩 검사하고 넘어갑니다.</div>
+        <div class="flex items-center gap-2 mt-2 text-xs">
+          <div style="flex:1;height:8px;border-radius:4px;background:var(--border);overflow:hidden;"><div id="screen-prog-bar" style="height:100%;width:0%;background:var(--accent);transition:width .2s;"></div></div>
+          <span id="screen-prog-text" style="font-variant-numeric:tabular-nums;color:var(--text-dim);">0 / ${total}</span>
+        </div>
+        <ul id="screen-prog-list" class="text-xs mt-2" style="max-height:38vh;overflow:auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:2px 12px;list-style:none;padding:0;margin:8px 0 0;"></ul>
+        <div class="text-xs mt-2" style="color:var(--text-mute);">창을 닫아도 실행은 계속되고, 「중지」를 누르면 지금 검사 중인 종목까지만 하고 멈춥니다.</div>
+      </div>
+    </div>`;
+}
+
+function screenProgressStep(i, total, stock, state, row) {
+  const bar = document.getElementById("screen-prog-bar");
+  const txt = document.getElementById("screen-prog-text");
+  const list = document.getElementById("screen-prog-list");
+  if (bar) bar.style.width = `${Math.round((i / total) * 100)}%`;
+  if (txt) txt.textContent = `${i} / ${total}`;
+  if (!list) return;
+  const id = `sp-${String(stock.symbol).replace(/[^A-Za-z0-9]/g, "")}`;
+  let li = document.getElementById(id);
+  if (!li) { li = document.createElement("li"); li.id = id; list.appendChild(li); }
+  const name = escHtml(stock.name || stock.symbol);
+  if (state === "checking") {
+    li.innerHTML = `⏳ <b>${name}</b> <span style="color:var(--text-mute);">검사 중…</span>`;
+    li.scrollIntoView({ block: "nearest" });
+  } else if (state === "pass") {
+    const c = row.signal === "BUY" ? "var(--green)" : row.signal === "SELL" ? "var(--red)" : "var(--text-mute)";
+    li.innerHTML = `✔ <b>${name}</b> <span style="color:${c};font-weight:600;">${row.signal}</span> <span style="color:var(--text-mute);">${row.confidence}%</span>`;
+  } else if (state === "skip") {
+    li.innerHTML = `– <span style="color:var(--text-mute);">${name} 제외${row ? ` (${row.signal} ${row.confidence}%)` : " (데이터 없음)"}</span>`;
+  } else if (state === "error") {
+    li.innerHTML = `✖ <span style="color:var(--red);">${name} 오류</span>`;
+  } else if (state === "stopped") {
+    li.innerHTML = `■ <span style="color:var(--text-mute);">${name} 이후 중지</span>`;
+  }
+}
+
+function startScreenHourglass(model, signal, confidence, total) {
+  const cards = document.getElementById("screen-signal-cards");
+  const table = document.getElementById("screen-result-table");
+  const status = document.getElementById("screen-status");
+  const btn = document.getElementById("screen-run-btn");
+  const stopBtn = document.getElementById("screen-stop-btn");
+  const t0 = performance.now();
+  screenStopRequested = false;
+  screenWaitOpen = true;
+  openXaiModal(`⏳ 스크리닝 실행 중`, screenProgressHtml(model, signal, confidence, total));
+  document.getElementById("screen-modal-stop")?.addEventListener("click", requestScreenStop);
+  if (cards) cards.innerHTML = `<div class="col-span-5 text-xs" style="color:var(--text-mute);padding:10px 4px;">⏳ 검사 중… <span data-elapsed>0.0초</span> · <span data-progress>0 / ${total}</span></div>`;
+  if (table) table.innerHTML = "";
+  if (status) status.textContent = "";
+  if (btn) { btn.disabled = true; btn.dataset.label = btn.dataset.label || btn.textContent; }
+  if (stopBtn) { stopBtn.classList.remove("hidden"); stopBtn.disabled = false; stopBtn.textContent = "■ 중지"; }
+  clearInterval(screenTimer);
+  screenTimer = setInterval(() => {
+    const txt = `${fmtSec(performance.now() - t0)}초`;
+    document.querySelectorAll("[data-elapsed]").forEach(el => { el.textContent = txt; });
+    if (btn) btn.textContent = `⏳ ${txt}`;
+  }, 100);
+  return t0;
+}
+
+function requestScreenStop() {
+  if (!screenRunning) return;
+  screenStopRequested = true;
+  const stopBtn = document.getElementById("screen-stop-btn");
+  if (stopBtn) { stopBtn.disabled = true; stopBtn.textContent = "중지 중…"; }
+  const ms = document.getElementById("screen-modal-stop");
+  if (ms) { ms.disabled = true; ms.textContent = "중지 중…"; }
+}
+
+function stopScreenHourglass(t0, message, isError = false) {
+  clearInterval(screenTimer); screenTimer = null;
+  if (screenWaitOpen) { closeXaiModal(); screenWaitOpen = false; }
+  const btn = document.getElementById("screen-run-btn");
+  if (btn) { btn.disabled = false; btn.textContent = btn.dataset.label || "스크리닝 실행"; }
+  const stopBtn = document.getElementById("screen-stop-btn");
+  if (stopBtn) { stopBtn.classList.add("hidden"); stopBtn.disabled = false; stopBtn.textContent = "■ 중지"; }
+  const status = document.getElementById("screen-status");
+  if (status) {
+    status.style.color = isError ? "var(--red)" : "var(--text-mute)";
+    status.textContent = `${isError ? "✖" : "✔"} ${message} · 소요 ${fmtSec(performance.now() - t0)}초 · ${new Date().toLocaleTimeString("ko-KR")}`;
+  }
+}
+
+function sortScreenRows(rows) {
+  return [...rows].sort((a, b) => (b.confidence - a.confidence) || (Math.abs(b.score ?? 0) - Math.abs(a.score ?? 0)));
+}
+
 async function loadRoboScreening() {
+  if (screenRunning) return;
   const signal = document.getElementById("screen-signal")?.value || "all";
   const model = document.getElementById("screen-model")?.value || "lightgbm";
   const confidence = document.getElementById("screen-confidence")?.value || "65";
+  const minConf = parseInt(confidence, 10) || 0;
+  screenRunning = true;
+  let stocks = [];
   try {
-    const { signals } = await api(`/api/stocks/signals?signal=${encodeURIComponent(signal)}&model=${encodeURIComponent(model)}&min_confidence=${encodeURIComponent(confidence)}`);
-    renderScreenSignalCards(signals);
-    renderScreenTable(signals);
-  } catch { renderScreenSignalCards([]); }
+    ({ stocks } = await api(`/api/quant/ml/stocks`));
+  } catch (e) {
+    screenRunning = false;
+    const status = document.getElementById("screen-status");
+    if (status) { status.style.color = "var(--red)"; status.textContent = `✖ 종목 목록 조회 실패 — ${e?.message || ""}`; }
+    return;
+  }
+  const total = stocks.length;
+  const t0 = startScreenHourglass(model, signal, confidence, total);
+  const passed = [];
+  let checked = 0, errors = 0, stopped = false;
+  try {
+    for (let i = 0; i < total; i++) {
+      const stock = stocks[i];
+      if (screenStopRequested) { stopped = true; screenProgressStep(checked, total, stock, "stopped"); break; }
+      screenProgressStep(checked, total, stock, "checking");
+      try {
+        const { signals } = await api(`/api/stocks/signals?symbols=${encodeURIComponent(stock.symbol)}&signal=all&min_confidence=0&model=${encodeURIComponent(model)}`);
+        const row = signals?.[0];
+        const ok = row && (signal === "all" || String(row.signal).toLowerCase() === signal) && row.confidence >= minConf;
+        if (ok) { passed.push(row); screenProgressStep(checked + 1, total, stock, "pass", row); }
+        else screenProgressStep(checked + 1, total, stock, "skip", row);
+      } catch (e) {
+        errors++;
+        screenProgressStep(checked + 1, total, stock, "error");
+      }
+      checked++;
+      document.querySelectorAll("[data-progress]").forEach(el => { el.textContent = `${checked} / ${total}`; });
+      const sorted = sortScreenRows(passed);   // 한 종목 끝날 때마다 화면 반영
+      renderScreenSignalCards(sorted);
+      renderScreenTable(sorted);
+      if (checked < total && !screenStopRequested) await new Promise(r => setTimeout(r, 80));
+    }
+    const sorted = sortScreenRows(passed);
+    renderScreenSignalCards(sorted);
+    renderScreenTable(sorted);
+    const cond = `${model} / ${SIGNAL_LABEL[signal] || signal} / 신뢰도 ${confidence}% 이상`;
+    const errTxt = errors ? ` · 오류 ${errors}` : "";
+    if (stopped) stopScreenHourglass(t0, `중지 — ${checked}/${total}종목 검사, ${sorted.length}종목 통과 (${cond})${errTxt}`);
+    else stopScreenHourglass(t0, `완료 — ${total}종목 검사, ${sorted.length}종목 통과 (${cond})${errTxt}`, errors > 0 && sorted.length === 0);
+  } catch (e) {
+    stopScreenHourglass(t0, `실패 — ${e?.message || "시그널 조회 오류"}`, true);
+  } finally { screenRunning = false; screenStopRequested = false; }
 }
 
 function renderScreenSignalCards(signals) {
   const el = document.getElementById("screen-signal-cards");
   if (!el) return;
-  if (!signals?.length) { el.innerHTML = `<div class="text-slate-400 col-span-5">시그널 데이터를 불러올 수 없습니다.</div>`; return; }
+  if (!signals?.length) { if (!screenRunning) el.innerHTML = `<div class="text-slate-400 col-span-5">조건을 통과한 종목이 없습니다.</div>`; return; }
   el.innerHTML = signals.map(s => {
     const cls = s.signal === "BUY" ? "var(--green)" : s.signal === "SELL" ? "var(--red)" : "var(--text-mute)";
     return `<div class="card" style="padding:12px; text-align:center;">
@@ -237,7 +394,7 @@ function renderScreenSignalCards(signals) {
 function renderScreenTable(signals) {
   const el = document.getElementById("screen-result-table");
   if (!el) return;
-  if (!signals?.length) { el.innerHTML = `<p class="text-slate-400 text-sm">조회된 종목이 없습니다.</p>`; return; }
+  if (!signals?.length) { el.innerHTML = screenRunning ? "" : `<p class="text-slate-400 text-sm">조회된 종목이 없습니다.</p>`; return; }
   el.innerHTML = `<table>
     <thead><tr><th>종목명</th><th style="text-align:right;">현재가</th><th style="text-align:right;">등락률</th><th style="text-align:right;">RSI</th><th>AI 신호</th><th>패턴 근거</th><th>XAI</th></tr></thead>
     <tbody>${signals.map(s => {
@@ -253,29 +410,69 @@ function renderScreenTable(signals) {
         <td><button class="btn-secondary text-xs" onclick="showScreenXai('${escHtml(s.symbol)}')" title="LightGBM SHAP 기여도로 판단 근거 설명">🧠 설명</button></td>
       </tr>`;
     }).join("")}</tbody>
-  </table>
-  <div id="screen-xai-panel" class="mt-3"></div>`;
+  </table>`;
 }
 
+// ── 스크리닝 XAI 설명: 모달 팝업 ──────────────────────────────────
+function openXaiModal(title, bodyHtml) {
+  const m = document.getElementById("xai-modal");
+  if (!m) return;
+  const t = document.getElementById("xai-modal-title");
+  const body = document.getElementById("xai-modal-body");
+  if (t) t.innerHTML = title;
+  if (body) body.innerHTML = bodyHtml;
+  m.hidden = false;
+  document.body.classList.add("xai-modal-open");
+  m.querySelector(".xai-modal-close")?.focus();
+}
+function closeXaiModal() {
+  const m = document.getElementById("xai-modal");
+  if (!m || m.hidden) return;
+  screenWaitOpen = false;
+  m.hidden = true;
+  document.body.classList.remove("xai-modal-open");
+}
+document.getElementById("xai-modal")?.addEventListener("click", (e) => { if (e.target.closest("[data-xai-close]")) closeXaiModal(); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeXaiModal(); });
+
 async function showScreenXai(symbol) {
-  const panel = document.getElementById("screen-xai-panel");
-  if (!panel) return;
-  panel.innerHTML = `<div class="text-xs" style="color:var(--text-mute);">🧠 ${escHtml(symbol)} LightGBM 학습 + SHAP 계산 중… (최초 1회 수 초 소요, 3시간 캐시)</div>`;
+  const t0 = performance.now();
+  openXaiModal(`🧠 ${escHtml(symbol)} — AI 판단 근거`,
+    `<div class="screen-loading" style="margin:0;">
+      <span class="hourglass" aria-hidden="true">⏳</span>
+      <div style="flex:1;">
+        <div class="font-semibold" style="font-size:13px;">LightGBM 학습 + SHAP 계산 중… <span class="elapsed" data-elapsed>0.0초</span></div>
+        <div style="color:var(--text-mute);margin-top:2px;">최초 1회 수 초 소요, 3시간 캐시</div>
+        <div class="sand"><i></i></div>
+      </div>
+    </div>`);
+  const timer = setInterval(() => {
+    const txt = `${fmtSec(performance.now() - t0)}초`;
+    document.querySelectorAll("#xai-modal [data-elapsed]").forEach(el => { el.textContent = txt; });
+  }, 100);
   try {
     const r = await api(`/api/ml/explain?symbol=${encodeURIComponent(symbol)}`);
+    clearInterval(timer);
+    const m = document.getElementById("xai-modal");
+    if (!m || m.hidden) return; // 사용자가 기다리다 닫음
     const pr = r.prediction || {};
-    panel.innerHTML = `<div class="card" style="padding:14px;">
-      <div class="flex items-center justify-between mb-1">
-        <h3 class="font-semibold text-sm">🧠 ${escHtml(r.name)} <span class="text-xs font-mono" style="color:var(--text-mute);">${escHtml(r.symbol)}</span> — AI 판단 근거</h3>
-        <span class="text-xs" style="color:var(--text-mute);">5일 예측 ${pr.pred_5d_return_pct ?? "-"}% · 모델 ${escHtml(pr.model || "")} · 신뢰도 ${pr.confidence ?? "-"}</span>
-      </div>
-      ${r.explanation ? renderXaiBlock(r.explanation) : `<p class="text-xs" style="color:var(--text-mute);">이 종목은 LightGBM 분류를 학습할 수 없어 설명을 제공하지 못했습니다.</p>`}
-    </div>`;
-  } catch (e) { panel.innerHTML = `<span class="text-xs text-red-500">${escHtml(e.message)}</span>`; }
+    openXaiModal(
+      `🧠 ${escHtml(r.name || symbol)} <span class="text-xs font-mono" style="color:var(--text-mute);">${escHtml(r.symbol || symbol)}</span> — AI 판단 근거`,
+      `<div class="text-xs mb-3" style="color:var(--text-mute);">5일 예측 ${pr.pred_5d_return_pct ?? "-"}% · 모델 ${escHtml(pr.model || "")} · 신뢰도 ${pr.confidence ?? "-"} · 계산 ${fmtSec(performance.now() - t0)}초</div>
+       ${r.explanation ? renderXaiBlock(r.explanation) : `<p class="text-xs" style="color:var(--text-mute);">이 종목은 LightGBM 분류를 학습할 수 없어 설명을 제공하지 못했습니다.</p>`}`
+    );
+  } catch (e) {
+    clearInterval(timer);
+    const m = document.getElementById("xai-modal");
+    if (!m || m.hidden) return;
+    openXaiModal(`🧠 ${escHtml(symbol)} — AI 판단 근거`,
+      `<p class="text-xs" style="color:var(--red);">✖ ${escHtml(e?.message || "설명 조회 실패")} · ${fmtSec(performance.now() - t0)}초</p>`);
+  }
 }
 window.showScreenXai = showScreenXai;
 
 document.getElementById("screen-run-btn").addEventListener("click", loadRoboScreening);
+document.getElementById("screen-stop-btn")?.addEventListener("click", requestScreenStop);
 
 
 // ── 로보 어드바이저: 차트 패턴 · 지지/저항 · 멀티타임프레임 ─────────────
@@ -356,4 +553,4 @@ document.getElementById("robo-decision-stop").addEventListener("click", async ()
 document.getElementById("robo-decision-refresh").addEventListener("click", loadRoboDecision);
 
 
-export { loadPatternAnalysis, loadRoboDecision, loadRoboScreening, renderXaiBlock };
+export { loadPatternAnalysis, loadRoboDecision, loadRoboScreening, renderScreenIdle, renderXaiBlock };

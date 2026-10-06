@@ -1483,10 +1483,12 @@
                 <option value="80">80% 이상</option>
               </select>
             </div>
-            <div class="flex items-end">
+            <div class="flex items-end gap-2">
               <button id="screen-run-btn" class="btn-primary w-full">스크리닝 실행</button>
+              <button id="screen-stop-btn" class="btn-red hidden" style="white-space:nowrap;">■ 중지</button>
             </div>
           </div>
+          <div id="screen-status" class="text-xs" style="color:var(--text-mute);min-height:16px;"></div>
         </div>
 
         <!-- AI 시그널 카드 -->
@@ -2469,6 +2471,18 @@ RC_i = wi × (Σw)_i / √(w'Σw)
       <button id="tm-close" class="tm-close">✕</button>
     </div>
     <div id="tm-body" class="tm-body"></div>
+  </div>
+</div>
+
+<!-- 스크리닝 XAI 설명 모달 -->
+<div id="xai-modal" role="dialog" aria-modal="true" aria-labelledby="xai-modal-title" hidden>
+  <div class="xai-modal-backdrop" data-xai-close></div>
+  <div class="xai-modal-panel">
+    <div class="xai-modal-head">
+      <h3 id="xai-modal-title" class="font-semibold text-sm">🧠 AI 판단 근거</h3>
+      <button type="button" class="xai-modal-close" data-xai-close aria-label="닫기">✕</button>
+    </div>
+    <div id="xai-modal-body" class="xai-modal-body"></div>
   </div>
 </div>
 </body>

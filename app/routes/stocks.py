@@ -154,11 +154,19 @@ async def stock_signals(
     signal: str = Query("all", description="all | buy | sell"),
     model: str = Query("lightgbm", description="lightgbm | rsi | ma | bollinger"),
     min_confidence: int = Query(65, ge=0, le=100),
+    symbols: str | None = Query(None, description="쉼표 구분 종목 코드. 주면 그 종목만(화면의 1종목씩 진행용)"),
 ):
-    """선택한 패턴 모델을 적용한 대표 종목 스크리닝."""
+    """선택한 패턴 모델을 적용한 대표 종목 스크리닝. `symbols` 로 부분 집합만 계산할 수 있다."""
+    universe = QUANT_STOCKS
+    if symbols:
+        wanted = {x.strip().upper() for x in symbols.split(",") if x.strip()}
+        universe = [s for s in QUANT_STOCKS if s["symbol"].upper() in wanted]
     rows = []
-    for stock in QUANT_STOCKS:
+    for stock in universe:
         candles = (await get_candles(stock["symbol"], period="1y", interval="1d")).get("candles", [])
+        if not candles:   # KIS·Yahoo 모두 빈 응답(예: 012510.KQ Yahoo 폴백) → 이 종목만 건너뜀 (이전엔 KeyError → 500)
+            logging.getLogger(__name__).warning("스크리닝 캔들 없음 %s", stock["symbol"])
+            continue
         result = screen_pattern(candles, model)
         if result.get("error"):
             continue

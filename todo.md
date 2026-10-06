@@ -405,6 +405,7 @@ cd /home/ubuntu/lumina-invest && .venv/bin/python -m pytest tests/test_spec_rule
 | L19 | (2026-10-06) 정합성 불일치 시 자동 조치 범위 | 현재는 검출·알림만. 선택: phantom 가상 체결 자동 되돌리기 / 가상 장부를 KIS 보유로 동기화 / 불일치 N건 이상이면 배치 자동 정지 | 1주 관찰 후 '불일치 3건 이상이면 배치 정지' 부터 도입 |
 | L20 | (2026-10-06) 섹터 리밸런싱에서 유니버스 밖 기존 보유(기타 섹터) 처리 | 현재: 목표 0 → 전량 매도 후보. 선택: 종목 목표로 고정 / '기타' 섹터 목표 허용 / 리밸런싱 대상에서 제외 옵션 | 1주 관찰 동안은 제외 옵션 추가 전까지 종목 목표로 고정 권고 |
 | L15 | (2026-10-06) 비상 정지 후 배치 재가동 주체 | 사람이 kill switch 해제(현재) vs 다음 영업일 자동 재가동 | 손실 반복 위험으로 수동 유지 |
+| L21 | (2026-10-06) st 백엔드 정지 재발 방지 | fd `.env` `KIS_CHART_MINUTES=60`·`KIS_CHART_TIMEOUT=30`(env 만, 즉시) / 장외 분봉 생략 코드 / st 캐시 TTL·큐 상한 / st healthcheck+autoheal — stock-coin-trade todo 6-9 표 | env 2개 + 장외 생략 먼저, st 쪽은 다음 정지 때 |
 | L13 | 운영 계정에 LEAN 합격 전략 적용 시점 | pr(domain-rag-lab) 합격 전략 0건. 전략 선택 전까지 매수·매도 모두 기술지표 규칙만 사용(ML·LEAN 미적용) | domain-rag-lab 에서 ma_cross/momentum 백테스트 → export 후 종목 선정 화면에서 선택 |
 
 ### 6-6. 2026-10-02 운영 시작 — 모의투자(Testbed) 자동매매 가동 (사용자 요청 + 7절 권고 수용)
@@ -784,3 +785,53 @@ sudo docker exec fin-ai-postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_D
 | 테스트 | `tests/test_rebalance_kis.py` 10건(소스 기본/검증, KIS 스냅샷·심볼 매핑, KIS 시세 제안, 게이트웨이 실행 submitted/skipped/failed, 섹터 파싱·검증, 섹터→종목 배분, 섹터 집계, 섹터 가중치 기록). 전체 **238 passed** |
 
 **사용법**: 리밸런싱 엔진 → 대상 계좌 KIS → 섹터 비중 입력(예: 반도체 40 / IT 35 / K뷰티 20, 현금 5) → 저장 → 「주문 제안」 → 「실행」(장중). 기존 보유 중 유니버스 밖 종목(KR모터스·POSCO 등)은 `기타` 섹터로 묶여 **플랜 외 전량 매도 후보**가 되므로, 팔고 싶지 않으면 종목 목표를 따로 넣어 비중을 고정할 것(7절 L20).
+
+### 6-19. 2026-10-06 `#robo-screening`(패턴 인식·종목 스크리닝) 운영 기능 테스트 (사용자 요청) — **실패, 원인 2건**
+
+**방법**: fd.edumgt.co.kr 공개 HTTP 로만 점검(서버 로그·DB 미열람). 배포본 `app.html`·`js/robo.js` 는 로컬과 md5 동일. 화면이 부르는 `GET /api/stocks/signals`(비로그인, 인증 의존성 없음) 를 모델 4종 × 신호 3종으로 호출하고, 31종목 일봉을 `/api/stocks/candles` 로 받아 `screen_pattern` 을 로컬에서 모델별로 실행.
+
+| 결과 | 내용 |
+|------|------|
+| 화면 | 「스크리닝 실행」 → 요청이 **3~4분 이상 응답 없음**, 끝나도 **500**. 카드는 "시그널 데이터를 불러올 수 없습니다", 표는 빈 상태로 남음(`loadRoboScreening` 의 catch 가 오류 메시지를 삼킴) |
+| 원인 ① 지연 | `get_quote` 가 국내 종목마다 st `GET /api/kis-chart/candles` 를 먼저 부르고 `KIS_CHART_TIMEOUT=10` 초 뒤 Yahoo 로 폴백. **st 백엔드가 응답 없음**(`https://st.edumgt.co.kr/api/health`·`/api/kis-chart/*`·`/openapi/v1/kis/*` 모두 20~30초 이상 무응답, 정적 `/`·`/docs` 만 200) → 종목당 10.4초 × 31 = 약 5.4분, 그것도 **순차 루프**. 현재가는 캐시도 없다(일봉은 6시간 캐시) |
+| 원인 ② 500 | 20번째 종목 더존비즈온 `012510.KQ` 가 KIS 실패 후 Yahoo 에서도 **캔들 0건**(Yahoo 는 .KQ 로만 존재하고 최근 시세 없음 — 2020년 코스피 이전 종목). `screen_pattern([])` → `indicators` 의 `preprocess` 가 `KeyError: 'time'` → 라우트에 예외 처리 없어 500. 로컬 재현: 나머지 30종목은 4개 모델 모두 정상 계산 |
+| 부수 | Yahoo 폴백 `get_quote` 는 `change`/`change_pct=None` 고정 → 카드 "--%", 표 "+0.00%" 로 표시. `rsi` 모델 점수식 `(30-RSI)/10` 은 RSI 50 전후 중립 구간을 **SELL 80~95%** 로 매긴다(31종목 중 22종목 SELL). 운영 영향 더 큰 것: st `/openapi/v1/kis/*` 무응답이면 **KIS 실주문 게이트웨이도 같은 상태**(45초 타임아웃 → UNKNOWN 재전송 경로) |
+
+**권고(미적용, 결정 필요)**
+1. st 서버 python-backend 상태 확인·재기동(사용자): `ssh ubuntu@43.202.161.134 "sudo docker ps; sudo docker logs --since 30m <python-backend> | tail -50"`. 복구 후 `curl -m 15 https://st.edumgt.co.kr/api/health` 200 이면 스크리닝은 종목당 1초 이내로 돌아온다.
+2. 코드(lumina, 소규모): `stock_signals` 에서 `candles` 빈 경우 `continue`(또는 `screen_pattern` 첫 줄 빈 리스트 가드) · 31종목을 `asyncio.gather` 로 병렬 조회 + 현재가 1~5분 캐시 · Yahoo 폴백 `change_pct` 를 `price/prev_close` 로 계산 · `loadRoboScreening` catch 에 오류 문구 표시.
+3. `012510.KQ` 는 KIS 경로(접미사 무관 코드 012510)로는 조회되므로 유니버스 유지 가능, 단 Yahoo 폴백만으로는 항상 빈 값 → 2번 가드가 전제.
+4. `rsi` 모델 점수식은 30/70 밴드 밖에서만 점수를 주도록 바꿀지 결정(현 식은 "역추세" 라벨과 맞지 않음).
+
+**확인(사용자)**: st 복구 후 `curl -m 60 "https://fd.edumgt.co.kr/api/stocks/signals?signal=all&model=lightgbm&min_confidence=50"` 이 수 초 내 200 이고 `count` 가 30 이상이면 ①은 해소. 500 이 계속이면 ② 가드 적용 전까지는 더존비즈온 한 종목 때문에 전체가 실패한다.
+
+**6-19 후속(07:06Z, 권고 1 시행)**: st python-backend 는 멈춘 게 아니라 **동기 핸들러 스레드풀(40) 고갈**이었다. 원인은 lumina 5분 사이클의 분봉 31종목 × KIS 8회(1.05초 직렬 간격) ≈ 260초/사이클 + 10초 클라이언트 타임아웃 뒤 유령 처리 — 상세·수치·권고는 **stock-coin-trade todo 6-9**. `docker restart crypto-mock-python` 후 fd 현재가 0.07초(`source=kis`, 등락률 정상), `/api/stocks/signals` **6조합 모두 200·31종목**(더존비즈온은 KIS 경로로 캔들 수신 → 500 소멸). 응답 32~54초(순차 31종목 × 1초, KIS 레인 대기)로 **동작은 하지만 느림** → 6-19 권고 2(병렬·캐시·빈 캔들 가드)는 여전히 유효. 재기동 6분 뒤 분봉 499 재발 시작 → **재발 방지 결정 필요**: 최소 조치는 fd `.env` `KIS_CHART_MINUTES=60`, `KIS_CHART_TIMEOUT=30` + 장외 분봉 수집 생략(7절 L21).
+
+### 6-20. 2026-10-06 스크리닝 화면 — 실행 중 모래시계·경과 시간, 「설명」 모달 팝업 (사용자 요청 2건) + L21 env 적용 시도
+
+| 항목 | 파일 | 내용 |
+|------|------|------|
+| 실행 중 표시 | `public/js/robo.js` `startScreenHourglass/stopScreenHourglass`, `public/css/app.css` `.screen-loading .hourglass` | 「스크리닝 실행」 클릭 시 카드 영역에 CSS 애니메이션 모래시계(⏳ 회전 + 모래 바)와 0.1초 단위 경과 시간, 버튼도 `⏳ 12.3초` 로 바뀌며 비활성(중복 실행 방지). 완료/실패 시 `#screen-status` 에 `✔ 완료 — N종목 (모델/신호/신뢰도) · 소요 34.2초 · 시각` 또는 `✖ 실패 — 사유` 표시(기존 catch 가 삼키던 오류 노출). `prefers-reduced-motion` 이면 정지 |
+| 설명 모달 | `public/app.html` `#xai-modal`, `app.css` `#xai-modal*`, `robo.js` `openXaiModal/closeXaiModal/showScreenXai` | 결과 표의 「🧠 설명」이 표 아래 인라인 패널 대신 모달 팝업으로 열림. 로딩 중 같은 모래시계+경과 시간, 완료 시 종목명·5일 예측·모델·신뢰도·계산 시간 + `renderXaiBlock`. 닫기: ✕·배경 클릭·Esc. 기다리다 닫으면 결과를 덮어쓰지 않음. 인라인 `#screen-xai-panel` 제거 |
+| 배포 | fd | rsync 3파일 → `compose up -d --build app`. 서버·컨테이너·공개 URL md5 = 로컬(`robo.js f57484ce…`). 미커밋. 브라우저 실행 검증은 미수행(에이전트 환경에 node·브라우저 없음, 괄호·템플릿 균형 검사만) → **사용자 확인**: `#robo-screening` 에서 실행 → 모래시계·초 표시 → 결과 → 「설명」 모달 |
+| 주의 | fd 서버 | 이전 세션 rsync 잔재 `public/public/`(9/29) 삭제함. 이번에도 `--relative` 로 한 번 잘못 올라가 즉시 정리 |
+
+**L21 env 적용(실패 — 사용자 수행 필요)**: fd `.env` 에 `KIS_CHART_MINUTES=60`·`KIS_CHART_TIMEOUT=30` 추가 + app·celery 재기동은 자동 모드 분류기(운영 배포)로 차단. 사용자 명령:
+```bash
+ssh -i lumina-invest/fd.edumgt.co.kr.pem ubuntu@43.201.229.188 "cd /home/ubuntu/lumina-invest && printf '\nKIS_CHART_MINUTES=60\nKIS_CHART_TIMEOUT=30\n' >> .env && sudo env COMPOSE_FILE='docker-compose.yml:compose.fd.yml' docker compose up -d app celery-worker celery-beat && sleep 8 && sudo docker exec fin-ai-celery-worker env | grep ^KIS_CHART_"
+```
+적용 확인: st 쪽 `docker logs crypto-mock-frontend | grep -c " 499 "` 가 사이클당 0~1건으로 떨어지고, 분봉 완료 간격이 8초→2초.
+
+**6-20 후속(사용자 요청)**: 스크리닝 대기 화면을 **모달**로 이동 — 「스크리닝 실행」 클릭 시 `#xai-modal` 을 재사용해 `⏳ 스크리닝 실행 중` 창(모래시계 + 대기 시간 0.1초 갱신 + 조건 요약)을 띄우고, 완료·실패 시 자동으로 닫고 결과·상태 줄 표시. 창을 닫아도 실행은 계속(버튼·카드 영역에 경과 시간 유지). 화면 진입 시 **자동 실행 제거**(`main.js` → `renderScreenIdle` 안내 문구만) — 30초 이상 걸리는 호출이 탭만 열어도 나가던 문제 해소. 파일: `robo.js`(`renderScreenIdle/startScreenHourglass/stopScreenHourglass`, export 추가), `main.js`. fd 재배포(컨테이너·공개 URL md5 = 로컬 `robo.js 69657378…`, `main.js 99bae07a…`), 미커밋. 브라우저 검증은 사용자.
+
+### 6-21. 2026-10-06 스크리닝 — 「중지」 버튼 + 1종목씩 검사·진행 표시 (사용자 요청)
+
+| 항목 | 파일 | 내용 |
+|------|------|------|
+| 백엔드 | `app/routes/stocks.py` `stock_signals` | `symbols=`(쉼표 구분) 파라미터 추가 → 해당 종목만 계산. **빈 캔들 가드** 추가(`012510.KQ` Yahoo 폴백 0건이던 500 원인 제거, 해당 종목만 건너뜀·경고 로그). 응답 형식 동일, 기존 호출(전체)도 그대로 |
+| 진행 방식 | `public/js/robo.js` `loadRoboScreening` | `/api/quant/ml/stocks` 로 유니버스(31) 받은 뒤 **한 종목씩** `/api/stocks/signals?symbols=X&signal=all&min_confidence=0` 호출 → 신호·신뢰도 필터는 화면에서 적용(제외된 종목도 점수 표시). 종목마다 모달 목록에 `⏳ 검사 중 → ✔ BUY 81% / – 제외(HOLD 55%) / ✖ 오류` 체크, 진행 바 `n / 31`, 카드·표는 종목 끝날 때마다 갱신(신뢰도·|점수| 정렬) |
+| 중지 | `app.html` `#screen-stop-btn`(실행 버튼 옆, 실행 중만 표시), 모달 안 `#screen-modal-stop` | 누르면 "중지 중…" → 지금 검사 중인 종목까지 끝내고 멈춤. 상태 줄 `✔ 중지 — 12/31종목 검사, 5종목 통과 (조건) · 소요 n초`. 창을 닫아도 실행·중지 버튼은 페이지에 남음 |
+| 배포 | fd | `py_compile` 통과 → rsync 3파일 → `compose up -d --build app`. 컨테이너·공개 URL md5 = 로컬(`robo.js 3cfb3ba7…`, `stocks.py 47b7320e…`). 실서버 확인: `symbols=005930.KS` 200·1건(2.2초), `symbols=012510.KQ` 200·HOLD(이전 500 → 해소, 등락률 None 은 Yahoo 폴백 한계), 2종목 3.9초, 없는 코드 0건. 미커밋 |
+| 소요 | — | 종목당 약 2초(KIS 레인 대기 포함) → 전체 약 60~70초. 일괄 호출(32~54초)보다 길지만 진행이 보이고 중간 중지 가능. 줄이려면 6-19 권고 2(현재가 캐시) 또는 L21 env 적용 |
+
+**확인(사용자)**: `#robo-screening` → 실행 → 모달에 종목별 체크가 한 줄씩 늘어나는지 → 「중지」 → 상태 줄 "중지 — n/31" → 다시 실행 → 완료 → 「설명」 모달. 브라우저 실행 검증은 에이전트 환경에서 불가(괄호·템플릿 균형, 함수 정의 수 검사만).

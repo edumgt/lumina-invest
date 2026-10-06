@@ -9,7 +9,7 @@ import { loadMacroDashboard, loadMacroIndustry } from "/js/ml.js";
 import { initPaperViews, onPaperViewActivated } from "/js/paper.js";
 import { loadAutoTradeStatus, loadQuantDashboard } from "/js/quant.js";
 import { initRebalanceView, onRebalanceViewActivated } from "/js/rebalance.js";
-import { loadPatternAnalysis, loadRoboDecision, loadRoboScreening } from "/js/robo.js";
+import { loadPatternAnalysis, loadRoboDecision, renderScreenIdle } from "/js/robo.js";
 import { loadKisMonitor } from "/js/kis_monitor.js";
 import { loadNotificationSettings, loadSettings } from "/js/settings.js";
 import { loadAuditLog, loadSystemDashboard } from "/js/sysadmin.js";
@@ -75,7 +75,7 @@ function onViewActivated(view) {
   if (view === "sysadmin-dashboard") loadSystemDashboard();
   if (view === "sysadmin-logs") loadAuditLog();
   // 로보 어드바이저 신규 뷰
-  if (view === "robo-screening") loadRoboScreening();
+  if (view === "robo-screening") renderScreenIdle();   // 자동 실행 안 함 — 「스크리닝 실행」 클릭 시에만 (2026-10-06)
   if (view === "robo-decision")  loadRoboDecision();
   if (view === "kis-monitor")    loadKisMonitor();
   if (view === "robo-patterns")  { if (!document.getElementById("pt-mtf").innerHTML) loadPatternAnalysis(); }
