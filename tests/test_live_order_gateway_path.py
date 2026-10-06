@@ -249,8 +249,10 @@ def test_unknown_within_window_is_resubmitted_idempotently(env, monkeypatch):
     assert summary["resubmitted"] == 1 and summary["filled"] == 1 and summary["errors"] == 0
     assert row.status == "FILLED" and row.order_no == "0000030777" and row.filled_quantity == 23
     assert "체결 완료" in row.message            # FILLED 로 확정되면 체결 메시지가 재전송 메모를 덮는다
-    body = bodies[0]
-    assert b'"clientOrderId": "u:018290:B:202610061151"' in body and b'"orderType": "MARKET"' in body and b'"symbol": "018290"' in body
+    import json as _json
+    sent = _json.loads(bodies[0])
+    assert sent["clientOrderId"] == "u:018290:B:202610061151" and sent["orderType"] == "MARKET" and sent["symbol"] == "018290"
+    assert sent["quantity"] == 23 and sent["price"] == 0 and sent["environment"] == "paper"
     env["filled"].assert_awaited_once()
 
 
