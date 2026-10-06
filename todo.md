@@ -712,3 +712,16 @@ sudo docker exec fin-ai-postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_D
 | 코드 내 상수 | stock-coin-trade `market_bots.py` `BOT_PASSWORD="system-bot-account"`(내부 봇 계정 비번 하드코딩) — 교체·env 이동 권고 |
 
 **권고(우선순위)**: ① 운영 FastAPI docs 비공개(3 서비스) ② 공개 repo 의 `.env`/`.env.prod` 추적 해제(`git rm --cached`) + 서버 DB 비번·SESSION_SECRET 교체(이미 공개 이력이라 삭제만으로는 부족) ③ fd `.env` 권한 600 확인 ④ `BOT_PASSWORD` env 이동. 결정은 7절 L18.
+
+### 6-15. 2026-10-06 첫 공격 모드 주문 UNKNOWN (브이티 018290.KQ 시장가 23주, 02:51Z) → 재전송·타임아웃 보강
+
+**사실**: 배치가 실제로 주문을 냈다(`live_orders` 02:51:31Z BUY MARKET 23 UNKNOWN). UNKNOWN = lumina 가 게이트웨이 응답을 못 받음(`GATEWAY_UNREACHABLE`: 연결 실패 또는 **15초 타임아웃**). st 는 KIS 토큰 발급+주문을 순차 호출해 15초를 넘길 수 있다. 이후 `confirm_fills` 는 당일 주문 목록 매칭으로만 해소하려 했는데 KIS 모의투자는 목록을 비워 주므로 **영구 UNKNOWN** → 비중 점유(open exposure)가 풀리지 않음.
+
+| 변경 | 내용 |
+|------|------|
+| `config` | `STOCK_COIN_TRADE_ORDER_TIMEOUT=45`(승인·주문 호출 전용), `STOCK_COIN_TRADE_UNKNOWN_RESUBMIT_MIN=10` |
+| `gateway` | `_client/_call` 에 호출별 timeout. `place_order` 는 45초 |
+| `confirm_live_fills` | UNKNOWN 이고 `client_order_id` 있으면 **같은 intent 를 멱등 재전송**(계약서: 같은 clientOrderId → 새 주문 없이 저장된 order, duplicate=true). st 가 원 주문을 기록했으면 orderNo·상태를 받아 확정, 닿지 않았으면 이번에 접수(최대 1회). 장외면 대기. 생성 후 10분 지나면 `LOST` 로 종료(열린 상태 아님 → 비중 해제) + 오류 알림 |
+| 테스트 | +4(재전송 duplicate 확정, 창 초과 LOST, 장외 대기, 주문 호출 45초) → **203 passed** |
+
+**02:51 주문의 실제 결과 확인(사용자)**: 배포 후 다음 confirm_fills(2분) 가 재전송을 시도하지만 이미 10분이 지나 **LOST** 로 종료된다. 실제 체결 여부는 KIS 앱 또는 st 서버 `kis_autotrade_order` 에서 `client_order_id` 로 확인. 체결됐다면 Testbed 계좌에 브이티 23주가 있고, lumina 가상 장부에도 23주가 있으므로 익절/손절 매도 대상이 된다(가상·실계좌 수량 일치). 체결 안 됐다면 가상 장부만 23주 → 매도 시그널 시 실매도가 KIS 에서 잔고 부족으로 거부될 수 있음(st 가 거부 → ERROR 기록, 사이클은 계속).

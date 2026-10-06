@@ -93,6 +93,8 @@ class Settings(BaseSettings):
     STOCK_COIN_TRADE_BASE_URL: str = ""            # 예: https://stock.example.com
     STOCK_COIN_TRADE_API_KEY: str = ""             # stock-coin-trade에서 발급한 Open API 키 (KIS_AUTOTRADE_API_KEY_IDS 등록 필요)
     STOCK_COIN_TRADE_TIMEOUT: float = 15.0
+    STOCK_COIN_TRADE_ORDER_TIMEOUT: float = 45.0   # 승인·주문 호출 전용. st 가 KIS 토큰+주문을 순차 호출하면 15초를 넘길 수 있다(2026-10-06 UNKNOWN 사고)
+    STOCK_COIN_TRADE_UNKNOWN_RESUBMIT_MIN: int = 10  # UNKNOWN(응답 미수신) 주문을 같은 clientOrderId 로 멱등 재전송해 확인하는 시간 창(분). 지나면 LOST 로 종료
     # paper(KIS Testbed) | real(실전). quant_mode=live 인 사용자의 주문이 이 환경으로 나간다. Phase 4까지 paper 유지.
     STOCK_COIN_TRADE_KIS_ENVIRONMENT: str = "paper"
     STOCK_COIN_TRADE_ORDER_TYPE: str = "LIMIT"     # LIMIT(현재가 호가 보정) | MARKET

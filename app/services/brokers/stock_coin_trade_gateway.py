@@ -147,13 +147,13 @@ def make_client_order_id(user_id: str, symbol: str, side: str, now: datetime | N
     return f"{uid}:{normalize_symbol(symbol)}:{normalize_side(side)[0]}:{stamp}"[:64]
 
 
-def _client() -> httpx.AsyncClient:
+def _client(timeout: float | None = None) -> httpx.AsyncClient:
     if not is_configured():
         raise GatewayError("STOCK_COIN_TRADE_BASE_URL / STOCK_COIN_TRADE_API_KEY 가 설정되지 않았습니다.", "GATEWAY_NOT_CONFIGURED", 503)
     return httpx.AsyncClient(
         base_url=settings.STOCK_COIN_TRADE_BASE_URL.rstrip("/"),
         headers={"Authorization": f"Bearer {settings.STOCK_COIN_TRADE_API_KEY}", "Accept": "application/json"},
-        timeout=settings.STOCK_COIN_TRADE_TIMEOUT,
+        timeout=timeout or settings.STOCK_COIN_TRADE_TIMEOUT,
         transport=_transport,
     )
 
@@ -170,12 +170,13 @@ def _raise_for_body(response: httpx.Response) -> dict[str, Any]:
     return body
 
 
-async def _call(method: str, path: str, *, json: dict | None = None, params: dict | None = None, retry: bool) -> dict[str, Any]:
+async def _call(method: str, path: str, *, json: dict | None = None, params: dict | None = None, retry: bool,
+                timeout: float | None = None) -> dict[str, Any]:
     attempts = 2 if retry else 1
     last_exc: Exception | None = None
     for attempt in range(attempts):
         try:
-            async with _client() as cli:
+            async with _client(timeout) as cli:
                 response = await cli.request(method, path, json=json, params=params)
             return _raise_for_body(response)
         except httpx.HTTPError as exc:
@@ -205,11 +206,12 @@ async def place_order(symbol: str, side: str, quantity: int, price: float, *, cl
                       order_type: str | None = None, env: str | None = None) -> dict[str, Any]:
     """승인 토큰 → 주문. 반환: {"order": {...계약서 order...}, "duplicate": bool, "intent": {...}}"""
     intent = build_intent(symbol, side, quantity, price, client_order_id=client_order_id, order_type=order_type, env=env)
-    approval = await _call("POST", "/openapi/v1/kis/order-approval", json=intent, retry=True)
+    order_timeout = float(getattr(settings, "STOCK_COIN_TRADE_ORDER_TIMEOUT", 0) or 0) or None
+    approval = await _call("POST", "/openapi/v1/kis/order-approval", json=intent, retry=True, timeout=order_timeout)
     token = approval.get("approvalToken")
     if not token:
         raise GatewayError("승인 토큰을 받지 못했습니다.", "APPROVAL_MISSING", 502)
-    body = await _call("POST", "/openapi/v1/kis/orders", json={**intent, "approvalToken": token}, retry=False)
+    body = await _call("POST", "/openapi/v1/kis/orders", json={**intent, "approvalToken": token}, retry=False, timeout=order_timeout)
     return {"order": body.get("order") or {}, "duplicate": bool(body.get("duplicate")), "intent": intent}
 
 

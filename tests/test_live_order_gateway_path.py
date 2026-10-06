@@ -213,3 +213,81 @@ def test_live_account_daily_loss_uses_gateway_balance(env):
     gw.set_transport(httpx.MockTransport(lambda r: (_ for _ in ()).throw(httpx.ConnectError("down", request=r))))
     failed = asyncio.run(auto_trade.live_account_daily_loss(str(UID), 3.0))
     assert failed["breached"] is False and "GATEWAY_UNREACHABLE" in failed["error"]
+
+
+# ── UNKNOWN 해소: 멱등 재전송 / LOST (2026-10-06 브이티 시장가 UNKNOWN 사고) ─────────────────────────
+def _factory(db):
+    class Factory:
+        def __call__(self): return self
+        async def __aenter__(self): return db
+        async def __aexit__(self, *a): return False
+    return Factory()
+
+
+def _unknown_row(age_min: int):
+    return LiveOrder(user_id=UID, client_order_id="u:018290:B:202610061151", environment="paper", symbol="018290.KQ", name="브이티",
+                     side="BUY", order_type="MARKET", quantity=23, price=12_520.0, order_no=None, status="UNKNOWN",
+                     filled_quantity=0, avg_filled_price=0, created_at=datetime.now(timezone.utc) - timedelta(minutes=age_min))
+
+
+def test_unknown_within_window_is_resubmitted_idempotently(env, monkeypatch):
+    monkeypatch.setattr(settings, "STOCK_COIN_TRADE_UNKNOWN_RESUBMIT_MIN", 10)
+    bodies = []
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/order-approval"):
+            return httpx.Response(200, json={"ok": True, "approvalToken": "t", "expiresIn": 60})
+        if request.url.path.endswith("/kis/orders") and request.method == "POST":
+            bodies.append(request.read())
+            return httpx.Response(200, json={"ok": True, "duplicate": True,
+                                             "order": {"orderNo": "0000030777", "status": "FILLED", "filledQuantity": 23, "avgFilledPrice": 12_530}})
+        return httpx.Response(404, json={"ok": False, "error": "NOT_FOUND", "message": "x"})
+    gw.set_transport(httpx.MockTransport(handler))
+    row = _unknown_row(age_min=3)
+    db = FakeDb(rows=[row])
+    with patch.object(auto_trade, "get_session_factory", return_value=_factory(db)):
+        summary = asyncio.run(auto_trade.confirm_live_fills())
+    assert summary["resubmitted"] == 1 and summary["filled"] == 1 and summary["errors"] == 0
+    assert row.status == "FILLED" and row.order_no == "0000030777" and row.filled_quantity == 23
+    assert "체결 완료" in row.message            # FILLED 로 확정되면 체결 메시지가 재전송 메모를 덮는다
+    body = bodies[0]
+    assert b'"clientOrderId": "u:018290:B:202610061151"' in body and b'"orderType": "MARKET"' in body and b'"symbol": "018290"' in body
+    env["filled"].assert_awaited_once()
+
+
+def test_unknown_past_window_becomes_lost_and_notifies(env, monkeypatch):
+    monkeypatch.setattr(settings, "STOCK_COIN_TRADE_UNKNOWN_RESUBMIT_MIN", 10)
+    calls = _server((200, {"ok": True}))
+    row = _unknown_row(age_min=25)
+    db = FakeDb(rows=[row])
+    with patch.object(auto_trade, "get_session_factory", return_value=_factory(db)):
+        summary = asyncio.run(auto_trade.confirm_live_fills())
+    assert summary["lost"] == 1 and row.status == "LOST" and "재전송 창" in row.message
+    assert calls == []                       # 게이트웨이 호출 없음
+    env["errored"].assert_awaited_once()
+    from app.models import LIVE_ORDER_OPEN_STATUSES
+    assert "LOST" not in LIVE_ORDER_OPEN_STATUSES
+
+
+def test_unknown_market_closed_waits(env, monkeypatch):
+    monkeypatch.setattr(settings, "STOCK_COIN_TRADE_UNKNOWN_RESUBMIT_MIN", 10)
+    calls = _server((200, {"ok": True}))
+    row = _unknown_row(age_min=2)
+    db = FakeDb(rows=[row])
+    with patch.object(gw, "is_krx_market_open", return_value=False), \
+         patch.object(auto_trade, "get_session_factory", return_value=_factory(db)):
+        summary = asyncio.run(auto_trade.confirm_live_fills())
+    assert summary["skipped"] == 1 and row.status == "UNKNOWN" and calls == []
+
+
+def test_order_calls_use_longer_timeout(env, monkeypatch):
+    monkeypatch.setattr(settings, "STOCK_COIN_TRADE_TIMEOUT", 15.0)
+    monkeypatch.setattr(settings, "STOCK_COIN_TRADE_ORDER_TIMEOUT", 45.0)
+    seen = []
+    real_client = gw._client
+    def spy(timeout=None):
+        seen.append(timeout); return real_client(timeout)
+    _server((200, {"ok": True, "order": {"orderNo": "1", "status": "ACCEPTED"}}))
+    with patch.object(gw, "_client", spy):
+        asyncio.run(gw.place_order("005930.KS", "buy", 1, 70_000.0, client_order_id="c"))
+        asyncio.run(gw.get_order_status("1"))
+    assert seen[:2] == [45.0, 45.0] and seen[2] is None

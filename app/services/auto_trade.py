@@ -526,8 +526,36 @@ async def confirm_live_fills(limit: int = 100) -> dict:
             try:
                 if row.order_no:
                     latest = await gateway.get_order_status(row.order_no, env=row.environment)
+                elif row.status == "UNKNOWN" and row.client_order_id:
+                    # 응답을 못 받은 주문: 계약서의 멱등키(clientOrderId)로 **같은 intent 를 재전송**한다.
+                    # st 가 원 주문을 기록했으면 새 주문 없이 저장된 order 를 duplicate=true 로 돌려주고,
+                    # 원 요청이 st 에 닿지 않았으면 이번에 접수된다(최대 1회 실행 보장). 시간 창을 넘기면 LOST 로 종료해 비중 점유를 푼다.
+                    window = int(getattr(app_settings, "STOCK_COIN_TRADE_UNKNOWN_RESUBMIT_MIN", 10) or 0)
+                    created = row.created_at.astimezone(timezone.utc) if row.created_at else datetime.now(timezone.utc)
+                    age_min = (datetime.now(timezone.utc) - created).total_seconds() / 60
+                    if window <= 0 or age_min > window:
+                        row.status = "LOST"
+                        row.message = f"응답 미수신 {age_min:.0f}분 경과 — 재전송 창({window}분) 초과로 종료. KIS 앱/st 기록에서 clientOrderId 로 수동 확인 필요"[:300]
+                        summary["lost"] = summary.get("lost", 0) + 1
+                        summary["updated"] += 1
+                        logger.warning("UNKNOWN 주문 LOST 처리 (%s %s x%d, %s)", row.side, row.symbol, row.quantity, row.client_order_id)
+                        await notification.notify_order_error(symbol=row.symbol, side=row.side.lower(), quantity=row.quantity, price=row.price,
+                                                              error=row.message, user_id=str(row.user_id))
+                        continue
+                    if gateway.enforce_market_hours() and not gateway.is_krx_market_open():
+                        summary["skipped"] += 1
+                        continue
+                    res = await gateway.place_order(row.symbol, row.side, row.quantity, row.price, client_order_id=row.client_order_id,
+                                                    order_type=row.order_type, env=row.environment)
+                    latest = res.get("order") or {}
+                    row.order_no = str(latest.get("orderNo") or "") or None
+                    row.message = ("응답 미수신 → 멱등 재전송: " + ("기존 주문 확인(duplicate)" if res.get("duplicate") else "이번에 신규 접수"))[:300]
+                    summary["resubmitted"] = summary.get("resubmitted", 0) + 1
+                    if not latest:
+                        summary["skipped"] += 1
+                        continue
                 else:
-                    # 주문번호를 못 받은(UNKNOWN/PENDING) 건: 당일 목록에서 같은 종목·방향·수량으로 추정 매칭
+                    # 주문번호를 못 받은(PENDING) 건: 당일 목록에서 같은 종목·방향·수량으로 추정 매칭
                     code = gateway.normalize_symbol(row.symbol)
                     candidates = [o for o in await gateway.list_today_orders(env=row.environment)
                                   if o.get("symbol") == code and o.get("side") == row.side and int(o.get("orderedQuantity") or 0) == row.quantity]
