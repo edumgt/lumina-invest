@@ -1538,9 +1538,21 @@
           <h2 class="text-lg font-semibold mb-1">🕯️ 차트 패턴 · 지지/저항 · 멀티타임프레임 신호</h2>
           <p class="text-xs mb-3" style="color:var(--text-mute);">캔들 패턴(해머·장악형·샛별형 등)과 피벗 기반 지지·저항선, 돌파·골든크로스 이벤트를 탐지하고, 분봉(60분)·일봉·주봉 지표를 종합해 매수·매도·관망 신호와 신뢰도를 산출합니다.</p>
           <div class="flex flex-wrap gap-2 items-end">
-            <div><label class="text-xs" style="color:var(--text-mute);">종목</label><input id="pt-symbol" class="input" value="005930.KS" style="width:160px" /></div>
+            <div><label for="pt-symbol" class="text-xs" style="color:var(--text-mute);">종목코드</label><input id="pt-symbol" class="input" value="005930.KS" placeholder="005930.KS / AAPL" style="width:160px" /></div>
+            <button id="pt-search" class="btn-ghost" type="button">🔍 종목 검색</button>
+            <span id="pt-selected" class="text-xs" style="color:var(--text-mute);">삼성전자</span>
             <button id="pt-run" class="btn-primary">분석 실행</button>
           </div>
+        </div>
+        <div id="pt-chart-card" class="card hidden">
+          <h3 id="pt-chart-title" class="font-semibold text-sm mb-2"></h3>
+          <div class="flex flex-wrap gap-3 text-xs mb-2">
+            <label><input id="pt-show-sr" type="checkbox" checked /> 지지(초록) · 저항(빨강)</label>
+            <label><input id="pt-show-patterns" type="checkbox" checked /> 패턴 · 돌파 표시</label>
+            <span style="color:var(--text-mute);">일봉 1년 · 드래그로 확대 · 도구 모음으로 초기화</span>
+          </div>
+          <div id="pt-chart" style="min-height:420px;"></div>
+          <p id="pt-chart-note" class="text-xs mt-2" style="color:var(--text-mute);"></p>
         </div>
         <div id="pt-mtf" class="card hidden"></div>
         <div class="grid lg:grid-cols-2 gap-4">

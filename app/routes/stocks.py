@@ -819,7 +819,7 @@ async def stock_patterns(symbol: str = Query("005930.KS"), period: str = Query("
     result = pattern_summary(candles)
     if "error" in result:
         raise HTTPException(422, result["error"])
-    return {"symbol": symbol, **result}
+    return {"symbol": symbol, "candles": candles, **result}
 
 
 @router.get("/stocks/mtf-signal")

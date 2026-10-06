@@ -307,6 +307,14 @@ function loadCompanySector() {
     });
   });
 
+  document.getElementById("pt-search")?.addEventListener("click", () => {
+    openModal(({ symbol, name }) => {
+      document.getElementById("pt-symbol").value = symbol;
+      document.getElementById("pt-selected").textContent = name;
+      document.getElementById("pt-symbol").dispatchEvent(new Event("change"));
+    });
+  });
+
   // 지표 대시보드 종목 검색 (기존 5개 목업 종목 외 임의 종목 추가)
   document.getElementById("company-search-btn")?.addEventListener("click", () => {
     openModal(({ symbol, name }) => addAndSelectCompany(symbol, name));

@@ -476,26 +476,119 @@ document.getElementById("screen-stop-btn")?.addEventListener("click", requestScr
 
 
 // ── 로보 어드바이저: 차트 패턴 · 지지/저항 · 멀티타임프레임 ─────────────
+let patternChart = null;
+let patternChartData = null;
+let patternRun = 0;
+
+function clearPatternResults() {
+  patternChart?.destroy();
+  patternChart = null;
+  patternChartData = null;
+  for (const id of ["pt-chart-card", "pt-mtf", "pt-patterns", "pt-sr", "pt-breakouts"]) {
+    document.getElementById(id)?.classList.add("hidden");
+  }
+  document.getElementById("pt-chart").replaceChildren();
+}
+
+function patternAnnotations(pat, candles) {
+  const colors = { bullish: "#089981", bearish: "#ef4444", neutral: "#64748b" };
+  const yaxis = document.getElementById("pt-show-sr").checked ? pat.support_resistance.levels.map(level => {
+    const color = level.type === "support" ? colors.bullish : colors.bearish;
+    return { y: level.price, borderColor: color, strokeDashArray: 4,
+      label: { text: `${level.type === "support" ? "지지" : "저항"} ${fmt(level.price)} · ${level.touches}회`,
+        style: { color: "#fff", background: color, fontSize: "10px" }, position: "left" } };
+  }) : [];
+  const points = [];
+  if (document.getElementById("pt-show-patterns").checked) {
+    // Group labels on the same candle so simultaneous patterns remain readable.
+    const groups = new Map();
+    for (const pattern of pat.patterns) {
+      const candle = candles.find(c => new Date(c.time * 1000).toISOString().slice(0, 10) === pattern.date);
+      if (!candle) continue;
+      const key = `${candle.time}:${pattern.direction}`;
+      if (!groups.has(key)) groups.set(key, { candle, direction: pattern.direction, names: [] });
+      groups.get(key).names.push(pattern.name);
+    }
+    if (pat.breakouts.length && candles.length) {
+      const candle = candles[candles.length - 1];
+      for (const event of pat.breakouts) {
+        const key = `${candle.time}:${event.direction}`;
+        if (!groups.has(key)) groups.set(key, { candle, direction: event.direction, names: [] });
+        groups.get(key).names.push(event.name);
+      }
+    }
+    for (const { candle, direction, names } of groups.values()) {
+      const color = colors[direction] || colors.neutral;
+      points.push({ x: candle.time * 1000, y: direction === "bullish" ? candle.low : direction === "bearish" ? candle.high : candle.close,
+        marker: { size: 5, fillColor: color, strokeColor: "#fff" },
+        label: { text: names.join(" · "), offsetY: direction === "bullish" ? 28 : direction === "neutral" ? -42 : -12,
+          borderColor: color, style: { color: "#fff", background: color, fontSize: "10px" } } });
+    }
+  }
+  return { yaxis, points };
+}
+
+async function renderPatternChart(pat, symbol) {
+  const candles = (pat.candles || []).filter(c => Number.isFinite(c.time) &&
+    [c.open, c.high, c.low, c.close].every(v => Number.isFinite(v) && v > 0)).sort((a, b) => a.time - b.time);
+  if (!candles.length) throw new Error("차트에 표시할 일봉 데이터가 없습니다.");
+  patternChartData = { pat, candles };
+  const prices = candles.flatMap(c => [c.low, c.high]).concat(pat.support_resistance.levels.map(l => l.price));
+  const low = Math.min(...prices), high = Math.max(...prices);
+  const pricePadding = Math.max((high - low) * 0.08, high * 0.005);
+  document.getElementById("pt-chart-card").classList.remove("hidden");
+  document.getElementById("pt-chart-title").textContent = `${symbol} · 지지·저항 및 캔들 패턴 (${pat.as_of} 기준)`;
+  document.getElementById("pt-chart-note").textContent = `패턴은 최근 5봉에 표시합니다. ${pat.patterns.length ? "표시된 패턴의 상세 해설은 아래 표에서 확인하세요." : "최근 5봉에서 뚜렷한 패턴이 없습니다."} 지지·저항은 과거 피벗 가격대이며 향후 반등·돌파를 보장하지 않습니다.`;
+  patternChart = new ApexCharts(document.getElementById("pt-chart"), {
+    chart: { type: "candlestick", height: 440, background: "transparent", animations: { enabled: false }, toolbar: { show: true }, fontFamily: "Pretendard, sans-serif" },
+    series: [{ name: "일봉", data: candles.map(c => ({ x: c.time * 1000, y: [c.open, c.high, c.low, c.close] })) }],
+    annotations: patternAnnotations(pat, candles),
+    xaxis: { type: "datetime", min: candles[0].time * 1000 - 86400000,
+      max: candles[candles.length - 1].time * 1000 + 86400000 * 10, labels: { datetimeUTC: true } },
+    yaxis: { min: Math.max(0, low - pricePadding), max: high + pricePadding,
+      tooltip: { enabled: true }, labels: { formatter: v => fmt(v) } },
+    plotOptions: { candlestick: { colors: { upward: "#089981", downward: "#ef4444" }, wick: { useFillColor: true } } },
+    grid: { borderColor: "#e0e3eb", padding: { left: 12, right: 48, top: 40, bottom: 30 } },
+    tooltip: { theme: "light" },
+  });
+  await patternChart.render();
+}
+
 async function loadPatternAnalysis() {
   const symbol = document.getElementById("pt-symbol").value.trim() || "005930.KS";
+  const run = ++patternRun;
+  const button = document.getElementById("pt-run");
+  clearPatternResults();
+  button.disabled = true;
+  button.textContent = "분석 중…";
   const box = (id, html) => { const el = document.getElementById(id); el.innerHTML = html; el.classList.remove("hidden"); };
   box("pt-mtf", `<div class="text-sm" style="color:var(--text-mute);">분봉·일봉·주봉 데이터 수집 및 계산 중…</div>`);
   try {
-    const [mtf, pat] = await Promise.all([
+    const [mtfResult, patResult] = await Promise.allSettled([
       api(`/api/stocks/mtf-signal?symbol=${encodeURIComponent(symbol)}`),
       api(`/api/stocks/patterns?symbol=${encodeURIComponent(symbol)}`),
     ]);
-    const actCls = mtf.action.includes("매수") ? "badge-buy" : mtf.action.includes("매도") ? "badge-sell" : "badge-hold";
-    box("pt-mtf", `
-      <div class="flex flex-wrap items-center gap-3 mb-3">
-        <h3 class="font-semibold text-sm">📐 멀티타임프레임 종합 신호 — ${escHtml(symbol)}</h3>
-        <span class="${actCls}" style="font-size:14px;">${escHtml(mtf.action)}</span>
-        <span class="text-xs" style="color:var(--text-dim);">종합 점수 ${mtf.composite} · ${tt("신뢰도","타임프레임 방향 일치도(50%) + 점수 크기(50%)","confidence")} <b>${mtf.confidence}%</b> · 방향 일치 ${mtf.agreement}%</span>
-      </div>
-      <table><thead><tr><th>타임프레임</th><th style="text-align:right">가중치</th><th style="text-align:right">점수</th><th style="text-align:right">RSI</th><th style="text-align:right">MA5 / MA20</th><th>근거</th><th>기준 시점</th></tr></thead><tbody>${
-        mtf.timeframes.map(t => t.error ? `<tr><td>${escHtml(t.label)}</td><td colspan="6" class="text-xs" style="color:var(--text-mute)">${escHtml(t.error)}</td></tr>` :
-          `<tr><td>${escHtml(t.label)}</td><td style="text-align:right">${Math.round(t.weight*100)}%</td><td style="text-align:right;font-weight:700;color:${t.score>0?"var(--green)":t.score<0?"var(--red)":"var(--text-mute)"}">${t.score>0?"+":""}${t.score}</td><td style="text-align:right">${t.rsi}</td><td style="text-align:right">${fmt(t.ma5)} / ${fmt(t.ma20)}</td><td class="text-xs" style="color:var(--text-dim)">${t.reasons.map(escHtml).join(" · ")}</td><td class="text-xs" style="color:var(--text-mute)">${escHtml(t.as_of)}</td></tr>`).join("")}</tbody></table>
-      <p class="text-xs mt-2" style="color:var(--text-mute);">${escHtml(mtf.disclaimer)}</p>`);
+    if (run !== patternRun) return;
+    if (patResult.status === "rejected") throw patResult.reason;
+    const pat = patResult.value;
+    await renderPatternChart(pat, symbol);
+    if (run !== patternRun) return;
+    if (mtfResult.status === "fulfilled") {
+      const mtf = mtfResult.value;
+      const actCls = mtf.action.includes("매수") ? "badge-buy" : mtf.action.includes("매도") ? "badge-sell" : "badge-hold";
+      box("pt-mtf", `
+        <div class="flex flex-wrap items-center gap-3 mb-3">
+          <h3 class="font-semibold text-sm">📐 멀티타임프레임 종합 신호 — ${escHtml(symbol)}</h3>
+          <span class="${actCls}" style="font-size:14px;">${escHtml(mtf.action)}</span>
+          <span class="text-xs" style="color:var(--text-dim);">종합 점수 ${mtf.composite} · ${tt("신뢰도","타임프레임 방향 일치도(50%) + 점수 크기(50%)","confidence")} <b>${mtf.confidence}%</b> · 방향 일치 ${mtf.agreement}%</span>
+        </div>
+        <table><thead><tr><th>타임프레임</th><th style="text-align:right">가중치</th><th style="text-align:right">점수</th><th style="text-align:right">RSI</th><th style="text-align:right">MA5 / MA20</th><th>근거</th><th>기준 시점</th></tr></thead><tbody>${
+          mtf.timeframes.map(t => t.error ? `<tr><td>${escHtml(t.label)}</td><td colspan="6" class="text-xs" style="color:var(--text-mute)">${escHtml(t.error)}</td></tr>` :
+            `<tr><td>${escHtml(t.label)}</td><td style="text-align:right">${Math.round(t.weight*100)}%</td><td style="text-align:right;font-weight:700;color:${t.score>0?"var(--green)":t.score<0?"var(--red)":"var(--text-mute)"}">${t.score>0?"+":""}${t.score}</td><td style="text-align:right">${t.rsi}</td><td style="text-align:right">${fmt(t.ma5)} / ${fmt(t.ma20)}</td><td class="text-xs" style="color:var(--text-dim)">${t.reasons.map(escHtml).join(" · ")}</td><td class="text-xs" style="color:var(--text-mute)">${escHtml(t.as_of)}</td></tr>`).join("")}</tbody></table>
+        <p class="text-xs mt-2" style="color:var(--text-mute);">${escHtml(mtf.disclaimer)}</p>`);
+    } else {
+      box("pt-mtf", `<span class="text-sm" style="color:var(--text-mute);">멀티타임프레임 조회 실패: ${escHtml(mtfResult.reason?.message || "데이터를 불러오지 못했습니다.")}</span>`);
+    }
     const dirBadge = (d) => d === "bullish" ? `<span class="badge-buy">상승</span>` : d === "bearish" ? `<span class="badge-sell">하락</span>` : `<span class="badge-hold">중립</span>`;
     box("pt-patterns", `<h3 class="font-semibold text-sm mb-2">🕯️ 캔들 패턴 (최근 5봉) · 패턴 점수 ${pat.pattern_score} (${escHtml(pat.pattern_bias)})</h3>${
       pat.patterns.length ? `<table><thead><tr><th>일자</th><th>패턴</th><th>방향</th><th>해설</th></tr></thead><tbody>${pat.patterns.map(p => `<tr><td class="text-xs">${p.date}${p.bars_ago===0?" <b>(최신)</b>":""}</td><td style="font-weight:600">${escHtml(p.name)}</td><td>${dirBadge(p.direction)}</td><td class="text-xs" style="color:var(--text-dim)">${escHtml(p.description)}</td></tr>`).join("")}</tbody></table>`
@@ -507,8 +600,34 @@ async function loadPatternAnalysis() {
     box("pt-breakouts", `<h3 class="font-semibold text-sm mb-2">🚀 돌파·크로스 이벤트 (${pat.as_of} 기준)</h3>${
       pat.breakouts.length ? `<div class="flex flex-wrap gap-2">${pat.breakouts.map(e => `<div class="rounded-lg p-2 text-xs" style="background:var(--surf2);border:1px solid var(--border);min-width:220px;">${dirBadge(e.direction)} <b>${escHtml(e.name)}</b>${e.confirmed ? ' <span style="color:var(--green)">✔ 확인</span>' : ''}<div style="color:var(--text-dim);margin-top:2px;">${escHtml(e.detail || "")}</div></div>`).join("")}</div>`
       : `<p class="text-sm" style="color:var(--text-mute)">현재 봉에서 돌파·크로스 이벤트가 없습니다.</p>`}`);
-  } catch (e) { box("pt-mtf", `<span class="text-red-500 text-sm">${escHtml(e.message)}</span>`); }
+  } catch (e) {
+    if (run !== patternRun) return;
+    clearPatternResults();
+    box("pt-mtf", `<span class="text-red-500 text-sm">${escHtml(e.message)}</span>`);
+  } finally {
+    if (run === patternRun) {
+      button.disabled = false;
+      button.textContent = "분석 실행";
+    }
+  }
 }
+for (const id of ["pt-show-sr", "pt-show-patterns"]) {
+  document.getElementById(id)?.addEventListener("change", () => {
+    if (patternChart && patternChartData) patternChart.updateOptions({ annotations: patternAnnotations(patternChartData.pat, patternChartData.candles) });
+  });
+}
+function invalidatePatternAnalysis() {
+  ++patternRun;
+  clearPatternResults();
+  document.getElementById("pt-mtf").innerHTML = "";
+  document.getElementById("pt-run").disabled = false;
+  document.getElementById("pt-run").textContent = "분석 실행";
+}
+document.getElementById("pt-symbol")?.addEventListener("change", invalidatePatternAnalysis);
+document.getElementById("pt-symbol")?.addEventListener("input", () => {
+  document.getElementById("pt-selected").textContent = "";
+  invalidatePatternAnalysis();
+});
 document.getElementById("pt-run")?.addEventListener("click", loadPatternAnalysis);
 document.getElementById("pt-symbol")?.addEventListener("keydown", e => { if (e.key === "Enter") loadPatternAnalysis(); });
 // ── 로보 어드바이저: 모의 투자 의사결정 ─────────────────────────────
