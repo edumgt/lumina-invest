@@ -141,7 +141,7 @@ def align_price_to_tick(price: float, side: str) -> int:
 
 
 def make_client_order_id(user_id: str, symbol: str, side: str, now: datetime | None = None) -> str:
-    """멱등키. 10분 사이클 1회 + 쿨다운 전제에서 (사용자, 종목, 방향, 분) 이 유일하다. 최대 64자."""
+    """멱등키. 5분 사이클 1회 + 쿨다운 전제에서 (사용자, 종목, 방향, 분) 이 유일하다. 최대 64자."""
     stamp = (now or datetime.now(KST)).astimezone(KST).strftime("%Y%m%d%H%M")
     uid = str(user_id).replace("-", "")[:12]
     return f"{uid}:{normalize_symbol(symbol)}:{normalize_side(side)[0]}:{stamp}"[:64]

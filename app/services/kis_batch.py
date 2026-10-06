@@ -1,6 +1,6 @@
 """KIS 모의투자(Testbed) 자동매매 — 계정·로그인과 무관한 백그라운드 배치.
 
-celery-beat 의 ``quant.auto_trade_cycle``(10분) 이 매 사이클 :func:`ensure_system_batch` 를 먼저 호출한다.
+celery-beat 의 ``quant.auto_trade_cycle``(5분) 이 매 사이클 :func:`ensure_system_batch` 를 먼저 호출한다.
 ``KIS_PAPER_BATCH_ENABLED=true`` 이면 시스템 사용자(``SYSTEM_USER_ID``) 의 ``BrokerSettings`` 행을
 Testbed 권장값(:data:`kis_quickstart.TESTBED_DEFAULTS`)으로 만들고 ``quant_auto_enabled=True`` 로 켠다.
 그 뒤의 매수·매도·위험관리·게이트웨이 실주문은 사용자 계정과 똑같이 :mod:`auto_trade` 가 처리한다.

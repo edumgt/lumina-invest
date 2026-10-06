@@ -1,8 +1,8 @@
-"""10분 주기 자동매매 Agentic AI - PostgreSQL 기반.
+"""5분 주기 자동매매 Agentic AI - PostgreSQL 기반.
 
 실행 모델
   - 활성 여부는 BrokerSettings.quant_auto_enabled(DB)에 저장한다. 앱 재시작·다중 인스턴스에서도 상태가 유지된다.
-  - 주기 실행은 Celery Beat(`quant.auto_trade_cycle`, 10분)이 활성 사용자 전원에 대해 run_cycle_for_enabled_users()를 돌린다.
+  - 주기 실행은 Celery Beat(`quant.auto_trade_cycle`, 5분)이 활성 사용자 전원에 대해 run_cycle_for_enabled_users()를 돌린다.
   - 시작 시에는 즉시 1회 사이클을 백그라운드로 실행해 화면 반응을 준다(인프로세스 루프는 더 이상 쓰지 않는다).
   - 사이클 로그는 data_cache(`quant:cycle_log:{uid}`)에 최근 50개를 남겨 API 프로세스와 워커가 공유한다.
 """
@@ -37,7 +37,7 @@ _auto_trade_task: asyncio.Task | None = None
 _trade_log: list[dict] = []
 _is_running = False
 _auto_trade_user_id = "quant_system"
-_INTERVAL_SEC = 600
+_INTERVAL_SEC = 300   # celery_app.beat_schedule 과 같게 유지
 _INITIAL_CAPITAL = 10_000_000
 _last_risk: dict = {}          # 마지막 사이클의 위험관리 상태 (status 응답용)
 
@@ -89,7 +89,7 @@ async def get_status(db: AsyncSession, uid: uuid.UUID) -> dict:
     last_risk = next((c.get("risk") for c in reversed(cycles) if c.get("risk")), {})
     return {
         "running":      enabled,
-        "scheduler":    "celery-beat (10분)",
+        "scheduler":    "celery-beat (5분)",
         "user_id":      str(uid),
         "interval_sec": _INTERVAL_SEC,
         "risk":         last_risk,

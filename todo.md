@@ -601,3 +601,23 @@ ssh -i lumina-invest/fd.edumgt.co.kr.pem ubuntu@43.201.229.188 "cd /home/ubuntu/
 **LEAN(4 저장소 공통 점검 결과)**: 모두 `quantconnect/lean:latest` 를 각자 Docker-outside-of-Docker 로 실행(공용 LEAN 서비스 아님). lumina 는 `lean_backtest.py`+`lean_remote.py`, domain-rag-lab/stock-kms-portal 은 `lean_backtest_service.py`(포크, 25줄 차이), stock-coin-trade 는 `docker/lean/Dockerfile`. 태그가 latest 라 서버별 버전이 다를 수 있음 → L5/R1(일원화)·태그 고정 결정과 함께 처리.
 
 **다음 작업(사용자)**: 6-9 "운영 적용" 1~5. 특히 배치 전환 시 tester 행 OFF(중복 주문 방지).
+
+### 6-10. 2026-10-06 유니버스 3섹터 31종목 조정 + 자동매매 5분 주기 (사용자 요청)
+
+| 변경 | 내용 |
+|------|------|
+| `app/services/stock.py` `QUANT_STOCKS` | 20종목(자동차·배터리·바이오·금융 포함) → **반도체 12 · IT 10 · K뷰티 9 = 31종목**. `QUANT_SECTORS` 상수 추가. 코스닥은 `.KQ`(리노공업·이오테크닉스·HPSP·원익IPS·주성·솔브레인·더존비즈온·카카오게임즈·펄어비스·실리콘투·클리오·브이티·코스메카코리아). 31종목 모두 Yahoo 차트 API 로 시세 조회 확인(2026-10-06). 제외: 현대차·기아·LG화학·삼성SDI·LG엔솔·S-Oil·삼성바이오·셀트리온·KB·신한·삼성전기·넷마블 |
+| `app/celery_app.py` | `quant-auto-trade-10min`(600s) → `quant-auto-trade-5min`(300s, expires 270) |
+| `app/tasks/sync_tasks.py` | `quant.auto_trade_cycle` time_limit 540 → **280**(주기 안에 종료, 겹침 방지) |
+| `auto_trade.py`·`kis_quickstart.py`·`kis_batch.py`·`routes/stocks.py`·`notification.py`·`models/trading.py`·`gateway` 주석 | `_INTERVAL_SEC=300`, `interval_min=5`, 문구 "10분"→"5분" |
+| `public/js/dashboard.js`·`core.js` | 안내 문구 5분 |
+| `tests/test_universe_and_schedule.py` 신설(6) | 3섹터·28~35종목·섹터당 ≥8, 심볼 유일·`\d{6}.(KS|KQ)`·게이트웨이 6자리 변환, 핵심 종목 포함, beat 300s/expires<300/`_INTERVAL_SEC`, time_limit<300, quickstart interval 5 |
+
+**검증**: pytest 173 passed. `grep 10분` 잔여는 fx 캐시·변경 이력 주석만.
+
+**영향·주의**
+- 운영 계정(tester)의 `quant_selected_symbols=[005930.KS, 035720.KS]` 는 모두 새 유니버스에 있어 그대로 동작. 기존 가상 QUANT 장부에 제외 종목 보유가 있다면 `stock_map` 에 없어 매도 시그널 평가 대상에서 빠진다(현재 삼성전자 1주만 있어 영향 없음).
+- 5분 주기여도 **쿨다운 30분·일 주문 10건** 한도는 그대로라 같은 종목 재주문은 30분에 1회. 주문 빈도를 올리려면 종목 선정 화면에서 쿨다운·일 주문 수 조정(L1 재결정).
+- 5분 사이클이 31종목 지표를 계산하므로 캔들 캐시(6h) 미스 시 첫 사이클이 길어질 수 있음 → time_limit 280 초과 시 해당 사이클만 중단되고 다음 주기에 재시도. 운영 로그에서 `자동매매 사이클 실패`·`TimeLimitExceeded` 확인 권장.
+- 체결 확인 `quant.confirm_fills` 는 2분 그대로.
+- 배포는 push → `deploy.yml` 자동. celery-beat 재기동으로 새 스케줄 적용.

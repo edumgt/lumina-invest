@@ -820,7 +820,7 @@ async def start_auto_trade(user=Depends(get_current_user), db: AsyncSession = De
     if row and row.risk_kill_switch:
         raise HTTPException(409, f"비상 정지 상태입니다. 해제 후 시작하세요. (사유: {row.risk_halt_reason or '수동 정지'})")
     started = await auto_trade.start_auto_trade(db, user["id"])
-    return {"ok": True, "started": started, "scheduler": "celery-beat (10분)"}
+    return {"ok": True, "started": started, "scheduler": "celery-beat (5분)"}
 
 
 @router.post("/auto-trade/stop")

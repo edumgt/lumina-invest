@@ -10,7 +10,7 @@ from app.models.base import Base, CreatedAtMixin, UpdatedAtMixin, UUIDPkMixin
 
 
 PORTFOLIO_BOOK_PAPER = "PAPER"   # 모의투자·직접매매(WEB)·리밸런싱·TradingView 가 공유하는 모의계좌 장부
-PORTFOLIO_BOOK_QUANT = "QUANT"   # 10분 자동매매 가상계좌 장부 (QuantVirtualAccount 현금과 짝)
+PORTFOLIO_BOOK_QUANT = "QUANT"   # 5분 자동매매 가상계좌 장부 (QuantVirtualAccount 현금과 짝)
 
 
 class Portfolio(Base, UUIDPkMixin, UpdatedAtMixin):

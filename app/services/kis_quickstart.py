@@ -138,5 +138,5 @@ async def start(db: AsyncSession, user_id: str) -> dict:
             "per_trade_budget": TESTBED_DEFAULTS["quant_per_trade_budget"],
             "risk": {"daily_loss_limit_pct": 3.0, "max_position_pct": 20.0, "max_orders_per_day": 10, "cooldown_min": 30},
         },
-        "interval_min": 10,
+        "interval_min": 5,
     }

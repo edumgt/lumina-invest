@@ -81,9 +81,9 @@ def rebalance_check_triggers() -> dict:
     return result
 
 
-@celery_app.task(name="quant.auto_trade_cycle", time_limit=540)
+@celery_app.task(name="quant.auto_trade_cycle", time_limit=280)
 def quant_auto_trade_cycle() -> dict:
-    """자동매매 활성 사용자 전원의 10분 사이클 (Celery Beat)."""
+    """자동매매 활성 사용자 전원의 5분 사이클 (Celery Beat). time_limit 은 주기(300초) 안에 끝나도록 280초."""
 
     async def _async() -> dict:
         from app.database.postgres import connect_postgres, close_postgres

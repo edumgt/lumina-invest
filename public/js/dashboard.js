@@ -111,14 +111,14 @@ async function loadKisQuickstart() {
     const st = await api('/api/quant/kis/quickstart');
     const link = st.connected ? `<span class="badge-buy">연동됨</span> ${escHtml(st.route_detail || '')}` : `<span class="badge-sell">미연동</span> ${escHtml(st.route_detail || '')}`;
     const sb = st.system_batch || {};
-    // 계정·로그인 무관 백그라운드 배치(KIS_PAPER_BATCH_ENABLED). 켜져 있으면 버튼과 별개로 서버가 10분마다 돈다.
+    // 계정·로그인 무관 백그라운드 배치(KIS_PAPER_BATCH_ENABLED). 켜져 있으면 버튼과 별개로 서버가 5분마다 돈다.
     const batchNote = sb.enabled
       ? (sb.running ? ` · <span class="badge-buy">백그라운드 배치 실행 중</span> (서버 설정, 로그인 무관)`
                     : ` · <span class="badge-sell">백그라운드 배치 대기</span>${sb.kill_switch ? ' (비상 정지: ' + escHtml(sb.kill_reason || '') + ')' : ''}`)
       : '';
     if (st.already_started) {
       btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-check"></i> KIS 모의투자 실행 중';
-      el.innerHTML = `${link} · 자동매매 <b>실행 중</b> (live · KIS · 10분 주기)${batchNote}. <a href="#quant-auto" class="underline">자동매매 현황</a>`;
+      el.innerHTML = `${link} · 자동매매 <b>실행 중</b> (live · KIS · 5분 주기)${batchNote}. <a href="#quant-auto" class="underline">자동매매 현황</a>`;
     } else if (st.ready) {
       btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-play"></i> KIS 모의투자 시작';
       const d = st.defaults || {};
@@ -136,12 +136,12 @@ async function loadKisQuickstart() {
 document.getElementById('overview-kis-start')?.addEventListener('click', async () => {
   const btn = document.getElementById('overview-kis-start');
   const el = document.getElementById('overview-kis-status');
-  if (!confirm('KIS 모의투자(Testbed)를 시작합니다.\nAI 추천 종목으로 10분마다 시그널을 평가하고, 매수/매도 시 한국투자증권 모의투자 계좌에 실제 주문이 나갑니다.\n\n계속하시겠습니까?')) return;
+  if (!confirm('KIS 모의투자(Testbed)를 시작합니다.\nAI 추천 종목으로 5분마다 시그널을 평가하고, 매수/매도 시 한국투자증권 모의투자 계좌에 실제 주문이 나갑니다.\n\n계속하시겠습니까?')) return;
   btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 시작 중…';
   try {
     const r = await api('/api/quant/kis/quickstart', { method: 'POST' });
     setToast(r.started ? 'KIS 모의투자 자동매매를 시작했습니다. 첫 사이클을 실행합니다.' : '이미 자동매매가 켜져 있어 설정만 KIS 모의투자로 갱신했습니다.', 'ok');
-    if (el) el.innerHTML = `<span class="badge-buy">시작됨</span> ${escHtml(r.route_detail || '')} · 첫 사이클 실행 중, 이후 ${r.interval_min || 10}분마다 반복. <a href="#quant-auto" class="underline">자동매매 현황</a>`;
+    if (el) el.innerHTML = `<span class="badge-buy">시작됨</span> ${escHtml(r.route_detail || '')} · 첫 사이클 실행 중, 이후 ${r.interval_min || 5}분마다 반복. <a href="#quant-auto" class="underline">자동매매 현황</a>`;
   } catch (e) {
     setToast(e.message, 'error');
     if (el) el.textContent = '시작 실패: ' + e.message;
