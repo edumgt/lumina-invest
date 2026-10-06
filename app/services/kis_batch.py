@@ -45,7 +45,7 @@ async def _row(db: AsyncSession) -> BrokerSettings | None:
 
 
 def _is_batch_row(row: BrokerSettings | None) -> bool:
-    return bool(row and row.broker == "kis" and row.quant_mode == "live")
+    return bool(row and getattr(row, "broker", "") == "kis" and getattr(row, "quant_mode", "") == "live")
 
 
 async def _other_live_kis_rows(db: AsyncSession) -> list[BrokerSettings]:
@@ -77,14 +77,21 @@ async def _enforce_exclusive(db: AsyncSession) -> list[str]:
 
 
 async def system_status(db: AsyncSession) -> dict:
-    """대시보드·헬스 표시용(읽기 전용)."""
-    row = await _row(db)
+    """대시보드·상태 표시용(읽기 전용). 조회 실패는 '미실행' 으로 취급해 호출 화면을 막지 않는다."""
+    try:
+        row = await _row(db)
+    except Exception as exc:  # 화면 보조 정보라 실패해도 본 응답은 살린다
+        logger.warning("kis_batch.system_status 조회 실패: %s", exc)
+        row = None
+    # 시스템 사용자 행만 배치 행이다 (가짜 세션이 다른 사용자 행을 돌려줄 수 있으므로 user_id 도 확인)
+    if row is not None and getattr(row, "user_id", SYSTEM_USER_ID) != SYSTEM_USER_ID:
+        row = None
     return {
         "enabled": is_configured(),
-        "running": bool(row and row.quant_auto_enabled and _is_batch_row(row)),
-        "kill_switch": bool(row and row.risk_kill_switch),
-        "kill_reason": (row.risk_halt_reason if row else "") or "",
-        "symbol_source": (row.quant_symbol_source if row else ("manual" if configured_symbols() else "ai")),
+        "running": bool(row and getattr(row, "quant_auto_enabled", False) and _is_batch_row(row)),
+        "kill_switch": bool(row and getattr(row, "risk_kill_switch", False)),
+        "kill_reason": (getattr(row, "risk_halt_reason", "") if row else "") or "",
+        "symbol_source": (getattr(row, "quant_symbol_source", "ai") if row else ("manual" if configured_symbols() else "ai")),
         "user_id": str(SYSTEM_USER_ID),
     }
 

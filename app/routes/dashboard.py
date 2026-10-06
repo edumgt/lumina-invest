@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.database.postgres import get_pg_session
 from app.lib.session import get_current_user
+from app.models.base import SYSTEM_USER_ID
 from app.models import BrokerSettings, LiveOrder, Portfolio, QuantVirtualAccount, PORTFOLIO_BOOK_QUANT, LIVE_ORDER_OPEN_STATUSES
 from app.services import kis_credentials, paper_trading
 from app.services.brokers import stock_coin_trade_gateway as gateway
@@ -47,8 +48,14 @@ async def kis_tab(db: AsyncSession, uid: uuid.UUID) -> dict:
     """KIS 모의투자(Testbed) 계좌 — 게이트웨이(stock-coin-trade) 우선, 없으면 서버 관리 자격증명으로 직접 조회."""
     tab = _tab("kis", "KIS 모의투자", "한국투자증권 Testbed", link="#settings")
     row = (await db.execute(select(BrokerSettings).where(BrokerSettings.user_id == uid))).scalar_one_or_none()
-    open_orders = (await db.execute(select(LiveOrder).where(LiveOrder.user_id == uid, LiveOrder.status.in_(LIVE_ORDER_OPEN_STATUSES)))).scalars().all()
-    tab["auto_trade_running"] = bool(row and row.quant_auto_enabled and row.quant_mode == "live" and (row.broker or "") == "kis")
+    from app.services import kis_batch
+    batch = await kis_batch.system_status(db)
+    owners = [uid, SYSTEM_USER_ID] if batch.get("running") else [uid]
+    open_orders = (await db.execute(select(LiveOrder).where(LiveOrder.user_id.in_(owners), LiveOrder.status.in_(LIVE_ORDER_OPEN_STATUSES)))).scalars().all()
+    me_running = bool(row and row.quant_auto_enabled and row.quant_mode == "live" and (row.broker or "") == "kis")
+    tab["auto_trade_running"] = me_running or bool(batch.get("running"))
+    tab["batch_running"] = bool(batch.get("running"))
+    tab["me_running"] = me_running
     tab["open_live_orders"] = len(open_orders)
     if gateway.is_configured():
         tab["route"] = "stock-coin-trade"

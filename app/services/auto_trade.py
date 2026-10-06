@@ -1015,6 +1015,10 @@ async def run_cycle_for_enabled_users() -> dict:
         except Exception as exc:  # 배치 점검 실패가 사용자 계정 사이클을 막으면 안 된다
             logger.exception("KIS 모의투자 배치 점검 실패: %s", exc)
             batch = {"enabled": kis_batch.is_configured(), "running": False, "error": str(exc)}
+            try:
+                await db.rollback()   # 실패한 트랜잭션을 정리하지 않으면 아래 select 가 PendingRollbackError 로 전체 사이클을 막는다
+            except Exception:
+                pass
         uids = (await db.execute(select(BrokerSettings.user_id).where(BrokerSettings.quant_auto_enabled.is_(True)))).scalars().all()
     ran, failed = 0, 0
     for uid in uids:

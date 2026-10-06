@@ -649,3 +649,23 @@ ssh -i lumina-invest/fd.edumgt.co.kr.pem ubuntu@43.201.229.188 "cd /home/ubuntu/
 - tester 계정의 kis·live 자동매매는 배치 단독 실행으로 **자동 OFF** 된다. 계정 기준으로 돌리고 싶으면 `.env KIS_PAPER_BATCH_EXCLUSIVE=false`.
 
 **검증(배포 후)**: `curl https://fd.edumgt.co.kr/api/health` → `quant.aggressive_mode=true, kis_paper_batch=true`. 거래 발생은 다음 5분 사이클부터(장중 09:00~15:30 KST). 서버 로그 `KIS 모의투자 배치 ON`, `공격 모드 매수`, `live_orders` 증가로 확인.
+
+### 6-12. 2026-10-06 배치 거래가 화면에 보이지 않던 문제 + 사이클 견고성 (사용자 "여전히 거래 이력이 없음")
+
+**진단**: 공격 모드·배치는 02:26Z 배포로 활성(`/api/health` quant 블록 확인). 그러나 대시보드 「자동매매 현황」·「실주문 현황」·KIS 탭은 **로그인 사용자 기준** 조회라, 배치 단독 실행으로 tester 행이 꺼진 뒤에는 시스템 사용자(`00000000-…-0001`)로 쌓이는 사이클·주문이 화면에 전혀 보이지 않았다. 서버 로그/DB 는 에이전트가 볼 수 없어(정책) 실제 주문 발생 여부는 아래 "확인" 으로 사용자가 봐야 한다. 요구 재확인: **로그인 사용자가 없어도 백엔드 배치(celery-beat)가 KIS 모의투자를 진행**한다 — 화면은 확인용.
+
+| 변경 | 내용 |
+|------|------|
+| `routes/stocks.py` `/quant/auto/status` | 배치 실행 중이면 시스템 사용자 사이클을 합쳐 반환(`[배치] ` 접두). 공격 모드 notes(`[공격 모드] …`), 위험관리 생략 사유(`[위험관리 생략] …`), 실주문 상태(`· 실주문 submitted/skipped(market_closed)`)도 로그로 노출. 응답에 `me_running`, `batch` 추가, 시간순 정렬 |
+| `routes/stocks.py` `/quant/live-orders` | 배치 실행 중이면 시스템 사용자 주문 포함, 각 행 `owner: me|batch` |
+| `routes/dashboard.py` KIS 탭 | `auto_trade_running = 내 행 or 배치`, `batch_running`·`me_running` 추가, 미체결 수에 배치 주문 포함 |
+| `services/kis_batch.py` `system_status` | 조회 실패·가짜 행·타 사용자 행에 방어적(getattr, user_id 검사) — 보조 정보가 본 응답을 막지 않게 |
+| `services/auto_trade.py` `run_cycle_for_enabled_users` | 배치 점검 예외 시 `db.rollback()` — 실패한 트랜잭션이 남으면 뒤의 select 가 PendingRollbackError 로 **모든 사용자 사이클을 막는** 결함 보강 |
+| 테스트 | `tests/test_auto_status_batch_merge.py` 3건(합산·배치 OFF·live-orders owner). 전체 **195 passed** |
+
+**시도했으나 철회**: 로그인 없이 보는 공개 진단 엔드포인트(`/api/health/quant`, 사이클·주문 로그 노출)는 거래 내역 외부 노출이라 추가하지 않음. 상태 확인은 로그인 화면(위 라우트) 또는 서버 로그/DB 로.
+
+**확인(사용자)**: 배포 후 대시보드 로그인 → 「자동매매 현황」에 `[배치]` 항목이 5분마다 늘어나는지. 항목이 있는데 실주문이 `skipped(market_closed)` 면 장외, `[위험관리 생략]` 이면 한도, 시그널만 있고 거래 0 이면 `aggressive` 계획 결과(가격 없음=분봉 미수신). `[배치]` 항목 자체가 없으면 celery 로그의 `Traceback` 확인:
+```bash
+ssh -i lumina-invest/fd.edumgt.co.kr.pem ubuntu@43.201.229.188 "sudo docker logs --since 30m fin-ai-celery-worker 2>&1 | grep -E 'auto_trade_cycle|Traceback|Error' | tail -30"
+```
