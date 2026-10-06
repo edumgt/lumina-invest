@@ -402,6 +402,7 @@ cd /home/ubuntu/lumina-invest && .venv/bin/python -m pytest tests/test_spec_rule
 | L16 | (2026-10-06) 공격 모드 파라미터 | 익절 1.5%/손절 1.0%/사이클 매수 2·매도 3/강제 로테이션 매수 ON/시장가. 6-11 참고 | 1~2일 체결 로그 보고 TP/SL·강제 매수 조정 |
 | L17 | (2026-10-06) celery-beat 정지 근본 원인 | 6-13. heartbeat/autoheal 로 자동 복구는 되지만 원인 로그가 없다. 재발 시 beat 로그·RestartCount 수집 | 재발 2회 이상이면 beat 를 worker 내장(`-B`) 또는 RedBeat 스케줄러로 교체 검토 |
 | L18 | (2026-10-06) 노출 점검 후속 | 6-14 권고 ①~④ 중 어느 것을 적용할지. docs 비공개는 개발 편의↓, .env 추적 해제는 이력 정리(필요 시 git filter-repo) 동반 | ①②③ 적용, 비번·시크릿 교체 |
+| L19 | (2026-10-06) 정합성 불일치 시 자동 조치 범위 | 현재는 검출·알림만. 선택: phantom 가상 체결 자동 되돌리기 / 가상 장부를 KIS 보유로 동기화 / 불일치 N건 이상이면 배치 자동 정지 | 1주 관찰 후 '불일치 3건 이상이면 배치 정지' 부터 도입 |
 | L15 | (2026-10-06) 비상 정지 후 배치 재가동 주체 | 사람이 kill switch 해제(현재) vs 다음 영업일 자동 재가동 | 손실 반복 위험으로 수동 유지 |
 | L13 | 운영 계정에 LEAN 합격 전략 적용 시점 | pr(domain-rag-lab) 합격 전략 0건. 전략 선택 전까지 매수·매도 모두 기술지표 규칙만 사용(ML·LEAN 미적용) | domain-rag-lab 에서 ma_cross/momentum 백테스트 → export 후 종목 선정 화면에서 선택 |
 
@@ -725,3 +726,30 @@ sudo docker exec fin-ai-postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_D
 | 테스트 | +4(재전송 duplicate 확정, 창 초과 LOST, 장외 대기, 주문 호출 45초) → **203 passed** |
 
 **02:51 주문의 실제 결과 확인(사용자)**: 배포 후 다음 confirm_fills(2분) 가 재전송을 시도하지만 이미 10분이 지나 **LOST** 로 종료된다. 실제 체결 여부는 KIS 앱 또는 st 서버 `kis_autotrade_order` 에서 `client_order_id` 로 확인. 체결됐다면 Testbed 계좌에 브이티 23주가 있고, lumina 가상 장부에도 23주가 있으므로 익절/손절 매도 대상이 된다(가상·실계좌 수량 일치). 체결 안 됐다면 가상 장부만 23주 → 매도 시그널 시 실매도가 KIS 에서 잔고 부족으로 거부될 수 있음(st 가 거부 → ERROR 기록, 사이클은 계속).
+
+### 6-16. 2026-10-06 시세 KIS 연계 + 로그·실거래 정합성 점검 모듈 (사용자 요청 2건)
+
+**서버 진단(사용자, 03:1x UTC)**: 시스템 행 ON·kill switch OFF. 사이클 02:32/02:37/02:42/02:51/03:02 — 간격 불규칙은 잦은 배포로 beat 가 재시작된 탓. 매 사이클 시그널 5·거래 2(가상 체결)인데 **live_orders 는 2건만**(02:43 원익IPS FILLED, 02:51 브이티 UNKNOWN) → 가상 체결 뒤 실주문 단계가 대부분 비어 있음. trades 의 `live_order` 상세(D 쿼리)는 미확인 — 아래 정합성 모듈이 이 유형(phantom_trade)을 자동 검출한다.
+
+**① 시세 KIS 연계** — `app/services/kis_market_data.py` 신설
+| 항목 | 내용 |
+|------|------|
+| 소스 | st `GET /api/kis-chart/minutes?symbol=&count<=240&time=HHMMSS`(1분봉, 실시간 — 12:12 KST 조회 시 12:12 봉까지 확인), `GET /api/kis-chart/candles?period=D&count<=300`(일봉), `summary.price`(현재가). 공개 엔드포인트지만 API 키 헤더 동봉 |
+| 분봉 | 1분봉 240개 → 5분봉 48개로 집계(`aggregate`). `time` 은 KST 현재시각을 정규장(090000~153000)으로 클램프. 장 전엔 st 가 전 영업일 봉을 오늘 날짜로 라벨링하므로 장중만 신뢰(장외는 주문 자체가 생략됨) |
+| 적용 | `aggressive_mode.get_intraday_indicators`: KIS 우선, 실패·빈 응답이면 Yahoo 폴백(`MARKET_DATA_FALLBACK_YAHOO`). `current_price` 는 KIS 현재가. `stock.get_candles`(국내·일봉)·`stock.get_quote`(국내)도 KIS 우선 + Yahoo 폴백, 캐시 키 `candles:kis:…` 분리 |
+| 설정 | `MARKET_DATA_SOURCE=kis`(기본), `MARKET_DATA_FALLBACK_YAHOO`, `KIS_CHART_TIMEOUT`, `KIS_CHART_MINUTES` |
+| 유지 | 펀더멘털·지수·환율·해외 종목은 Yahoo 그대로 |
+
+**② 정합성 점검 모듈** — `app/services/reconciliation.py` 신설, beat `quant.reconcile`(10분)
+| 점검 | 의미 |
+|------|------|
+| `kis_position_mismatch` | KIS 실제 보유 != 기준선 + 봇 실주문 체결 순수량 → 봇이 모르는 체결·취소·수동 거래 |
+| `virtual_vs_live_mismatch` | 가상 장부 != 봇 체결 순수량 → 가상만 체결(phantom) 또는 미추적 체결 |
+| `phantom_trade` | 사이클 로그에 가상 filled 인데 `live_order` 없음/skipped/error |
+| `stale_open_order` | 열린 실주문이 30분 초과 |
+| `unresolved_order` | 당일 LOST/ERROR/UNKNOWN |
+| `slippage` | 가상 체결가 대비 실체결가 괴리 > 1% |
+- **기준선**: 첫 점검 때 "현재 KIS 보유 − 봇 체결 순수량" 을 `quant:reconcile:baseline:<uid>:<env>`(data_cache)에 저장. 수동 거래 뒤 재설정은 그 키 삭제. 결과는 `quant:reconcile:latest:<uid>`, `/api/quant/auto/status` 의 `reconcile` + 로그 `[정합성] …` 로 화면 표시. 불일치 집합이 바뀔 때만 알림(dispatch) 1회.
+- 테스트: `test_kis_market_data.py` 12건, `test_reconciliation.py` 7건, 기존 공격모드 테스트는 Yahoo 경로 고정. 전체 **222 passed**. 코드 커밋 8ed5f3c, 문서는 이 커밋.
+
+**예상 효과**: "가상 2건/실주문 <=1건" 패턴은 다음 점검에서 `phantom_trade`·`virtual_vs_live_mismatch` 로 집계되어 화면·알림에 뜬다. 원인(실주문 함수 미호출 vs 게이트웨이 거부)은 그 `live_status`/`live_reason` 로 갈린다.
