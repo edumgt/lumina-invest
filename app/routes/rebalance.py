@@ -42,6 +42,7 @@ class PlanBody(BaseModel):
     cashflow_min_amount: float | None = None
     auto_execute: bool | None = None
     min_order_amount: float | None = None
+    account_source: str | None = Field(None, description="paper(내부 모의계좌) | kis(KIS 모의투자 Testbed)")
 
 
 class CashflowBody(BaseModel):
@@ -60,24 +61,27 @@ class ExecuteBody(BaseModel):
 async def get_plan(user=Depends(get_current_user_any), db: AsyncSession = Depends(get_pg_session)):
     plan = await rb.get_plan(db, _uid(user))
     await db.commit()
-    return rb.plan_to_dict(plan)
+    return {**rb.plan_to_dict(plan), "account_source": await rb.get_account_source(_uid(user))}
 
 
 @router.put("/plan")
 async def update_plan(body: PlanBody, user=Depends(get_current_user_any), db: AsyncSession = Depends(get_pg_session)):
     plan = await rb.get_plan(db, _uid(user))
     data = body.model_dump(exclude_none=True)
+    source_req = data.pop("account_source", None)
     try:
         if "targets" in data:
             data["targets"] = await rb.resolve_targets(data["targets"])
         rb.apply_plan_update(plan, data)
+        if source_req is not None:
+            await rb.set_account_source(_uid(user), source_req)
     except (rb.RebalanceError, ValueError) as exc:
         await db.rollback()
         raise HTTPException(400, str(exc))
     await db.commit()
     await db.refresh(plan)  # onupdate(updated_at) 서버 생성값 재로딩 (async lazy-load 방지)
-    await audit(user["id"], user.get("client_id", ""), "rebalance.plan.update", {"fields": list(data.keys())})
-    return rb.plan_to_dict(plan)
+    await audit(user["id"], user.get("client_id", ""), "rebalance.plan.update", {"fields": list(data.keys()) + (["account_source"] if source_req else [])})
+    return {**rb.plan_to_dict(plan), "account_source": await rb.get_account_source(_uid(user))}
 
 
 @router.get("/status")
@@ -85,11 +89,15 @@ async def status(user=Depends(get_current_user_any), db: AsyncSession = Depends(
     """현재 비중·목표 비중·이탈률 + 트리거 상태."""
     uid = _uid(user)
     plan = await rb.get_plan(db, uid)
-    snap = await rb.snapshot(db, uid, plan)
+    source = await rb.get_account_source(uid)
+    try:
+        snap = await rb.snapshot(db, uid, plan, source)
+    except rb.RebalanceError as exc:
+        raise HTTPException(400, str(exc))
     await db.commit()
     from datetime import datetime, timezone
     time_due = bool(plan.time_period != "none" and plan.next_run_at and plan.next_run_at <= datetime.now(timezone.utc))
-    return {"plan": rb.plan_to_dict(plan), "snapshot": snap,
+    return {"plan": {**rb.plan_to_dict(plan), "account_source": source}, "snapshot": snap,
             "triggers": {"time_due": time_due, "drift_due": snap["drift_exceeded"]}}
 
 

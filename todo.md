@@ -403,6 +403,7 @@ cd /home/ubuntu/lumina-invest && .venv/bin/python -m pytest tests/test_spec_rule
 | L17 | (2026-10-06) celery-beat 정지 근본 원인 | 6-13. heartbeat/autoheal 로 자동 복구는 되지만 원인 로그가 없다. 재발 시 beat 로그·RestartCount 수집 | 재발 2회 이상이면 beat 를 worker 내장(`-B`) 또는 RedBeat 스케줄러로 교체 검토 |
 | L18 | (2026-10-06) 노출 점검 후속 | 6-14 권고 ①~④ 중 어느 것을 적용할지. docs 비공개는 개발 편의↓, .env 추적 해제는 이력 정리(필요 시 git filter-repo) 동반 | ①②③ 적용, 비번·시크릿 교체 |
 | L19 | (2026-10-06) 정합성 불일치 시 자동 조치 범위 | 현재는 검출·알림만. 선택: phantom 가상 체결 자동 되돌리기 / 가상 장부를 KIS 보유로 동기화 / 불일치 N건 이상이면 배치 자동 정지 | 1주 관찰 후 '불일치 3건 이상이면 배치 정지' 부터 도입 |
+| L20 | (2026-10-06) 섹터 리밸런싱에서 유니버스 밖 기존 보유(기타 섹터) 처리 | 현재: 목표 0 → 전량 매도 후보. 선택: 종목 목표로 고정 / '기타' 섹터 목표 허용 / 리밸런싱 대상에서 제외 옵션 | 1주 관찰 동안은 제외 옵션 추가 전까지 종목 목표로 고정 권고 |
 | L15 | (2026-10-06) 비상 정지 후 배치 재가동 주체 | 사람이 kill switch 해제(현재) vs 다음 영업일 자동 재가동 | 손실 반복 위험으로 수동 유지 |
 | L13 | 운영 계정에 LEAN 합격 전략 적용 시점 | pr(domain-rag-lab) 합격 전략 0건. 전략 선택 전까지 매수·매도 모두 기술지표 규칙만 사용(ML·LEAN 미적용) | domain-rag-lab 에서 ma_cross/momentum 백테스트 → export 후 종목 선정 화면에서 선택 |
 
@@ -767,3 +768,19 @@ sudo docker exec fin-ai-postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_D
 | 테스트 | `tests/test_kis_monitor_route.py` 3건(실현손익 평균단가법, 전체 조립, 게이트웨이 없음). 전체 **225 passed** |
 
 **확인**: 배포 후 로그인 → 로보 어드바이저 > KIS 모의투자결과. 실주문 표의 02:43 원익IPS FILLED·02:51 브이티 LOST, 사이클 이력의 거래별 "실주문 없음/error(사유)" 가 지금 겪는 "가상 2건/실주문 ≤1건" 원인을 바로 보여준다.
+
+### 6-18. 2026-10-06 리밸런싱 엔진 → KIS 투자 종목별·섹터별 리밸런싱 (사용자 요청 2건)
+
+**요구 변화**: ① "KIS 모의투자 DB 를 이용" → ② "모의계좌(현금+주식)를 목표 비중으로 되돌리는 것이 아니라 **KIS 투자 종목별, 섹터별 리밸런싱**".
+
+| 변경 | 내용 |
+|------|------|
+| 계좌 소스 `account_source`(사용자별, data_cache `rebalance:source:<uid>`) | `kis`(기본 — 게이트웨이 설정 시) / `paper`. kis: 현금·보유 = st 게이트웨이 KIS Testbed 잔고, 미보유 목표 시세 = `stock.get_quote`(KIS 우선), 실행 = `auto_trade._place_live_order_via_gateway`(live_orders 추적, 공격모드면 시장가, 장외 skipped). RebalanceRun.orders 에 `live_order{order_no,client_order_id,…}`, note `[kis]` 접두. 스키마 변경 없음 |
+| **섹터 목표** `targets` 항목 `symbol="SECTOR:반도체"` | 1차 배분 = 섹터 비중(반도체·IT·K뷰티, 합 ≤ 100, 나머지 현금). 섹터 안: 명시 종목 목표 먼저, 잔여 R 을 그 섹터의 **보유 종목에 균등**(미보유 섹터는 유니버스 상위 2종목으로 채움, `SECTOR_FILL_CANDIDATES`). 검증: 섹터 내 종목 합 ≤ 섹터 목표, 섹터 이름은 `QUANT_SECTORS` |
+| `snapshot()` | `sectors[]`(섹터별 평가액·현재/목표 비중·이탈·종목·explicit), 행에 `sector`·`target_derived`. 최대 이탈은 종목·섹터·현금 중 최대 → DRIFT 트리거가 섹터 이탈에도 반응. 유니버스 밖 보유는 `기타`(목표 0 → 플랜 외 전량 매도 후보) |
+| `execute()` | before/target/after 가중치에 `SECTOR:*` 포함 |
+| 라우트 | `PUT /plan.account_source`, `GET /plan`·`/status` 에 `account_source`·`sector_targets`·`symbol_targets`. `resolve_targets` 는 SECTOR 항목 통과 |
+| 화면(`robo-rebalance`) | 「리밸런싱 대상 계좌」 선택(KIS/내부), **섹터 목표 입력 3칸**, 종목 목표는 "섹터 안 고정"(선택), 「보유 비중 불러오기」는 섹터 비중으로 복사, 현황에 **섹터별 비중 표** + 종목 표(섹터·"(섹터 배분)" 표시), KIS 실행 확인문·소스 배지 |
+| 테스트 | `tests/test_rebalance_kis.py` 10건(소스 기본/검증, KIS 스냅샷·심볼 매핑, KIS 시세 제안, 게이트웨이 실행 submitted/skipped/failed, 섹터 파싱·검증, 섹터→종목 배분, 섹터 집계, 섹터 가중치 기록). 전체 **238 passed** |
+
+**사용법**: 리밸런싱 엔진 → 대상 계좌 KIS → 섹터 비중 입력(예: 반도체 40 / IT 35 / K뷰티 20, 현금 5) → 저장 → 「주문 제안」 → 「실행」(장중). 기존 보유 중 유니버스 밖 종목(KR모터스·POSCO 등)은 `기타` 섹터로 묶여 **플랜 외 전량 매도 후보**가 되므로, 팔고 싶지 않으면 종목 목표를 따로 넣어 비중을 고정할 것(7절 L20).

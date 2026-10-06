@@ -1,5 +1,11 @@
 """리밸런싱 엔진 — 모의투자 계좌(현금 + 주식 포지션)를 목표 비중으로 되돌린다.
 
+계좌 소스(account_source, 사용자별, data_cache `rebalance:source:<uid>`)
+  paper : lumina 내부 모의계좌(paper_trading) — 기본
+  kis   : **KIS 모의투자(Testbed) 계좌** — 현금·보유는 stock-coin-trade 게이트웨이 잔고, 시세는 KIS(stock.get_quote),
+          체결은 게이트웨이 실주문(live_orders 추적, quant.confirm_fills 가 체결 확정). 2026-10-06 추가.
+          시장가/지정가는 auto_trade._live_order_type()(공격 모드면 MARKET). 장외에는 주문이 skipped 로 남는다.
+
 트리거
   TIME     : plan.time_period(monthly/quarterly/yearly) 주기의 next_run_at 도래
   DRIFT    : |현재 비중 − 목표 비중| 최대값 ≥ plan.drift_threshold_pct (%p)
@@ -25,10 +31,156 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import CashflowEvent, RebalancePlan, RebalanceRun
 from app.models.rebalance import CASHFLOW_KINDS, TIME_PERIODS
 from app.services import paper_trading as pt
+from app.services.data_cache import cache_get, cache_set
 
 logger = logging.getLogger(__name__)
 
 ORDER_SOURCE = "REBALANCE"
+ACCOUNT_SOURCES = ("paper", "kis")
+SECTOR_PREFIX = "SECTOR:"          # plan.targets 항목 symbol 이 "SECTOR:반도체" 면 섹터 목표
+OTHER_SECTOR = "기타"              # 유니버스 밖 보유 종목
+SECTOR_FILL_CANDIDATES = 2        # 섹터 목표가 있는데 보유 종목이 없으면 유니버스에서 채울 종목 수
+
+
+# ── 섹터 ────────────────────────────────────────────────────────────────
+
+
+def is_sector_target(symbol: str) -> bool:
+    return str(symbol or "").upper().startswith(SECTOR_PREFIX)
+
+
+def sector_name(symbol: str) -> str:
+    return str(symbol)[len(SECTOR_PREFIX):] if is_sector_target(symbol) else ""
+
+
+def sector_of_symbol(symbol: str) -> str:
+    """lumina 심볼/6자리 코드 → 유니버스 섹터(반도체·IT·K뷰티), 없으면 '기타'."""
+    from app.services.stock import QUANT_STOCKS
+    code = str(symbol)[:6]
+    for s in QUANT_STOCKS:
+        if s["symbol"][:6] == code:
+            return s["sector"]
+    return OTHER_SECTOR
+
+
+def sector_universe(sector: str) -> list[dict]:
+    from app.services.stock import QUANT_STOCKS
+    return [s for s in QUANT_STOCKS if s["sector"] == sector]
+
+
+def split_targets(targets: list[dict]) -> tuple[dict[str, float], dict[str, dict]]:
+    """plan.targets → (섹터 목표 {섹터: %}, 종목 목표 {심볼: {name, weight_pct}})"""
+    sectors: dict[str, float] = {}
+    symbols: dict[str, dict] = {}
+    for t in targets or []:
+        sym = str(t.get("symbol") or "")
+        w = float(t.get("weight_pct") or 0)
+        if is_sector_target(sym):
+            sectors[sector_name(sym)] = sectors.get(sector_name(sym), 0.0) + w
+        elif sym:
+            symbols[sym] = {"name": t.get("name") or sym, "weight_pct": w}
+    return sectors, symbols
+
+
+def effective_symbol_targets(targets: list[dict], held_symbols: list[str], rank_fn=None) -> dict[str, dict]:
+    """섹터 목표를 종목 목표로 내린다.
+
+    섹터 S 의 목표 W: 명시된 종목 목표(S 소속) 합 E 를 빼고 남은 R=W−E 를 **S 소속 보유 종목 중 명시되지 않은 것** 에 균등 분배.
+    보유가 없으면 유니버스에서 SECTOR_FILL_CANDIDATES 개(rank_fn 순, 기본 유니버스 순서)를 골라 분배.
+    반환 {symbol: {name, weight_pct, sector, derived(bool)}}. 섹터 목표가 없는 종목 목표는 그대로(섹터는 소속 섹터).
+    """
+    sectors, explicit = split_targets(targets)
+    out: dict[str, dict] = {}
+    for sym, t in explicit.items():
+        out[sym] = {"name": t["name"], "weight_pct": round(float(t["weight_pct"]), 4), "sector": sector_of_symbol(sym), "derived": False}
+    for sector, W in sectors.items():
+        E = sum(v["weight_pct"] for v in out.values() if v["sector"] == sector)
+        R = max(0.0, W - E)
+        if R <= 0:
+            continue
+        members = [s for s in held_symbols if sector_of_symbol(s) == sector and s not in out]
+        if not members:
+            cands = sector_universe(sector)
+            if rank_fn:
+                cands = rank_fn(cands)
+            members = [c["symbol"] for c in cands[:SECTOR_FILL_CANDIDATES] if c["symbol"] not in out]
+        if not members:
+            continue
+        each = R / len(members)
+        for m in members:
+            uni = next((u for u in sector_universe(sector) if u["symbol"] == m), None)
+            out[m] = {"name": (uni or {}).get("name") or m, "weight_pct": round(each, 4), "sector": sector, "derived": True}
+    return out
+
+
+# ── 계좌 소스 ────────────────────────────────────────────────────────────
+
+
+def _source_key(user_id: uuid.UUID) -> str:
+    return f"rebalance:source:{user_id}"
+
+
+async def get_account_source(user_id: uuid.UUID) -> str:
+    v = await cache_get(_source_key(user_id), max_age_hours=24 * 3650) or {}
+    if not v.get("source"):
+        # 미설정이면 KIS 게이트웨이가 있을 때 KIS 모의투자 계좌를 기본으로 (2026-10-06 요구: KIS 종목·섹터 리밸런싱)
+        from app.services.brokers import stock_coin_trade_gateway as gateway
+        return "kis" if gateway.is_configured() else "paper"
+    src = str(v.get("source") or "paper").lower()
+    return src if src in ACCOUNT_SOURCES else "paper"
+
+
+async def set_account_source(user_id: uuid.UUID, source: str) -> str:
+    src = str(source or "paper").lower()
+    if src not in ACCOUNT_SOURCES:
+        raise RebalanceError(f"지원하지 않는 계좌 소스입니다: {source} (paper | kis)")
+    if src == "kis":
+        from app.services.brokers import stock_coin_trade_gateway as gateway
+        if not gateway.is_configured():
+            raise RebalanceError("KIS 모의투자 계좌를 쓰려면 stock-coin-trade 게이트웨이(STOCK_COIN_TRADE_*)가 설정되어 있어야 합니다.")
+    await cache_set(_source_key(user_id), {"source": src, "updated_at": datetime.now(timezone.utc).isoformat()})
+    return src
+
+
+def _kis_symbol(code: str, name: str | None = None) -> str:
+    """KIS 6자리 코드 → lumina 표기. 유니버스에 있으면 그 심볼(.KS/.KQ), 없으면 .KS 로 둔다(게이트웨이는 접미사를 떼고 보낸다)."""
+    from app.services.stock import QUANT_STOCKS
+    for s in QUANT_STOCKS:
+        if s["symbol"][:6] == code:
+            return s["symbol"]
+    return f"{code}.KS"
+
+
+async def _kis_account_inputs() -> tuple[float, list[dict]]:
+    """KIS Testbed 잔고 → (현금, paper_trading.stock_positions 와 같은 모양의 포지션 목록)."""
+    from app.services.brokers import stock_coin_trade_gateway as gateway
+    if not gateway.is_configured():
+        raise RebalanceError("stock-coin-trade 게이트웨이가 설정되지 않아 KIS 계좌를 읽을 수 없습니다.")
+    try:
+        bal = await gateway.get_balance()
+    except gateway.GatewayError as exc:
+        raise RebalanceError(f"KIS 잔고 조회 실패: [{exc.code}] {exc}") from exc
+    positions = []
+    for h in bal.get("holdings") or []:
+        code = gateway.normalize_symbol(str(h.get("symbol") or ""))
+        qty = int(h.get("quantity") or 0)
+        if not code or qty <= 0:
+            continue
+        price = float(h.get("currentPrice") or 0) or None
+        eval_amt = float(h.get("evalAmount") or 0) or (qty * price if price else 0.0)
+        positions.append({"symbol": _kis_symbol(code, h.get("name")), "name": h.get("name") or code, "quantity": qty,
+                          "avgPrice": float(h.get("avgPrice") or 0), "currentPrice": price if price else (eval_amt / qty if qty else None),
+                          "evalAmount": eval_amt})
+    return float(bal.get("cashBalance") or 0), positions
+
+
+async def _kis_price(symbol: str) -> float:
+    from app.services.stock import get_quote
+    q = await get_quote(symbol)
+    price = float(q.get("price") or 0)
+    if price <= 0:
+        raise RebalanceError(f"KIS 시세 없음: {symbol}")
+    return price
 
 
 class RebalanceError(Exception):
@@ -51,7 +203,15 @@ def normalize_targets(raw: list[dict]) -> list[dict]:
     """[{symbol, name?, weight_pct}] 검증. 합계 100 초과 금지, 중복 심볼 병합."""
     merged: dict[str, dict] = {}
     for t in raw or []:
-        symbol = pt.normalize_stock_symbol(str(t.get("symbol", "")))
+        raw_sym = str(t.get("symbol", "")).strip()
+        if is_sector_target(raw_sym):
+            from app.services.stock import QUANT_SECTORS
+            name = raw_sym[len(SECTOR_PREFIX):].strip()
+            if name not in QUANT_SECTORS:
+                raise RebalanceError(f"지원하지 않는 섹터입니다: {name} ({' / '.join(QUANT_SECTORS)})")
+            symbol = f"{SECTOR_PREFIX}{name}"
+        else:
+            symbol = pt.normalize_stock_symbol(raw_sym)
         if not symbol:
             continue
         try:
@@ -63,11 +223,19 @@ def normalize_targets(raw: list[dict]) -> list[dict]:
         if symbol in merged:
             merged[symbol]["weight_pct"] += w
         else:
-            merged[symbol] = {"symbol": symbol, "name": str(t.get("name") or symbol)[:100], "weight_pct": w}
-    total = sum(t["weight_pct"] for t in merged.values())
+            merged[symbol] = {"symbol": symbol, "name": str(t.get("name") or (sector_name(symbol) if is_sector_target(symbol) else symbol))[:100], "weight_pct": w}
+    items = [{**t, "weight_pct": round(t["weight_pct"], 2)} for t in merged.values()]
+    sectors, symbols = split_targets(items)
+    # 섹터 목표가 있는 섹터의 명시 종목 합은 그 섹터 목표를 넘을 수 없다
+    for sector, W in sectors.items():
+        E = sum(v["weight_pct"] for s, v in symbols.items() if sector_of_symbol(s) == sector)
+        if E > W + 0.0001:
+            raise RebalanceError(f"{sector} 섹터의 종목 비중 합({E:.1f}%)이 섹터 목표({W:.1f}%)를 초과합니다.")
+    # 총합 = 섹터 목표 + (섹터 목표 없는 섹터의 종목 목표)
+    total = sum(sectors.values()) + sum(v["weight_pct"] for s, v in symbols.items() if sector_of_symbol(s) not in sectors)
     if total > 100.0001:
         raise RebalanceError(f"목표 비중 합계가 100%를 초과합니다 ({total:.1f}%). 잔여분은 현금으로 배분됩니다.")
-    return [{**t, "weight_pct": round(t["weight_pct"], 2)} for t in merged.values()]
+    return items
 
 
 async def resolve_targets(raw: list[dict]) -> list[dict]:
@@ -76,6 +244,9 @@ async def resolve_targets(raw: list[dict]) -> list[dict]:
     for t in raw or []:
         sym = str(t.get("symbol", "")).strip()
         if not sym:
+            continue
+        if is_sector_target(sym):
+            resolved.append({"symbol": sym, "name": sector_name(sym), "weight_pct": t.get("weight_pct", 0)})
             continue
         try:
             info = await pt.resolve_stock(sym)
@@ -139,10 +310,13 @@ def apply_plan_update(plan: RebalancePlan, data: dict) -> RebalancePlan:
 
 
 def plan_to_dict(plan: RebalancePlan) -> dict:
-    stock_total = sum(float(t.get("weight_pct", 0)) for t in (plan.targets or []))
+    sectors, symbols = split_targets(plan.targets or [])
+    stock_total = sum(sectors.values()) + sum(v["weight_pct"] for s, v in symbols.items() if sector_of_symbol(s) not in sectors)
     return {
         "id": str(plan.id), "name": plan.name, "is_active": plan.is_active,
         "targets": plan.targets or [], "cash_weight_pct": round(100 - stock_total, 2),
+        "sector_targets": {k: round(v, 2) for k, v in sectors.items()},
+        "symbol_targets": [{"symbol": s, **v} for s, v in symbols.items()],
         "time_period": plan.time_period,
         "next_run_at": plan.next_run_at.isoformat() if plan.next_run_at else None,
         "drift_enabled": plan.drift_enabled, "drift_threshold_pct": plan.drift_threshold_pct,
@@ -156,15 +330,23 @@ def plan_to_dict(plan: RebalancePlan) -> dict:
 # ── 스냅샷(현재 비중·이탈률) ──────────────────────────────────────────────
 
 
-async def snapshot(db: AsyncSession, user_id: uuid.UUID, plan: RebalancePlan) -> dict:
-    """현금 + 주식 포지션 기준 현재 비중과 목표 대비 이탈률."""
-    account = await pt.get_account(db, user_id)
-    positions = await pt.stock_positions(db, user_id)
+async def snapshot(db: AsyncSession, user_id: uuid.UUID, plan: RebalancePlan, source: str | None = None) -> dict:
+    """현금 + 주식 포지션 기준 현재 비중과 목표 대비 이탈률. source=kis 면 KIS Testbed 계좌 기준."""
+    source = source or await get_account_source(user_id)
+    if source == "kis":
+        cash_value, positions = await _kis_account_inputs()
+    else:
+        account = await pt.get_account(db, user_id)
+        cash_value = float(account.cash)
+        positions = await pt.stock_positions(db, user_id)
     pos_map = {p["symbol"]: p for p in positions}
     stock_eval = sum(p["evalAmount"] for p in positions)
-    total = float(account.cash) + stock_eval
+    total = cash_value + stock_eval
 
-    target_map = {t["symbol"]: float(t["weight_pct"]) for t in (plan.targets or [])}
+    # 섹터 목표 → 종목 목표 (보유 종목 균등 / 미보유 섹터는 유니버스 후보)
+    eff = effective_symbol_targets(plan.targets or [], list(pos_map.keys()))
+    target_map = {s: float(v["weight_pct"]) for s, v in eff.items()}
+    sector_targets, _ = split_targets(plan.targets or [])
     symbols = sorted(set(target_map) | set(pos_map))
 
     rows = []
@@ -178,23 +360,43 @@ async def snapshot(db: AsyncSession, user_id: uuid.UUID, plan: RebalancePlan) ->
         max_drift = max(max_drift, abs(drift))
         rows.append({
             "symbol": sym,
-            "name": (p["name"] if p else next((t["name"] for t in plan.targets if t["symbol"] == sym), sym)),
+            "name": (p["name"] if p else (eff.get(sym) or {}).get("name") or sym),
+            "sector": sector_of_symbol(sym),
             "quantity": p["quantity"] if p else 0,
             "price": p["currentPrice"] if p else None,
             "current_amount": round(cur_amt, 2),
             "current_weight_pct": round(cur_w, 2),
             "target_weight_pct": round(tgt_w, 2),
+            "target_derived": bool((eff.get(sym) or {}).get("derived")),
             "drift_pct": round(drift, 2),
             "in_plan": sym in target_map,
         })
-    cash_w = (float(account.cash) / total * 100) if total > 0 else 100.0
+    cash_w = (cash_value / total * 100) if total > 0 else 100.0
     cash_target = 100 - sum(target_map.values())
     cash_drift = cash_w - cash_target
     max_drift = max(max_drift, abs(cash_drift))
 
+    # 섹터 집계: 현재/목표/이탈 (섹터 목표가 없는 섹터의 목표 = 소속 종목 목표 합)
+    from app.services.stock import QUANT_SECTORS
+    sector_rows = []
+    for sector in list(QUANT_SECTORS) + [OTHER_SECTOR]:
+        members = [r for r in rows if r["sector"] == sector]
+        if not members and sector not in sector_targets:
+            continue
+        cur_amt = sum(r["current_amount"] for r in members)
+        cur_w = (cur_amt / total * 100) if total > 0 else 0.0
+        tgt_w = sector_targets.get(sector, sum(r["target_weight_pct"] for r in members))
+        drift = cur_w - tgt_w
+        max_drift = max(max_drift, abs(drift))
+        sector_rows.append({"sector": sector, "current_amount": round(cur_amt, 2), "current_weight_pct": round(cur_w, 2),
+                            "target_weight_pct": round(tgt_w, 2), "drift_pct": round(drift, 2),
+                            "symbols": [r["symbol"] for r in members], "explicit": sector in sector_targets})
+
     return {
+        "account_source": source,
+        "sectors": sector_rows,
         "total_asset": round(total, 2),
-        "cash": round(float(account.cash), 2),
+        "cash": round(cash_value, 2),
         "cash_weight_pct": round(cash_w, 2),
         "cash_target_pct": round(cash_target, 2),
         "cash_drift_pct": round(cash_drift, 2),
@@ -208,13 +410,16 @@ async def snapshot(db: AsyncSession, user_id: uuid.UUID, plan: RebalancePlan) ->
 def _weights_from_snapshot(snap: dict) -> dict:
     w = {r["symbol"]: r["current_weight_pct"] for r in snap["rows"]}
     w["CASH"] = snap["cash_weight_pct"]
+    for sr in snap.get("sectors") or []:
+        w[f"{SECTOR_PREFIX}{sr['sector']}"] = sr["current_weight_pct"]
     return w
 
 
 # ── 주문 산출 ────────────────────────────────────────────────────────────
 
 
-async def propose(db: AsyncSession, user_id: uuid.UUID, plan: RebalancePlan, snap: dict | None = None) -> dict:
+async def propose(db: AsyncSession, user_id: uuid.UUID, plan: RebalancePlan, snap: dict | None = None,
+                  source: str | None = None) -> dict:
     """목표 비중과의 차액을 정수 주식 수량의 매도/매수 주문으로 변환한다.
 
     - 플랜에 없는 보유 종목은 전량 매도(목표 0%)
@@ -223,7 +428,8 @@ async def propose(db: AsyncSession, user_id: uuid.UUID, plan: RebalancePlan, sna
     """
     if not plan.targets:
         raise RebalanceError("목표 비중이 비어 있습니다. 먼저 종목과 비중을 저장하세요.")
-    snap = snap or await snapshot(db, user_id, plan)
+    source = source or (snap or {}).get("account_source") or await get_account_source(user_id)
+    snap = snap or await snapshot(db, user_id, plan, source)
     total = snap["total_asset"]
     if total <= 0:
         raise RebalanceError("평가 가능한 자산이 없습니다.")
@@ -236,7 +442,7 @@ async def propose(db: AsyncSession, user_id: uuid.UUID, plan: RebalancePlan, sna
     for t in plan.targets:
         if t["symbol"] not in price_map:
             try:
-                price_map[t["symbol"]] = float((await pt.resolve_stock(t["symbol"]))["price"])
+                price_map[t["symbol"]] = (await _kis_price(t["symbol"])) if source == "kis" else float((await pt.resolve_stock(t["symbol"]))["price"])
             except Exception as exc:  # 시세 실패 종목은 건너뛰고 note에 남김
                 logger.warning("리밸런싱 시세 조회 실패 %s: %s", t["symbol"], exc)
 
@@ -280,6 +486,7 @@ async def propose(db: AsyncSession, user_id: uuid.UUID, plan: RebalancePlan, sna
     orders = sells + buys
     est_cash = snap["cash"] + sum(o["amount"] for o in sells) - sum(o["amount"] for o in buys)
     return {
+        "account_source": source,
         "orders": orders,
         "skipped": skipped,
         "estimated_cash_after": round(est_cash, 2),
@@ -295,13 +502,28 @@ async def execute(db: AsyncSession, user_id: uuid.UUID, plan: RebalancePlan, tri
                   proposal: dict | None = None, note: str = "") -> RebalanceRun:
     """제안 주문을 모의 체결하고 RebalanceRun(executed)을 기록한다. 커밋은 호출자가 한다."""
     proposal = proposal or await propose(db, user_id, plan)
+    source = proposal.get("account_source") or await get_account_source(user_id)
     before = _weights_from_snapshot(proposal["snapshot"])
-    target = {t["symbol"]: float(t["weight_pct"]) for t in plan.targets}
-    target["CASH"] = round(100 - sum(target.values()), 2)
+    target = {r["symbol"]: float(r["target_weight_pct"]) for r in proposal["snapshot"]["rows"]}
+    target["CASH"] = round(proposal["snapshot"].get("cash_target_pct", 100 - sum(target.values())), 2)
+    for sr in proposal["snapshot"].get("sectors") or []:
+        target[f"{SECTOR_PREFIX}{sr['sector']}"] = float(sr["target_weight_pct"])
 
     executed = []
     for o in proposal["orders"]:
         rec = dict(o)
+        if source == "kis":
+            # KIS Testbed 실주문(게이트웨이). 체결은 비동기(quant.confirm_fills) → 여기서는 submitted/skipped/failed 만 기록
+            from app.services import auto_trade
+            res = await auto_trade._place_live_order_via_gateway(db, None, o["symbol"], o["name"], o["side"].lower(),
+                                                                 int(o["quantity"]), float(o["price"]), str(user_id))
+            st = res.get("status")
+            rec.update({"status": "submitted" if st == "submitted" else ("skipped" if st == "skipped" else "failed"),
+                        "live_order": {k: res.get(k) for k in ("status", "order_no", "client_order_id", "reason", "error", "environment") if res.get(k) is not None}})
+            if st != "submitted":
+                rec["error"] = res.get("reason") or res.get("error") or st
+            executed.append(rec)
+            continue
         try:
             res = await pt.stock_order(db, user_id, o["symbol"], o["side"], int(o["quantity"]), source=ORDER_SOURCE)
             rec.update({"status": "filled", "price": res["price"], "amount": res["amount"]})
@@ -309,14 +531,15 @@ async def execute(db: AsyncSession, user_id: uuid.UUID, plan: RebalancePlan, tri
             rec.update({"status": "failed", "error": str(exc)})
         executed.append(rec)
 
-    after_snap = await snapshot(db, user_id, plan)
+    after_snap = await snapshot(db, user_id, plan, source)
+    ok_statuses = ("filled", "submitted")
     run = RebalanceRun(
         user_id=user_id, plan_id=plan.id, trigger=trigger,
-        status="executed" if any(o["status"] == "filled" for o in executed) else "skipped",
+        status="executed" if any(o["status"] in ok_statuses for o in executed) else "skipped",
         total_asset=proposal["snapshot"]["total_asset"],
         max_drift_pct=proposal["snapshot"]["max_drift_pct"],
         before_weights=before, target_weights=target, after_weights=_weights_from_snapshot(after_snap),
-        orders=executed, note=(note or "")[:300],
+        orders=executed, note=((f"[{source}] " if source != "paper" else "") + (note or ""))[:300],
     )
     db.add(run)
     now = datetime.now(timezone.utc)

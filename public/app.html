@@ -1375,7 +1375,17 @@
             <h3 class="font-semibold mb-3 text-sm">🎯 목표 비중 플랜</h3>
             <div class="grid grid-cols-2 gap-3 mb-3">
               <div class="col-span-2"><label class="text-xs font-semibold" style="color:var(--text-dim);">플랜 이름</label><input id="rb-name" class="input mt-1" placeholder="예) 60/40 코어 포트폴리오" /></div>
+              <div class="col-span-2"><label class="text-xs font-semibold" style="color:var(--text-dim);">리밸런싱 대상 계좌</label>
+                <select id="rb-source" class="input mt-1">
+                  <option value="paper">내부 모의계좌 (paper_trading)</option>
+                  <option value="kis">KIS 모의투자 (한국투자증권 Testbed · 게이트웨이 실주문)</option>
+                </select>
+                <p id="rb-source-note" class="text-xs mt-1" style="color:var(--text-mute);"></p></div>
             </div>
+            <h4 class="font-semibold text-xs mb-1" style="color:var(--text-dim);">섹터 목표 비중 (%) — KIS 투자 유니버스 3개 섹터</h4>
+            <p class="text-xs mb-2" style="color:var(--text-mute);">섹터 비중이 1차 배분입니다. 섹터 안에서는 아래 종목 목표(있으면)를 먼저 채우고, 나머지는 해당 섹터의 보유 종목에 균등 배분합니다. 보유가 없는 섹터는 유니버스 종목으로 채웁니다. 합계가 100% 미만이면 나머지는 현금.</p>
+            <div id="rb-sector-inputs" class="grid grid-cols-3 gap-2 mb-3"></div>
+            <h4 class="font-semibold text-xs mb-1" style="color:var(--text-dim);">종목 목표 비중 (선택 — 섹터 안에서 특정 종목을 고정)</h4>
             <div class="flex flex-wrap gap-2 items-end mb-2">
               <div class="flex-1 min-w-[140px]"><label class="text-xs font-semibold" style="color:var(--text-dim);">종목코드</label><input id="rb-add-symbol" class="input mt-1" placeholder="005930 / AAPL" /></div>
               <div style="width:110px"><label class="text-xs font-semibold" style="color:var(--text-dim);">비중(%)</label><input id="rb-add-weight" type="number" min="0" max="100" step="0.5" class="input mt-1" placeholder="30" /></div>
