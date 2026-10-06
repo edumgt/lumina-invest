@@ -952,9 +952,20 @@ def stop_auto_trade() -> bool:
 
 
 async def run_cycle_for_enabled_users() -> dict:
-    """Celery Beat 진입점: quant_auto_enabled=true 인 사용자 전원의 사이클을 순차 실행."""
+    """Celery Beat 진입점: quant_auto_enabled=true 인 사용자 전원의 사이클을 순차 실행.
+
+    먼저 kis_batch.ensure_system_batch 로 KIS 모의투자 백그라운드 배치(시스템 사용자 행)를 켜거나 끈다.
+    그래서 KIS_PAPER_BATCH_ENABLED=true 이면 로그인·대시보드 조작 없이도 사이클이 돈다.
+    """
+    from app.services import kis_batch  # 지연 import (kis_batch → kis_quickstart → auto_trade 순환 방지)
+
     session_factory = get_session_factory()
     async with session_factory() as db:
+        try:
+            batch = await kis_batch.ensure_system_batch(db)
+        except Exception as exc:  # 배치 점검 실패가 사용자 계정 사이클을 막으면 안 된다
+            logger.exception("KIS 모의투자 배치 점검 실패: %s", exc)
+            batch = {"enabled": kis_batch.is_configured(), "running": False, "error": str(exc)}
         uids = (await db.execute(select(BrokerSettings.user_id).where(BrokerSettings.quant_auto_enabled.is_(True)))).scalars().all()
     ran, failed = 0, 0
     for uid in uids:
@@ -964,4 +975,4 @@ async def run_cycle_for_enabled_users() -> dict:
         except Exception:
             failed += 1
             logger.exception("자동매매 사이클 실패 user=%s", uid)
-    return {"enabled_users": len(uids), "ran": ran, "failed": failed}
+    return {"enabled_users": len(uids), "ran": ran, "failed": failed, "kis_batch": batch}

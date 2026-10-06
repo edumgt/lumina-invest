@@ -391,13 +391,15 @@ cd /home/ubuntu/lumina-invest && .venv/bin/python -m pytest tests/test_spec_rule
 | L3 | 실계좌 일손실 한도를 가상계좌와 분리할지 | 현재 같은 `risk_daily_loss_limit_pct` 사용. 분리하려면 컬럼·UI 추가 | 당분간 공용 |
 | L4 | 전략 action 결정 방식 | 규칙 평가 가능 시 규칙 우선(현재) vs 임계값 점수 우선 vs 둘 다 만족 시만 매수 | 현재 유지, Phase 4 체결 로그로 재평가 |
 | L5 | LEAN 백테스트 중복 구현 정리 | `app/services/lean_backtest.py` 삭제·domain-rag-lab 로 일원화 vs 유지 | domain-rag-lab 로 일원화(전략 API 가 그쪽) |
-| L6 | 변경분 커밋 시점·브랜치 | 20개 경로 미커밋 | 기능 단위 커밋 권장 |
+| L6 | ~~변경분 커밋 시점·브랜치~~ **완료**(2026-10-02 푸시, origin/main=9478811). 2026-10-06 6-9 변경분(8경로)은 다시 미커밋 | — | 기능 단위 커밋 |
 | L8 | Testbed 기존 보유 종목을 자동매도 대상으로 할지 | 가상 QUANT 장부에 Testbed 보유수량을 시드하면 매도 시그널 시 실매도 발생. 미시드면 자동매매가 산 수량만 매매 | 1주 관찰은 미시드(신규 매수분만), 이후 결정 |
 | L9 | 지정가 매수의 체결 프리미엄 | 첫 자동 주문(275,000 지정가)이 직후 현재가 276,000 으로 상승해 미체결. 선택: 현재가 그대로(현재) / +1~2틱 프리미엄 / Testbed 는 MARKET | Testbed 관찰 기간은 +1틱(`align_price_to_tick` 에 옵션 추가), 실전은 관찰 후 결정 |
 | L7 | libgomp 설치(sudo) | 설치 전까지 lightgbm 의존 테스트 5개 실행 불가 | `sudo apt-get install -y libgomp1` |
 | L10 | KIS 자격증명 Secrets Manager 시크릿 이름·IAM (**진행 중** — 6-8절 사용자 수행 명령 참고) | fd EC2 역할에 `secretsmanager:GetSecretValue` 를 붙이고 `.env KIS_SECRETS_NAME` 기입 vs 당분간 게이트웨이(stock-coin-trade 가 KIS 키 보유)만 사용 | 실주문은 게이트웨이가 정본이므로 `KIS_SECRETS_NAME` 은 가격·잔고 조회용으로 기입. 시크릿 이름 `lumina-invest/prod/kis`, environment=paper |
 | L11 | 대시보드 「KIS 모의투자 시작」 원클릭 노출 범위 | 모든 로그인 사용자 vs 운영 계정만. 버튼은 경로가 Testbed(paper)일 때만 활성화되지만 누르면 그 계정의 자동매매가 live+KIS 로 바뀐다 | Phase 4 관찰 기간에는 운영 계정 1개로만 사용 |
 | L12 | 포지션 단위 청산 규칙(손절·익절·트레일링) 도입 여부 | 현재 매도는 시그널(지표/전략 exit)에만 의존, 일손실 한도만 존재. 손절 −5%·익절 +10% 같은 규칙을 risk_guard 에 추가하면 Testbed 체결 데이터 해석이 바뀜 | Testbed 1주 관찰 뒤 도입, 값은 관찰 결과로 결정 |
+| L14 | (2026-10-06) 백그라운드 배치 종목 | `KIS_PAPER_BATCH_SYMBOLS` 비움(AI 추천 상위 3, 기본) vs 고정 종목 | 1주 관찰은 AI 추천 유지, 체결 로그 보고 고정 여부 결정 |
+| L15 | (2026-10-06) 비상 정지 후 배치 재가동 주체 | 사람이 kill switch 해제(현재) vs 다음 영업일 자동 재가동 | 손실 반복 위험으로 수동 유지 |
 | L13 | 운영 계정에 LEAN 합격 전략 적용 시점 | pr(domain-rag-lab) 합격 전략 0건. 전략 선택 전까지 매수·매도 모두 기술지표 규칙만 사용(ML·LEAN 미적용) | domain-rag-lab 에서 ma_cross/momentum 백테스트 → export 후 종목 선정 화면에서 선택 |
 
 ### 6-6. 2026-10-02 운영 시작 — 모의투자(Testbed) 자동매매 가동 (사용자 요청 + 7절 권고 수용)
@@ -534,6 +536,8 @@ ssh -i lumina-invest/fd.edumgt.co.kr.pem ubuntu@43.201.229.188 "cd /home/ubuntu/
    - 키가 비어 있는 동안 fd 의 live 모드는 레거시 직접 호출로 폴백한다(게이트웨이 미사용). 운영 계정은 아직 paper/mock 이므로 실주문은 나가지 않음
 4. 운영에서 자동매매를 켤 계정의 종목 선정 화면 설정(live + KIS)은 Testbed 1주 관찰 결정(7절 L1)에 따라 진행
 
+> **2026-10-06 갱신**: 아래 표 작성 이후 상황이 바뀌었다. 푸시·st 배포·API 키 발급은 완료됐고, domain-rag-lab 시크릿도 갱신됐다. 현재 상태는 8-1 절 참고.
+
 **배포 결과 (15:5x KST)**
 | 서버 | 결과 |
 |------|------|
@@ -541,3 +545,59 @@ ssh -i lumina-invest/fd.edumgt.co.kr.pem ubuntu@43.201.229.188 "cd /home/ubuntu/
 | pr.edumgt.co.kr (domain-rag-lab) | rsync + `deploy/pr-edumgt/compose.yml up --build -d`. 첫 up 에서 api 가 Created 에 머물러(postgres 재생성 대기) `up -d api` 재실행 → healthy. `/health` 200, `/backtests/strategies` 키 없음 401 / 키 있음 200, lumina 컨테이너에서 `pr-api` 조회 성공(전략 0건). 공개 `https://pr.edumgt.co.kr/health` 200 |
 | st.edumgt.co.kr (stock-coin-trade) | **미배포** — 사용자 푸시 → `deploy-ec2.yml` 자동 배포 필요 (위 1·2·3 절차) |
 
+
+### 6-9. 2026-10-06 KIS 모의투자 — 계정·로그인 무관 백그라운드 배치 (사용자 요청)
+
+**요구**: KIS 모의투자 자동매매를 특정 사용자 계정·로그인·대시보드 버튼에 의존하지 않고 서버 배치로 돌린다.
+
+**현황(변경 전)**: celery-beat `quant.auto_trade_cycle`(10분)은 `BrokerSettings.quant_auto_enabled=true` 인 **사용자 계정 행**만 순회했다. 운영은 tester@test.com 행이 켜져 있어야 돌았고, 그 행이 꺼지면(비상 정지·사용자 조작) 멈췄다.
+
+| 변경 | 내용 |
+|------|------|
+| `app/config.py` | `KIS_PAPER_BATCH_ENABLED`(기본 false), `KIS_PAPER_BATCH_SYMBOLS`(비우면 AI 추천), `KIS_PAPER_BATCH_AI_TOP_N=3`, `KIS_PAPER_BATCH_PER_TRADE_BUDGET=300000` |
+| `app/services/kis_batch.py` 신설 | `ensure_system_batch(db)`: env 가 true 고 실주문 경로가 **paper** 면 시스템 사용자(`SYSTEM_USER_ID`, user_id `quant_system`) 행을 `TESTBED_DEFAULTS`(kis·live·AI 3종목·30만 원·비중 20%·일 10건·쿨다운 30분·일손실 3%)로 만들고 `quant_auto_enabled=True`. 멱등. 기존 행은 broker/mode/enabled 만 보장하고 한도·종목은 덮어쓰지 않음. real 경로·미연동이면 켜지 않고 켜져 있던 배치 행은 끈다. `risk_kill_switch` 면 재가동 안 함. env 를 false 로 돌리면 다음 사이클에 배치 행(kis·live)만 끈다 |
+| `app/services/auto_trade.py` `run_cycle_for_enabled_users` | 사이클 시작 시 `kis_batch.ensure_system_batch` 호출 → enabled 행 조회(시스템 행 포함) → 순차 실행. 배치 점검 예외는 로그만 남기고 사용자 사이클은 계속. 반환에 `kis_batch` 상태 추가 |
+| `app/services/kis_quickstart.py` `readiness` | 응답에 `system_batch`(enabled/running/kill_switch/kill_reason/symbol_source/user_id) 추가 |
+| `public/js/dashboard.js` | KIS 카드에 「백그라운드 배치 실행 중 / 대기」 배지 표시(버튼과 별개로 서버가 돈다는 안내) |
+| `.env.example` | 위 4개 변수 설명 |
+| `tests/test_kis_batch.py` 신설 (15건) | env off 무동작·배치 행만 해제·레거시 행 보존, 신규 생성+시작, 수동 종목, 기존 행 비덮어쓰기, 멱등, kis/live 강제, kill switch 차단, real 차단+해제, 미연동 차단, status/readiness, beat 진입점이 배치 점검 후 시스템 행 실행·점검 실패 시 생존 |
+
+**검증**: `.venv/bin/python -m pytest -q` 전체 167 passed(기존 152 + 신규 15). lightgbm 의존 모듈은 이 환경에서 import 불가라 기존처럼 제외.
+
+**동작 요약**: 사용자 계정 행과 시스템 행은 **각각 독립 사이클**이다. tester 계정이 켜져 있으면 둘 다 돌아 같은 Testbed 계좌에 주문이 두 배로 나갈 수 있다 → 배치로 전환할 때 tester 행의 자동매매를 끄는 것을 권장(아래 운영 적용 3). 가상 QUANT 장부·live_orders·risk_guard 카운터는 user_id 별이므로 시스템 행은 `00000000-0000-0000-0000-000000000001` 로 따로 쌓인다.
+
+**운영 적용 (사용자 수행 — 에이전트는 서버 SSH 가 정책상 차단)**
+1. 커밋·푸시 → `deploy.yml` 이 fd 에 자동 배포(오늘 수동 실행으로 전 단계 성공 확인됨).
+2. fd 서버 `.env` 에 추가 후 재기동:
+   ```bash
+   ssh -i lumina-invest/fd.edumgt.co.kr.pem ubuntu@43.201.229.188 "cd /home/ubuntu/lumina-invest && printf '\nKIS_PAPER_BATCH_ENABLED=true\n' >> .env && sudo env COMPOSE_FILE='docker-compose.yml:compose.fd.yml' docker compose up -d app celery-worker celery-beat"
+   ```
+   (`deploy.yml` 은 `.env` 를 덮어쓰지 않으므로 이후 배포에도 유지된다)
+3. 중복 주문 방지: 종목 선정 화면에서 tester@test.com 자동매매 OFF, 또는 DB `UPDATE broker_settings SET quant_auto_enabled=false WHERE user_id='<tester uid>'`.
+4. 확인(다음 10분 사이클 후): celery-worker 로그에 `KIS 모의투자 배치 ON — route=stock-coin-trade env=paper created=True`, 대시보드 KIS 카드에 「백그라운드 배치 실행 중」, `SELECT quant_auto_enabled, broker, quant_mode FROM broker_settings WHERE user_id='00000000-0000-0000-0000-000000000001'`.
+5. 끄기: `.env` 에서 `KIS_PAPER_BATCH_ENABLED=false` 후 재기동 → 다음 사이클에 시스템 행 해제. 즉시 멈추려면 대시보드 비상 정지.
+
+**결정 필요(7절 추가)**: L14 — 배치 종목을 AI 추천(기본)으로 둘지 `KIS_PAPER_BATCH_SYMBOLS` 로 고정할지. L15 — 비상 정지 후 재가동을 사람이 하는 현재 정책 유지 여부(자동 재가동은 손실 반복 위험으로 넣지 않았다).
+
+### 8-1. 2026-10-06 현황 갱신 (GitHub Actions 직접 배포 정비 + 배치 기능 추가)
+
+**git / 배포 파이프라인**
+| 항목 | 상태 |
+|------|------|
+| origin/main | `9478811` (feat(dashboard): 투자 사이트별 현재 투자액 탭). 10-06 09:50 fetch/pull 결과 로컬=원격 |
+| 로컬 미커밋 | 6-9 절 8경로(`app/config.py`, `app/services/kis_batch.py`(신규), `auto_trade.py`, `kis_quickstart.py`, `public/js/dashboard.js`, `.env.example`, `tests/test_kis_batch.py`(신규), `todo.md`) |
+| GitHub secret/var | `FUND_WEB_SSH_KEY` ← `fd.edumgt.co.kr.pem` 으로 **갱신**(이전 값은 Permission denied). vars `FUND_WEB_HOST=43.201.229.188`, `FUND_WEB_USER=ubuntu`, `FUND_WEB_COMPOSE_FILE=docker-compose.yml:compose.fd.yml`, `FUND_WEB_DOMAIN=fd.edumgt.co.kr` |
+| `deploy.yml` | 수동 실행 run 37396581320 **전 단계 성공**(pytest → SSH → rsync → `compose up -d --build app celery-worker celery-beat` → 내부 헬스 → 공개 도메인). fin-ai-app·celery-beat·celery-worker·ingest 재생성, Up. 이후 push main 마다 자동 |
+| 서버 상태 | `https://fd.edumgt.co.kr/api/health` 200. 컨테이너 11개 Up(postgres·redis·neo4j·ollama healthy) |
+
+**자동매매(KIS Testbed)**
+| 항목 | 상태 |
+|------|------|
+| 사용자 계정 경로 | tester@test.com 행 live+kis+quant_auto_enabled(6-6), 게이트웨이 키 발급·`.env` 기입 완료(6-8) → 실주문은 st 게이트웨이 → KIS Testbed. 첫 주문 0000030540 ACCEPTED(미체결) |
+| 배치 경로(6-9, **미배포**) | `KIS_PAPER_BATCH_ENABLED` 로 시스템 사용자 행을 켜는 코드 완료·테스트 167 통과. fd `.env` 에 변수 없음 → 푸시·배포·`.env` 기입 후 활성화(6-9 "운영 적용") |
+| 실시간 가동 확인 | **미확인** — 에이전트의 fd SSH/DB 조회가 자동 모드 정책(Production Reads)으로 차단. 공개 엔드포인트는 health 만 노출. 확인은 사용자가 celery-worker 로그 또는 `live_orders`/`broker_settings` 조회 |
+| `KIS_SECRETS_NAME` | 여전히 미기입(L10). 게이트웨이가 켜져 있어 실주문·잔고 조회는 동작 |
+
+**LEAN(4 저장소 공통 점검 결과)**: 모두 `quantconnect/lean:latest` 를 각자 Docker-outside-of-Docker 로 실행(공용 LEAN 서비스 아님). lumina 는 `lean_backtest.py`+`lean_remote.py`, domain-rag-lab/stock-kms-portal 은 `lean_backtest_service.py`(포크, 25줄 차이), stock-coin-trade 는 `docker/lean/Dockerfile`. 태그가 latest 라 서버별 버전이 다를 수 있음 → L5/R1(일원화)·태그 고정 결정과 함께 처리.
+
+**다음 작업(사용자)**: 6-9 "운영 적용" 1~5. 특히 배치 전환 시 tester 행 OFF(중복 주문 방지).

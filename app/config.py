@@ -101,6 +101,14 @@ class Settings(BaseSettings):
     KRX_EXTRA_HOLIDAYS: str = ""                        # 추가 휴장일 (YYYY-MM-DD 쉼표 구분). 내장 2026 캘린더에 더해진다
     ML_SCORE_SCALE_PCT: float = 30.0                    # SageMaker 예측 연수익률(%)을 [-1,1]로 정규화할 때의 분모
 
+    # ── KIS 모의투자(Testbed) 백그라운드 배치 (app/services/kis_batch.py) ──────────
+    # true 면 celery-beat 의 quant.auto_trade_cycle 이 시스템 사용자(SYSTEM_USER_ID) 행을 만들어 자동매매를 켠다.
+    # 사용자 로그인·대시보드 버튼이 필요 없다. 실주문 경로가 KIS paper(Testbed) 일 때만 켜지고 real 이면 켜지지 않는다.
+    KIS_PAPER_BATCH_ENABLED: bool = False
+    KIS_PAPER_BATCH_SYMBOLS: str = ""                   # 비우면 AI 추천 상위 N. "005930.KS,035720.KS" 처럼 주면 수동 종목
+    KIS_PAPER_BATCH_AI_TOP_N: int = 3
+    KIS_PAPER_BATCH_PER_TRADE_BUDGET: float = 300_000   # 1회 투자금(원). 나머지 한도는 kis_quickstart.TESTBED_DEFAULTS
+
     # ── KIS 자격증명 (서버 관리 — 사용자는 화면에서 입력하지 않는다, app/services/kis_credentials.py) ──
     # Secrets Manager 시크릿 이름/ARN. JSON: {"app_key","app_secret","account_no","environment": "paper|real"}
     KIS_SECRETS_NAME: str = ""                      # 예: lumina-invest/prod/kis

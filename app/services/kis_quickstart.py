@@ -94,7 +94,10 @@ async def readiness(db: AsyncSession, uid: uuid.UUID) -> dict:
     else:
         ready, reason = True, ""
     already = running and mode == "live" and broker == "kis"
+    from app.services import kis_batch  # 지연 import (순환 방지)
+    system_batch = await kis_batch.system_status(db)
     return {
+        "system_batch": system_batch,   # 계정·로그인 무관 백그라운드 배치(KIS_PAPER_BATCH_ENABLED) 상태
         "ready": ready, "reason": reason, "route": route.via, "environment": route.environment,
         "route_detail": route.detail, "connected": route.configured,
         "running": running, "already_started": already, "mode": mode, "broker": broker,

@@ -110,17 +110,23 @@ async function loadKisQuickstart() {
   try {
     const st = await api('/api/quant/kis/quickstart');
     const link = st.connected ? `<span class="badge-buy">연동됨</span> ${escHtml(st.route_detail || '')}` : `<span class="badge-sell">미연동</span> ${escHtml(st.route_detail || '')}`;
+    const sb = st.system_batch || {};
+    // 계정·로그인 무관 백그라운드 배치(KIS_PAPER_BATCH_ENABLED). 켜져 있으면 버튼과 별개로 서버가 10분마다 돈다.
+    const batchNote = sb.enabled
+      ? (sb.running ? ` · <span class="badge-buy">백그라운드 배치 실행 중</span> (서버 설정, 로그인 무관)`
+                    : ` · <span class="badge-sell">백그라운드 배치 대기</span>${sb.kill_switch ? ' (비상 정지: ' + escHtml(sb.kill_reason || '') + ')' : ''}`)
+      : '';
     if (st.already_started) {
       btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-check"></i> KIS 모의투자 실행 중';
-      el.innerHTML = `${link} · 자동매매 <b>실행 중</b> (live · KIS · 10분 주기). <a href="#quant-auto" class="underline">자동매매 현황</a>`;
+      el.innerHTML = `${link} · 자동매매 <b>실행 중</b> (live · KIS · 10분 주기)${batchNote}. <a href="#quant-auto" class="underline">자동매매 현황</a>`;
     } else if (st.ready) {
       btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-play"></i> KIS 모의투자 시작';
       const d = st.defaults || {};
       el.innerHTML = `${link} · 시작하면 AI 추천 ${d.quant_ai_top_n ?? 3}종목 · 1회 ${Number(d.quant_per_trade_budget ?? 300000).toLocaleString('ko-KR')}원 · 쿨다운 ${d.risk_cooldown_min ?? 30}분 · 종목 비중 ${d.risk_max_position_pct ?? 20}% 로 자동매매를 켭니다.` +
-        (st.running ? ` 현재 ${escHtml(st.mode)}/${escHtml(st.broker)} 자동매매가 켜져 있어 설정이 KIS 모의투자로 바뀝니다.` : '');
+        (st.running ? ` 현재 ${escHtml(st.mode)}/${escHtml(st.broker)} 자동매매가 켜져 있어 설정이 KIS 모의투자로 바뀝니다.` : '') + batchNote;
     } else {
       btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-play"></i> KIS 모의투자 시작';
-      el.innerHTML = `${link} · ${escHtml(KIS_BLOCK_TEXT[st.reason] || '지금은 시작할 수 없습니다.')}`;
+      el.innerHTML = `${link} · ${escHtml(KIS_BLOCK_TEXT[st.reason] || '지금은 시작할 수 없습니다.')}${batchNote}`;
     }
   } catch (e) {
     btn.disabled = true;
