@@ -196,6 +196,14 @@ services:
       --loglevel=info
       --concurrency=2
       --queues=celery
+    healthcheck:
+      test: ["CMD", "python", "-m", "app.tasks.beat_health"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 240s
+    labels:
+      autoheal: "true"
     env_file: .env
     environment:
     - DATABASE_URL=postgresql+asyncpg://fin_user:fin_pass@postgres:5432/fin_ai
@@ -231,6 +239,15 @@ services:
       celery -A app.celery_app beat
       --loglevel=info
       --schedule=/tmp/celerybeat-schedule
+    # beat 가 due task 를 보내지 않으면(2026-10-06 사고) heartbeat 키가 늙는다 → unhealthy → autoheal(compose.fd.yml) 이 재시작
+    healthcheck:
+      test: ["CMD", "python", "-m", "app.tasks.beat_health"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 240s
+    labels:
+      autoheal: "true"
     env_file: .env
     environment:
     - DATABASE_URL=postgresql+asyncpg://fin_user:fin_pass@postgres:5432/fin_ai

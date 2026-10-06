@@ -400,6 +400,7 @@ cd /home/ubuntu/lumina-invest && .venv/bin/python -m pytest tests/test_spec_rule
 | L12 | 포지션 단위 청산 규칙(손절·익절·트레일링) 도입 여부 | 현재 매도는 시그널(지표/전략 exit)에만 의존, 일손실 한도만 존재. 손절 −5%·익절 +10% 같은 규칙을 risk_guard 에 추가하면 Testbed 체결 데이터 해석이 바뀜 | Testbed 1주 관찰 뒤 도입, 값은 관찰 결과로 결정 |
 | L14 | (2026-10-06) 백그라운드 배치 종목 | `KIS_PAPER_BATCH_SYMBOLS` 비움(AI 추천 상위 3, 기본) vs 고정 종목 | 1주 관찰은 AI 추천 유지, 체결 로그 보고 고정 여부 결정 |
 | L16 | (2026-10-06) 공격 모드 파라미터 | 익절 1.5%/손절 1.0%/사이클 매수 2·매도 3/강제 로테이션 매수 ON/시장가. 6-11 참고 | 1~2일 체결 로그 보고 TP/SL·강제 매수 조정 |
+| L17 | (2026-10-06) celery-beat 정지 근본 원인 | 6-13. heartbeat/autoheal 로 자동 복구는 되지만 원인 로그가 없다. 재발 시 beat 로그·RestartCount 수집 | 재발 2회 이상이면 beat 를 worker 내장(`-B`) 또는 RedBeat 스케줄러로 교체 검토 |
 | L15 | (2026-10-06) 비상 정지 후 배치 재가동 주체 | 사람이 kill switch 해제(현재) vs 다음 영업일 자동 재가동 | 손실 반복 위험으로 수동 유지 |
 | L13 | 운영 계정에 LEAN 합격 전략 적용 시점 | pr(domain-rag-lab) 합격 전략 0건. 전략 선택 전까지 매수·매도 모두 기술지표 규칙만 사용(ML·LEAN 미적용) | domain-rag-lab 에서 ma_cross/momentum 백테스트 → export 후 종목 선정 화면에서 선택 |
 
@@ -668,4 +669,29 @@ ssh -i lumina-invest/fd.edumgt.co.kr.pem ubuntu@43.201.229.188 "cd /home/ubuntu/
 **확인(사용자)**: 배포 후 대시보드 로그인 → 「자동매매 현황」에 `[배치]` 항목이 5분마다 늘어나는지. 항목이 있는데 실주문이 `skipped(market_closed)` 면 장외, `[위험관리 생략]` 이면 한도, 시그널만 있고 거래 0 이면 `aggressive` 계획 결과(가격 없음=분봉 미수신). `[배치]` 항목 자체가 없으면 celery 로그의 `Traceback` 확인:
 ```bash
 ssh -i lumina-invest/fd.edumgt.co.kr.pem ubuntu@43.201.229.188 "sudo docker logs --since 30m fin-ai-celery-worker 2>&1 | grep -E 'auto_trade_cycle|Traceback|Error' | tail -30"
+```
+
+### 6-13. 2026-10-06 celery-beat 정지 사고 → heartbeat healthcheck + autoheal (사용자 서버 진단 결과 대응)
+
+**서버 진단(사용자 실행, 03:0x UTC)**: 워커 env `QUANT_AGGRESSIVE_MODE=true`, `KIS_PAPER_BATCH_ENABLED=true` 정상. DB `broker_settings`: 시스템 사용자 행 **kis/live/true**(배치 ON), tester 행 kis/live/**false**(단독 실행으로 자동 OFF), 다른 계정 mock/paper kill switch. 즉 배치 코드는 첫 사이클에서 정상 동작. 그러나 **최근 30분 beat 로그에 `auto_trade_cycle` 전송 0건**, 워커에 수신 로그 없음 → beat 가 첫 사이클 뒤 due task 를 보내지 않고 조용히 멈춘 상태였다(원인 로그 미확보). 사용자가 `docker restart fin-ai-celery-beat` 로 복구.
+
+| 변경 | 내용 |
+|------|------|
+| `app/tasks/beat_health.py` 신설 | `beat.heartbeat` 가 Redis `celery:beat:heartbeat` 에 UTC 시각 기록. `python -m app.tasks.beat_health` = healthcheck CLI(키 나이 ≤180s 정상, 기동 240s 유예, Redis 실패 시 비정상) |
+| `app/tasks/sync_tasks.py`·`app/celery_app.py` | `beat.heartbeat` 태스크, beat 스케줄 60s(expires 50) |
+| `docker-compose.yml` | celery-beat·celery-worker 에 healthcheck(60s×3) + 라벨 `autoheal=true`. beat 가 안 보내거나 worker 가 안 받으면 둘 다 unhealthy |
+| `compose.fd.yml` | `autoheal`(willfarrell/autoheal) 서비스: 라벨 붙은 unhealthy 컨테이너를 30s 간격으로 재시작(기동 300s 유예). docker.sock 마운트 필요 |
+| 테스트 | `tests/test_beat_health.py` 4건. 전체 **199 passed** |
+
+**배포 영향**: `deploy.yml` 이 `compose up -d --build --remove-orphans`(전체) 라 autoheal 이 함께 생성된다. 첫 4~5분은 start_period 라 재시작하지 않음.
+
+**남은 미확인**: beat 가 멈춘 근본 원인(로그 미확보). 재발 시 `sudo docker logs --since 2h fin-ai-celery-beat | tail -60` 과 `docker inspect -f '{{.RestartCount}} {{.State.Health.Status}}' fin-ai-celery-beat` 를 7절 L17 로 기록 요청.
+
+**확인(사용자, fd 서버 안에서)**:
+```bash
+sudo docker logs --since 10m fin-ai-celery-beat 2>&1 | grep -c 'Sending due task'          # 1분당 1(heartbeat)+5분당 1(cycle) 이상
+sudo docker logs --since 10m fin-ai-celery-worker 2>&1 | grep -E 'auto_trade_cycle|배치|공격 모드' | tail -10
+sudo docker exec fin-ai-redis redis-cli get celery:beat:heartbeat                              # 최근 UTC 시각
+docker ps --format '{{.Names}}\t{{.Status}}' | grep -E 'celery|autoheal'                        # (healthy)
+sudo docker exec fin-ai-postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "select created_at, symbol, side, order_type, quantity, price, status from live_orders order by created_at desc limit 10;"'
 ```

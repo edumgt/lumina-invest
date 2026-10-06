@@ -80,6 +80,19 @@ services:
     networks:
       - shared-net
 
+  # unhealthy 라벨(autoheal=true) 컨테이너를 자동 재시작 — celery-beat/worker 가 조용히 멈추는 사고 대비
+  autoheal:
+    image: willfarrell/autoheal:latest
+    restart: unless-stopped
+    environment:
+      AUTOHEAL_CONTAINER_LABEL: autoheal
+      AUTOHEAL_INTERVAL: 30
+      AUTOHEAL_START_PERIOD: 300
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - shared-net
+
   proxy:
     image: caddy:2-alpine
     restart: unless-stopped

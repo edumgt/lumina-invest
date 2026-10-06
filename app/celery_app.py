@@ -47,6 +47,11 @@ celery_app.conf.update(
             "schedule": 86400.0,          # 24시간
             "options": {"expires": 82800},
         },
+        "beat-heartbeat-1min": {
+            "task": "beat.heartbeat",
+            "schedule": 60.0,             # 1분 — beat/worker 생존 신호 (healthcheck → autoheal 재시작)
+            "options": {"expires": 50},
+        },
         "quant-auto-trade-5min": {
             "task": "quant.auto_trade_cycle",
             "schedule": 300.0,            # 5분 — 자동매매 활성 사용자 사이클 (2026-10-06, 10분→5분)

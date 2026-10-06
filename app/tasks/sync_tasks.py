@@ -81,6 +81,13 @@ def rebalance_check_triggers() -> dict:
     return result
 
 
+@celery_app.task(name="beat.heartbeat", time_limit=20, ignore_result=True)
+def beat_heartbeat() -> str:
+    """beat→worker 경로 생존 신호 (app/tasks/beat_health.py). Docker healthcheck 가 이 키의 나이를 본다."""
+    from app.tasks.beat_health import write_heartbeat
+    return write_heartbeat()
+
+
 @celery_app.task(name="quant.auto_trade_cycle", time_limit=280)
 def quant_auto_trade_cycle() -> dict:
     """자동매매 활성 사용자 전원의 5분 사이클 (Celery Beat). time_limit 은 주기(300초) 안에 끝나도록 280초."""
