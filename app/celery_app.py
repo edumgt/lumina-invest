@@ -47,6 +47,11 @@ celery_app.conf.update(
             "schedule": 86400.0,          # 24시간
             "options": {"expires": 82800},
         },
+        "quant-reconcile": {
+            "task": "quant.reconcile",
+            "schedule": float(settings.RECONCILE_INTERVAL_SEC),   # 기본 10분 — 로그 vs KIS 실거래 정합성
+            "options": {"expires": max(60, int(settings.RECONCILE_INTERVAL_SEC) - 30)},
+        },
         "beat-heartbeat-1min": {
             "task": "beat.heartbeat",
             "schedule": 60.0,             # 1분 — beat/worker 생존 신호 (healthcheck → autoheal 재시작)

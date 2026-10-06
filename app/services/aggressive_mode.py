@@ -94,20 +94,46 @@ def score_intraday(closes: list[float], volumes: list[float | None]) -> dict:
             "momentum_pct": round(momentum_pct, 3), "rsi": last_rsi}
 
 
-async def get_intraday_indicators(symbol: str) -> dict:
-    """get_quant_indicators 와 호환되는 축약 지표. current_price 는 마지막 5분봉 종가."""
+def _interval_minutes() -> int:
+    raw = str(settings.QUANT_AGGRESSIVE_CANDLE_INTERVAL or "5m").lower().rstrip("m")
+    try:
+        return max(1, int(raw))
+    except ValueError:
+        return 5
+
+
+async def _intraday_candles(symbol: str) -> tuple[list[dict], float | None, str]:
+    """(캔들, 현재가, 소스). MARKET_DATA_SOURCE=kis 면 KIS 실시간 분봉, 실패 시 Yahoo 폴백."""
+    from app.services import kis_market_data as kmd
+    if kmd.is_enabled() and kmd.is_krx(symbol):
+        try:
+            data = await kmd.get_intraday_candles(symbol, _interval_minutes())
+            candles = [c for c in (data.get("candles") or []) if c.get("close")]
+            if candles:
+                return candles, data.get("price"), "kis"
+            logger.warning("KIS 분봉 빈 응답 %s", symbol)
+        except Exception as exc:
+            logger.warning("KIS 분봉 조회 실패 %s: %s%s", symbol, exc, " — Yahoo 폴백" if settings.MARKET_DATA_FALLBACK_YAHOO else "")
+        if not settings.MARKET_DATA_FALLBACK_YAHOO:
+            return [], None, "kis"
     data = await get_candles(symbol, period=settings.QUANT_AGGRESSIVE_CANDLE_RANGE,
                              interval=settings.QUANT_AGGRESSIVE_CANDLE_INTERVAL,
                              max_age_hours=max(1, int(settings.QUANT_AGGRESSIVE_CACHE_MIN)) / 60)
     candles = [c for c in (data.get("candles") or []) if c.get("close")]
+    return candles, None, "yahoo"
+
+
+async def get_intraday_indicators(symbol: str) -> dict:
+    """get_quant_indicators 와 호환되는 축약 지표. current_price 는 KIS 현재가(있으면) 또는 마지막 봉 종가."""
+    candles, live_price, source = await _intraday_candles(symbol)
     if len(candles) < 2:
         return {"symbol": symbol, "signal": {"action": "관망", "score": 0, "reasons": ["분봉 없음"], "momentum_pct": 0.0},
-                "current_price": None, "intraday": True}
+                "current_price": None, "intraday": True, "source": source}
     closes = [float(c["close"]) for c in candles]
     volumes = [c.get("volume") for c in candles]
     sig = score_intraday(closes, volumes)
-    return {"symbol": symbol, "signal": sig, "current_price": closes[-1], "intraday": True,
-            "interval": settings.QUANT_AGGRESSIVE_CANDLE_INTERVAL, "bars": len(closes)}
+    return {"symbol": symbol, "signal": sig, "current_price": float(live_price) if live_price else closes[-1], "intraday": True,
+            "interval": settings.QUANT_AGGRESSIVE_CANDLE_INTERVAL, "bars": len(closes), "source": source}
 
 
 def plan(indicator_map: dict[str, dict], target_symbols: list[str], holdings: dict[str, tuple[int, float]],

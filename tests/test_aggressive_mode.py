@@ -32,6 +32,7 @@ def env(monkeypatch):
     monkeypatch.setattr(settings, "STOCK_COIN_TRADE_API_KEY", "key")
     monkeypatch.setattr(settings, "STOCK_COIN_TRADE_KIS_ENVIRONMENT", "paper")
     monkeypatch.setattr(settings, "STOCK_COIN_TRADE_ORDER_TYPE", "LIMIT")
+    monkeypatch.setattr(settings, "MARKET_DATA_SOURCE", "yahoo")   # 이 파일은 Yahoo 경로(get_candles 모킹)를 검증
     yield
     gw.set_transport(None)
 

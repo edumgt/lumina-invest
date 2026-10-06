@@ -94,7 +94,21 @@ class Settings(BaseSettings):
     STOCK_COIN_TRADE_API_KEY: str = ""             # stock-coin-trade에서 발급한 Open API 키 (KIS_AUTOTRADE_API_KEY_IDS 등록 필요)
     STOCK_COIN_TRADE_TIMEOUT: float = 15.0
     STOCK_COIN_TRADE_ORDER_TIMEOUT: float = 45.0   # 승인·주문 호출 전용. st 가 KIS 토큰+주문을 순차 호출하면 15초를 넘길 수 있다(2026-10-06 UNKNOWN 사고)
-    STOCK_COIN_TRADE_UNKNOWN_RESUBMIT_MIN: int = 10  # UNKNOWN(응답 미수신) 주문을 같은 clientOrderId 로 멱등 재전송해 확인하는 시간 창(분). 지나면 LOST 로 종료
+    STOCK_COIN_TRADE_UNKNOWN_RESUBMIT_MIN: int = 10
+
+    # ── 시세 소스: KIS 연계(stock-coin-trade /api/kis-chart) vs Yahoo (app/services/kis_market_data.py) ──
+    # kis 면 국내(.KS/.KQ) 일봉·분봉·현재가를 st 게이트웨이의 KIS 차트 API 에서 받는다(실시간). Yahoo 는 국내 분봉 ~20분 지연·요청 제한.
+    MARKET_DATA_SOURCE: str = "kis"                 # kis | yahoo
+    MARKET_DATA_FALLBACK_YAHOO: bool = True         # KIS 조회 실패·빈 응답이면 Yahoo 로 폴백
+    KIS_CHART_TIMEOUT: float = 10.0
+    KIS_CHART_MINUTES: int = 240                    # 분봉 조회 개수(1분봉, st 최대 240) → 5분봉 48개
+
+    # ── 정합성 점검: 로그(가상 장부·live_orders·사이클 로그) vs 실거래(KIS 잔고) (app/services/reconciliation.py) ──
+    RECONCILE_ENABLED: bool = True
+    RECONCILE_INTERVAL_SEC: int = 600
+    RECONCILE_OPEN_ORDER_MAX_MIN: int = 30          # 열린 실주문이 이 시간을 넘기면 이상으로 보고
+    RECONCILE_SLIPPAGE_ALERT_PCT: float = 1.0       # 가상 체결가 대비 실체결가 괴리 경고 기준(%)
+    RECONCILE_NOTIFY: bool = True                   # 불일치가 새로 생기거나 바뀌면 알림  # UNKNOWN(응답 미수신) 주문을 같은 clientOrderId 로 멱등 재전송해 확인하는 시간 창(분). 지나면 LOST 로 종료
     # paper(KIS Testbed) | real(실전). quant_mode=live 인 사용자의 주문이 이 환경으로 나간다. Phase 4까지 paper 유지.
     STOCK_COIN_TRADE_KIS_ENVIRONMENT: str = "paper"
     STOCK_COIN_TRADE_ORDER_TYPE: str = "LIMIT"     # LIMIT(현재가 호가 보정) | MARKET

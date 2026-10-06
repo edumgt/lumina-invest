@@ -1,6 +1,10 @@
 """주가 데이터 서비스: Yahoo Finance API 기반."""
 import time
 import httpx
+
+from app.config import settings
+import logging
+logger = logging.getLogger(__name__)
 from datetime import datetime, timezone
 from typing import Any
 
@@ -73,7 +77,17 @@ async def _yahoo_chart(symbol: str, interval: str, range_: str) -> dict | None:
 
 
 async def get_quote(symbol: str) -> dict:
-    """현재 주가 정보."""
+    """현재 주가 정보. 국내 종목은 MARKET_DATA_SOURCE=kis 면 KIS(st 게이트웨이) 우선, 실패 시 Yahoo."""
+    from app.services import kis_market_data as kmd
+    if kmd.is_enabled() and kmd.is_krx(symbol):
+        try:
+            q = await kmd.get_quote(symbol)
+            if q.get("price"):
+                return q
+        except Exception as exc:
+            logger.warning("KIS 현재가 조회 실패 %s: %s%s", symbol, exc, " — Yahoo 폴백" if settings.MARKET_DATA_FALLBACK_YAHOO else "")
+            if not settings.MARKET_DATA_FALLBACK_YAHOO:
+                return {"symbol": symbol, "error": str(exc)}
     data = await _yahoo_chart(symbol, "1d", "1d")
     if not data:
         return {"symbol": symbol, "error": "데이터 없음"}
@@ -219,10 +233,24 @@ async def get_fundamentals(symbol: str) -> dict:
 async def get_candles(symbol: str, period: str = "1y", interval: str = "1d", max_age_hours: float = 6) -> dict:
     """캔들 차트 데이터 (OHLCV). 반복 스캔 시 Yahoo 호출을 줄이기 위해 캐시를 우선 사용한다.
     max_age_hours: 캐시 허용 나이. 분봉(공격 모드)은 사이클보다 짧게 준다."""
-    cache_key = f"candles:{symbol}:{period}:{interval}"
+    from app.services import kis_market_data as kmd
+    use_kis = kmd.is_enabled() and kmd.is_krx(symbol) and interval == "1d"
+    cache_key = f"candles:{'kis:' if use_kis else ''}{symbol}:{period}:{interval}"
     cached = await cache_get(cache_key, max_age_hours=max_age_hours)
     if cached is not None:
         return cached
+
+    if use_kis:
+        try:
+            result = await kmd.get_daily_candles(symbol, period)
+            if result.get("candles"):
+                await cache_set(cache_key, result)
+                return result
+            logger.warning("KIS 일봉 빈 응답 %s", symbol)
+        except Exception as exc:
+            logger.warning("KIS 일봉 조회 실패 %s: %s%s", symbol, exc, " — Yahoo 폴백" if settings.MARKET_DATA_FALLBACK_YAHOO else "")
+        if not settings.MARKET_DATA_FALLBACK_YAHOO:
+            return {"symbol": symbol, "candles": []}
 
     # 10년치는 10y range로 요청
     data = await _yahoo_chart(symbol, interval, period)

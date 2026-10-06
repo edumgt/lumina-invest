@@ -81,6 +81,29 @@ def rebalance_check_triggers() -> dict:
     return result
 
 
+@celery_app.task(name="quant.reconcile", time_limit=120)
+def quant_reconcile() -> dict:
+    """로그(가상 장부·live_orders·사이클) vs 실거래(KIS 잔고) 정합성 점검 (Celery Beat, RECONCILE_INTERVAL_SEC)."""
+
+    async def _async() -> dict:
+        from app.database.postgres import connect_postgres, close_postgres, get_session_factory
+        from app.lib.redis_cache import connect_redis, close_redis
+        from app.services.reconciliation import run_reconciliation
+
+        await connect_redis()
+        await connect_postgres()
+        try:
+            async with get_session_factory()() as db:
+                return await run_reconciliation(db)
+        finally:
+            await close_redis()
+            await close_postgres()
+
+    result = asyncio.run(_async())
+    logger.info("[beat] quant_reconcile 완료: ok=%s issues=%d", result.get("ok"), len(result.get("issues") or []))
+    return result
+
+
 @celery_app.task(name="beat.heartbeat", time_limit=20, ignore_result=True)
 def beat_heartbeat() -> str:
     """beat→worker 경로 생존 신호 (app/tasks/beat_health.py). Docker healthcheck 가 이 키의 나이를 본다."""

@@ -970,8 +970,17 @@ async def quant_auto_status(user=Depends(get_current_user), db: AsyncSession = D
                                f"{trade.get('quantity', 0)}주 — {trade.get('reason', '')}{live_txt}",
                 })
     logs.sort(key=lambda x: x.get("time") or "")
+    from app.services import reconciliation
+    try:
+        recon = await reconciliation.latest()
+    except Exception:
+        recon = None
+    if recon and recon.get("issues"):
+        for i in recon["issues"][:10]:
+            logs.append({"time": recon.get("checked_at", ""), "message": f"[정합성] {i['type']} {i.get('symbol', '')} — " +
+                         ", ".join(f"{k}={v}" for k, v in i.items() if k not in ("type", "symbol", "detail"))})
     return {"running": status["running"] or bool(batch.get("running")), "me_running": status["running"],
-            "batch": batch, "logs": logs[-80:], "signals": signals[-40:]}
+            "batch": batch, "reconcile": recon, "logs": logs[-90:], "signals": signals[-40:]}
 
 
 @router.get("/quant/pipeline")
