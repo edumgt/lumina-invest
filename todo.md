@@ -401,6 +401,7 @@ cd /home/ubuntu/lumina-invest && .venv/bin/python -m pytest tests/test_spec_rule
 | L14 | (2026-10-06) 백그라운드 배치 종목 | `KIS_PAPER_BATCH_SYMBOLS` 비움(AI 추천 상위 3, 기본) vs 고정 종목 | 1주 관찰은 AI 추천 유지, 체결 로그 보고 고정 여부 결정 |
 | L16 | (2026-10-06) 공격 모드 파라미터 | 익절 1.5%/손절 1.0%/사이클 매수 2·매도 3/강제 로테이션 매수 ON/시장가. 6-11 참고 | 1~2일 체결 로그 보고 TP/SL·강제 매수 조정 |
 | L17 | (2026-10-06) celery-beat 정지 근본 원인 | 6-13. heartbeat/autoheal 로 자동 복구는 되지만 원인 로그가 없다. 재발 시 beat 로그·RestartCount 수집 | 재발 2회 이상이면 beat 를 worker 내장(`-B`) 또는 RedBeat 스케줄러로 교체 검토 |
+| L18 | (2026-10-06) 노출 점검 후속 | 6-14 권고 ①~④ 중 어느 것을 적용할지. docs 비공개는 개발 편의↓, .env 추적 해제는 이력 정리(필요 시 git filter-repo) 동반 | ①②③ 적용, 비번·시크릿 교체 |
 | L15 | (2026-10-06) 비상 정지 후 배치 재가동 주체 | 사람이 kill switch 해제(현재) vs 다음 영업일 자동 재가동 | 손실 반복 위험으로 수동 유지 |
 | L13 | 운영 계정에 LEAN 합격 전략 적용 시점 | pr(domain-rag-lab) 합격 전략 0건. 전략 선택 전까지 매수·매도 모두 기술지표 규칙만 사용(ML·LEAN 미적용) | domain-rag-lab 에서 ma_cross/momentum 백테스트 → export 후 종목 선정 화면에서 선택 |
 
@@ -695,3 +696,19 @@ sudo docker exec fin-ai-redis redis-cli get celery:beat:heartbeat               
 docker ps --format '{{.Names}}\t{{.Status}}' | grep -E 'celery|autoheal'                        # (healthy)
 sudo docker exec fin-ai-postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "select created_at, symbol, side, order_type, quantity, price, status from live_orders order by created_at desc limit 10;"'
 ```
+
+### 6-14. 2026-10-06 계좌·키 노출 점검 (사용자 요청)
+
+| 항목 | 결과 |
+|------|------|
+| 공개 URL `.env`/`.env.prod`/`.git/config` (fd·pr) | 404 — 정적 노출 없음. st 는 모든 경로가 SPA index.html 로 폴백(파일 노출 아님) |
+| 인증 필요 API 무인증 호출 (settings·broker·dashboard·live-orders·auto/status·quickstart, pr strategies, st kis) | 전부 401 |
+| **OpenAPI 문서 공개** (`/docs`, `/openapi.json`) fd·pr·st(`/api/docs`) | 200 — 라우트·스키마(필드명 app_key 등) 전체 공개. 키 값은 없음. 정보 노출 축소 권고: 운영에서 `docs_url=None, openapi_url=None` |
+| **git 추적 .env (4 repo 모두 PUBLIC)** | domain-rag-lab `.env`(개발용: 로컬 postgres 비번 7자 등), lumina `.env.prod`(SESSION_SECRET=change-me 계열 14자, DATABASE_URL 기본 fin_user 비번), `.env.dev`(알림 키 전부 빈 값). **KIS 앱키·계좌·게이트웨이 API 키·pem 은 어느 repo 에도 커밋되지 않음**. pem 은 .gitignore(`*.pem`) |
+| compose 하드코딩 | lumina `docker-compose.yml` 에 `POSTGRES_PASSWORD=fin_pass`·`DATABASE_URL` 평문(공개 repo). fd 외부 포트(5432/6379/6333/7474/7687/11434) 모두 closed 라 직접 접속은 불가하나, 공개 비번이므로 교체 권고 |
+| 프런트 정적 자산(public/, frontend/) | 키 패턴 0건 |
+| 서버 `.env`(fd lumina: STOCK_COIN_TRADE_API_KEY·DOMAIN_RAG_LAB_API_KEY 원문) | 서버에만 존재, deploy rsync 가 `.env*` 제외. 파일 권한·`docker exec env` 노출 범위는 서버에서 `ls -l .env`(600 권고) 로 확인 필요(에이전트 SSH 불가) |
+| GitHub Actions 로그 | 시크릿은 `***` 마스킹. 비민감 env 만 출력 |
+| 코드 내 상수 | stock-coin-trade `market_bots.py` `BOT_PASSWORD="system-bot-account"`(내부 봇 계정 비번 하드코딩) — 교체·env 이동 권고 |
+
+**권고(우선순위)**: ① 운영 FastAPI docs 비공개(3 서비스) ② 공개 repo 의 `.env`/`.env.prod` 추적 해제(`git rm --cached`) + 서버 DB 비번·SESSION_SECRET 교체(이미 공개 이력이라 삭제만으로는 부족) ③ fd `.env` 권한 600 확인 ④ `BOT_PASSWORD` env 이동. 결정은 7절 L18.
