@@ -10,6 +10,7 @@ import { initPaperViews, onPaperViewActivated } from "/js/paper.js";
 import { loadAutoTradeStatus, loadQuantDashboard } from "/js/quant.js";
 import { initRebalanceView, onRebalanceViewActivated } from "/js/rebalance.js";
 import { loadPatternAnalysis, loadRoboDecision, loadRoboScreening } from "/js/robo.js";
+import { loadKisMonitor } from "/js/kis_monitor.js";
 import { loadNotificationSettings, loadSettings } from "/js/settings.js";
 import { loadAuditLog, loadSystemDashboard } from "/js/sysadmin.js";
 import { loadBrokerStatus, loadOrderHistory, loadPortfolio, loadStockChart } from "/js/trading.js";
@@ -76,6 +77,7 @@ function onViewActivated(view) {
   // 로보 어드바이저 신규 뷰
   if (view === "robo-screening") loadRoboScreening();
   if (view === "robo-decision")  loadRoboDecision();
+  if (view === "kis-monitor")    loadKisMonitor();
   if (view === "robo-patterns")  { if (!document.getElementById("pt-mtf").innerHTML) loadPatternAnalysis(); }
   // 투자 인디케이터 신규 뷰
   if (view === "indicator-custom") loadSavedIndicators();

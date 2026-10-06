@@ -17,6 +17,7 @@ const GNB_MENUS = {
       { key: "agent-cb",        icon: "fa-solid fa-chart-bar",             label: "신용 리스크 분석" },
       { key: "agent-products",  icon: "fa-solid fa-coins",                 label: "맞춤 상품 추천" },
       { key: "agent-news",      icon: "fa-solid fa-newspaper",             label: "투자 정보 리서치" },
+      { key: "kis-monitor",     icon: "fa-solid fa-chart-line",            label: "KIS 모의투자결과" },
     ],
   },
   crawl: {
@@ -176,6 +177,7 @@ const TERMS = {
 // ── 화면별 사용법 가이드 (43개 view 전체) ────────────────────────────
 const VIEW_GUIDES = {
   "agent-chat":      { summary: "금융 지식·데이터를 학습한 AI 로보 어드바이저에게 자유롭게 투자 관련 질문을 합니다.", steps: ["궁금한 내용을 채팅창에 입력 후 전송 버튼(또는 Enter)을 누르세요.", "신용점수, 금융상품, 퀀트 전략 등 여러 주제를 한 대화에서 섞어 물어봐도 됩니다.", "AI 답변은 참고용이며, 실제 투자 결정 전 반드시 스스로 데이터를 검증하세요."], relatedTerms: ["rag", "cb_score"] },
+  "kis-monitor":     { summary: "KIS 모의투자(Testbed) 자동매매만 모아서 봅니다 — 배치 상태, 계좌 잔고·보유, 봇 실주문·체결률·실현손익, 5분 사이클 이력, 로그와 실거래의 정합성.", steps: ["상단 배지에서 배치 실행·공격 모드·heartbeat(beat 생존)·환경(paper) 을 확인하세요.", "「봇 실주문」 표의 상태가 FILLED 면 KIS 에 체결된 것이고 UNKNOWN/LOST/ERROR 는 응답 미수신·실패입니다.", "「정합성」 패널에 불일치가 있으면 가상 장부와 KIS 실제 보유가 다른 것이니 사유를 확인하세요.", "60초 자동 새로고침을 켜 두면 사이클(5분)마다 새 거래가 반영됩니다."], relatedTerms: ["auto_trade_cycle", "slippage", "mdd"] },
   "robo-portfolio":  { summary: "위험 성향·투자기간·투자금액을 입력하면 AI가 자산배분 비중과 추천 종목을 계산합니다.", steps: ["위험 성향(안정/중립/공격)과 투자 기간, 투자금액을 선택하세요.", "'배분 계산' 버튼을 누르면 자산군별 비중과 추천 종목이 표시됩니다.", "기대수익률·MDD는 과거 데이터 기반 추정치이며 미래 수익을 보장하지 않습니다."], relatedTerms: ["covariance_opt", "mvo", "risk_parity", "mdd", "sharpe"] },
   "robo-screening":  { summary: "패턴 인식 모델로 대표 종목들을 매수/매도/관망으로 스크리닝합니다.", steps: ["모델(RSI/이동평균/볼린저/앙상블)과 신호 필터, 최소 신뢰도를 선택하세요.", "결과 카드에서 종목별 신호·점수·근거를 확인하세요.", "신뢰도가 높다고 100% 적중을 의미하지 않으니 다른 지표와 함께 판단하세요."], relatedTerms: ["signal", "lightgbm", "rsi", "golden_cross"] },
   "robo-decision":   { summary: "자동매매 로직이 만든 모의투자 의사결정 과정을 로그로 확인합니다.", steps: ["시작 버튼을 누르면 5분 주기로 모의계좌 매매가 진행됩니다.", "로그에서 매수/매도 이유와 계좌 평가금액 변화를 확인하세요.", "실제 자금이 아닌 가상계좌이므로 전략을 안전하게 검증할 수 있습니다."], relatedTerms: ["virtual_account", "auto_trade_cycle", "signal"] },

@@ -753,3 +753,17 @@ sudo docker exec fin-ai-postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_D
 - 테스트: `test_kis_market_data.py` 12건, `test_reconciliation.py` 7건, 기존 공격모드 테스트는 Yahoo 경로 고정. 전체 **222 passed**. 코드 커밋 8ed5f3c, 문서는 이 커밋.
 
 **예상 효과**: "가상 2건/실주문 <=1건" 패턴은 다음 점검에서 `phantom_trade`·`virtual_vs_live_mismatch` 로 집계되어 화면·알림에 뜬다. 원인(실주문 함수 미호출 vs 게이트웨이 거부)은 그 `live_status`/`live_reason` 로 갈린다.
+
+### 6-17. 2026-10-06 「KIS 모의투자결과」 전용 모니터링 화면 (사용자 요청)
+
+**질문 답**: KIS 모의투자만 보는 화면은 없었다(통합 대시보드 KIS 탭·자동매매 현황·실주문 현황이 흩어져 있고 모두 로그인 사용자 기준). 로보 어드바이저 메뉴 **맨 아래**에 「KIS 모의투자결과」(`#kis-monitor`)를 신설.
+
+| 변경 | 내용 |
+|------|------|
+| `app/routes/kis_monitor.py` `GET /api/quant/kis/monitor` (인증) | 한 번에: 배치/공격모드/heartbeat/시세소스/유니버스, KIS 계좌(현금·평가·보유, **★봇 관리 종목** 표시·봇 수량), 봇 실주문(시스템+내 계정, 최근 50·당일 상태 분포·체결률·매수/매도 금액·평균 슬리피지·미해소 UNKNOWN/LOST/ERROR·**평균단가법 실현손익**), 가상 장부, 사이클 이력(대상·매수/매도 계획·거래별 실주문 결과·생략·비상정지·가상 평가), 마지막 beat 실행, 정합성 결과 |
+| `public/js/core.js` | `GNB_MENUS.agent` 마지막에 `{key:"kis-monitor", label:"KIS 모의투자결과"}`, 사용법 가이드(`VIEW_GUIDE`) 추가 |
+| `public/app.html` | `data-view="kis-monitor"` 뷰: 상태 배지 줄, KPI 8개(총평가·계좌손익·봇 실현손익·당일 실주문/체결률·매수/매도·미해소·봇 보유/전체·정합성), 보유 표, 정합성 패널, 실주문 표, 사이클 이력. 60초 자동 새로고침 토글 + 수동 새로고침 |
+| `public/js/kis_monitor.js` 신설, `main.js` 연결 | 뷰 진입 시 로드, 뷰 이탈 시 타이머 정지(`lumina:view-changed`) |
+| 테스트 | `tests/test_kis_monitor_route.py` 3건(실현손익 평균단가법, 전체 조립, 게이트웨이 없음). 전체 **225 passed** |
+
+**확인**: 배포 후 로그인 → 로보 어드바이저 > KIS 모의투자결과. 실주문 표의 02:43 원익IPS FILLED·02:51 브이티 LOST, 사이클 이력의 거래별 "실주문 없음/error(사유)" 가 지금 겪는 "가상 2건/실주문 ≤1건" 원인을 바로 보여준다.

@@ -1568,6 +1568,47 @@
       </div>
     </div>
 
+    <div class="view" data-view="kis-monitor">
+      <div class="space-y-4">
+        <div class="card">
+          <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
+            <div>
+              <h2 class="text-lg font-semibold">📈 KIS 모의투자결과</h2>
+              <p class="text-xs mt-1" style="color:var(--text-mute);">한국투자증권 Testbed 자동매매(백그라운드 배치)만 모니터링합니다. 계좌·실주문·사이클·정합성을 한 화면에서 봅니다.</p>
+            </div>
+            <div class="flex items-center gap-2 text-xs">
+              <label class="flex items-center gap-1" style="color:var(--text-dim);"><input type="checkbox" id="kism-auto" checked> 60초 자동 새로고침</label>
+              <button id="kism-refresh" class="btn-secondary text-xs">새로고침</button>
+            </div>
+          </div>
+          <div id="kism-badges" class="flex flex-wrap gap-2 text-xs mb-3"></div>
+          <div id="kism-kpis" class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3"></div>
+          <div id="kism-updated" class="text-xs mt-2" style="color:var(--text-mute);"></div>
+        </div>
+
+        <div class="grid lg:grid-cols-2 gap-4">
+          <div class="card">
+            <h3 class="font-semibold mb-2 text-sm">💼 KIS 계좌 보유 <span id="kism-holdings-note" class="text-xs" style="color:var(--text-mute);"></span></h3>
+            <div id="kism-holdings" class="overflow-x-auto text-xs"></div>
+          </div>
+          <div class="card">
+            <h3 class="font-semibold mb-2 text-sm">🔎 정합성 (로그 vs 실거래) <span id="kism-recon-note" class="text-xs" style="color:var(--text-mute);"></span></h3>
+            <div id="kism-recon" class="text-xs space-y-1"></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3 class="font-semibold mb-2 text-sm">🧾 봇 실주문 (KIS 게이트웨이) <span id="kism-orders-note" class="text-xs" style="color:var(--text-mute);"></span></h3>
+          <div id="kism-orders" class="overflow-x-auto text-xs"></div>
+        </div>
+
+        <div class="card">
+          <h3 class="font-semibold mb-2 text-sm">🔁 5분 사이클 이력 (배치) <span id="kism-cycles-note" class="text-xs" style="color:var(--text-mute);"></span></h3>
+          <div id="kism-cycles" class="space-y-2 text-xs"></div>
+        </div>
+      </div>
+    </div>
+
     <!-- ══ 투자 인디케이터 신규 뷰 ════════════════════════════════════ -->
 
     <!-- 기본 인디케이터 전략 -->
