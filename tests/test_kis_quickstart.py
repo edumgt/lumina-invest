@@ -145,3 +145,27 @@ def test_route_returns_409_on_block(monkeypatch):
     with pytest.raises(HTTPException) as ei:
         asyncio.run(sr.kis_quickstart_start(user={"id": str(UID)}, db=FakeDb(None)))
     assert ei.value.status_code == 409 and "설정되지 않았" in ei.value.detail
+
+
+def test_start_blocked_when_batch_exclusive_running(monkeypatch):
+    """배치 단독 실행 모드에서 배치가 돌면 사용자 KIS 시작은 409 사유 batch_exclusive. 기본값(false)에서는 막지 않는다."""
+    from app.services import kis_batch
+    monkeypatch.setattr(settings, "KIS_PAPER_BATCH_EXCLUSIVE", True)
+    with patch.object(kis_batch, "system_status", AsyncMock(return_value={"enabled": True, "running": True, "kill_switch": False, "kill_reason": ""})):
+        db = FakeDb(row())
+        with pytest.raises(qs.QuickstartBlocked) as ei:
+            asyncio.run(qs.start(db, str(UID)))
+        assert ei.value.reason == "batch_exclusive" and db.commits == 0
+        st = asyncio.run(qs.readiness(db, UID))
+        assert st["ready"] is False and st["reason"] == "batch_exclusive"
+    monkeypatch.setattr(settings, "KIS_PAPER_BATCH_EXCLUSIVE", False)
+    p_start, p_audit = _patches()
+    with patch.object(kis_batch, "system_status", AsyncMock(return_value={"enabled": True, "running": True, "kill_switch": False, "kill_reason": ""})), p_start, p_audit:
+        db = FakeDb(row())
+        out = asyncio.run(qs.start(db, str(UID)))
+        assert out["ok"] and db.row.quant_mode == "live" and db.row.broker == "kis"
+        assert asyncio.run(qs.readiness(db, UID))["ready"] is True
+
+
+def test_batch_exclusive_default_is_off():
+    assert type(settings).model_fields["KIS_PAPER_BATCH_EXCLUSIVE"].default is False

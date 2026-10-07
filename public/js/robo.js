@@ -633,13 +633,38 @@ document.getElementById("pt-symbol")?.addEventListener("keydown", e => { if (e.k
 // ── 로보 어드바이저: 모의 투자 의사결정 ─────────────────────────────
 async function loadRoboDecision() {
   try {
-    const data = await api("/api/quant/auto/status");
+    const [data, ready] = await Promise.all([api("/api/quant/auto/status"), api("/api/quant/kis/quickstart").catch(() => null)]);
     const el = document.getElementById("robo-decision-status");
     if (el) el.textContent = data.running ? "🟢 실행 중" : "⚫ 중지됨";
+    renderRoboAccount(data, ready);
     renderRoboDecisionLog(data.logs || []);
     renderRoboRationale(data.signals || []);
   } catch {}
 }
+
+// 내 계정이 어느 원장으로 도는지(가상 계좌 vs KIS 모의계좌)와 배치 상태를 한 줄로 보여 준다
+function renderRoboAccount(data, ready) {
+  const el = document.getElementById("robo-decision-account"); if (!el) return;
+  const kisBtn = document.getElementById("robo-decision-start-kis");
+  if (!ready) { el.textContent = ""; return; }
+  const isKis = ready.mode === "live" && ready.broker === "kis";
+  const mine = data.me_running
+    ? (isKis ? `<span class="badge-buy">내 계정 · KIS 모의투자 실행 중</span> 매수·매도가 KIS Testbed 모의계좌에 실주문으로 전송됩니다`
+             : `<span class="badge-buy">내 계정 · 가상 계좌 실행 중</span> (${escHtml(ready.mode)}/${escHtml(ready.broker)}) KIS 주문은 나가지 않습니다`)
+    : `내 계정 · 중지됨 (${escHtml(ready.mode)}/${escHtml(ready.broker)})`;
+  const b = ready.system_batch || {};
+  const batch = b.enabled ? ` · 배치(시스템) ${b.running ? "<span class='badge-buy'>실행 중</span> — 로그의 [배치] 항목" : "대기"}` : "";
+  const block = !ready.ready && ready.reason ? ` · <span class="badge-sell">KIS 시작 불가</span> ${escHtml(ROBO_KIS_BLOCK[ready.reason] || "지금은 시작할 수 없습니다.")}` : "";
+  el.innerHTML = `${mine}${batch}${block}`;
+  if (kisBtn) kisBtn.disabled = !ready.ready && !ready.already_started;
+}
+
+const ROBO_KIS_BLOCK = {
+  not_connected: "KIS 연동(stock-coin-trade 게이트웨이 또는 Secrets Manager)이 서버에 설정되어 있지 않습니다.",
+  real_environment: "KIS 경로가 실전(real)이라 모의투자 시작을 막습니다.",
+  kill_switch: "비상 정지 상태입니다. 자동매매 현황에서 해제하세요.",
+  batch_exclusive: "배치가 단독 실행 모드라 사용자 KIS 세션은 다음 사이클에 꺼집니다. 서버 설정 KIS_PAPER_BATCH_EXCLUSIVE=false 필요.",
+};
 
 function renderRoboDecisionLog(logs) {
   const el = document.getElementById("robo-decision-log");
@@ -655,16 +680,26 @@ function renderRoboRationale(signals) {
   const el = document.getElementById("robo-rationale");
   if (!el) return;
   if (!signals?.length) { el.innerHTML = `<div class="col-span-3 text-sm" style="color:var(--text-mute);">실행 후 판단 근거가 표시됩니다.</div>`; return; }
-  el.innerHTML = signals.slice(0,3).map(s => `
+  // 최근 사이클의 매수·매도 시그널을 우선 보여 주고, 사유(reasons)는 엔진이 실제로 쓴 지표 문구다
+  const ranked = [...signals].reverse().sort((a, b) => (a.signal === "HOLD") - (b.signal === "HOLD")).slice(0, 6);
+  el.innerHTML = ranked.map(s => `
     <div class="card" style="padding:14px;">
-      <div class="font-semibold text-sm mb-1">${escHtml(s.name || s.symbol)}</div>
-      <div class="text-xs mb-2" style="color:var(--text-mute);">신호 점수 ${Number(s.score ?? 0).toFixed(1)} | ${s.signal}</div>
-      <div class="text-xs" style="color:var(--text-dim);">${s.signal==="BUY"?"📈 매수 신호: 과매도 구간 진입, 반등 기대":s.signal==="SELL"?"📉 매도 신호: 과매수, 차익 실현 권고":"⏸ 홀드: 추세 확인 중, 관망 권고"}</div>
+      <div class="flex items-center justify-between gap-2 mb-1"><div class="font-semibold text-sm">${escHtml(s.name || s.symbol)}</div><span class="${s.signal === "BUY" ? "badge-buy" : s.signal === "SELL" ? "badge-sell" : ""}" style="${s.signal === "HOLD" ? "color:var(--text-mute);" : ""}">${escHtml(s.action || s.signal)}</span></div>
+      <div class="text-xs mb-2" style="color:var(--text-mute);">신호 점수 ${Number(s.score ?? 0).toFixed(1)} · ${s.price != null ? `${Number(s.price).toLocaleString("ko-KR")}원 · ` : ""}${s.source === "batch" ? "배치" : "내 계정"}</div>
+      <ul class="text-xs space-y-1" style="color:var(--text-dim);list-style:disc;padding-left:16px;">${(s.reasons && s.reasons.length ? s.reasons : [s.signal === "BUY" ? "매수 시그널" : s.signal === "SELL" ? "매도 시그널" : "관망 — 추세 확인 중"]).map(r => `<li>${escHtml(r)}</li>`).join("")}</ul>
     </div>`).join("");
 }
 
 document.getElementById("robo-decision-start").addEventListener("click", async () => {
-  try { await api("/api/quant/auto/start", { method:"POST" }); setToast("AI 의사결정 시작됨", "ok"); loadRoboDecision(); } catch(e) { setToast(e.message, "error"); }
+  try { await api("/api/quant/auto/start", { method:"POST" }); setToast("가상 계좌 의사결정 시작됨", "ok"); loadRoboDecision(); } catch(e) { setToast(e.message, "error"); }
+});
+document.getElementById("robo-decision-start-kis")?.addEventListener("click", async () => {
+  if (!confirm("내 계정을 KIS 모의투자(live · kis · AI 추천 종목 · 1회 50만 원)로 바꾸고 의사결정을 시작합니다.\n매수·매도가 한국투자증권 Testbed 모의계좌에 실제 모의주문으로 전송됩니다(실전계좌 아님).\n\n계속하시겠습니까?")) return;
+  try {
+    const r = await api("/api/quant/kis/quickstart", { method:"POST" });
+    setToast(r.started ? "KIS 모의투자 의사결정 시작됨 — 첫 사이클 실행 중" : "이미 실행 중이라 설정만 KIS 모의투자로 바꿨습니다", "ok");
+    loadRoboDecision();
+  } catch(e) { setToast(e.message, "error"); }
 });
 document.getElementById("robo-decision-stop").addEventListener("click", async () => {
   try { await api("/api/quant/auto/stop", { method:"POST" }); setToast("중지됨", "ok"); loadRoboDecision(); } catch(e) { setToast(e.message, "error"); }

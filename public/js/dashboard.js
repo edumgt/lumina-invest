@@ -102,6 +102,7 @@ const KIS_BLOCK_TEXT = {
   not_connected: 'KIS 연동이 되어 있지 않습니다. 서버의 stock-coin-trade 게이트웨이 또는 Secrets Manager(KIS_SECRETS_NAME) 설정이 필요합니다.',
   real_environment: '현재 KIS 경로가 실전(real)입니다. 원클릭 모의투자는 Testbed 환경에서만 시작합니다.',
   kill_switch: '비상 정지 상태입니다. 자동매매 현황에서 해제 후 시작하세요.',
+  batch_exclusive: 'KIS 모의투자 배치가 단독 실행 모드(KIS_PAPER_BATCH_EXCLUSIVE=true)라 사용자 KIS 자동매매는 다음 사이클에 꺼집니다. 배치 결과는 「KIS 모의투자결과」에서 보세요.',
 };
 let kisIntervalMin = 3;   // 서버 QUANT_CYCLE_SEC(분). quickstart 응답으로 갱신
 async function loadKisQuickstart() {

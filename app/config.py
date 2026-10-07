@@ -124,7 +124,10 @@ class Settings(BaseSettings):
     KIS_PAPER_BATCH_SYMBOLS: str = ""                   # 비우면 AI 추천 상위 N. "005930.KS,035720.KS" 처럼 주면 수동 종목
     KIS_PAPER_BATCH_AI_TOP_N: int = 3
     KIS_PAPER_BATCH_PER_TRADE_BUDGET: float = 500_000   # 1회 투자금(원) (2026-10-07, 30만→50만). 배치 행은 매 사이클 이 값으로 동기화된다. 나머지 한도는 kis_quickstart.TESTBED_DEFAULTS
-    KIS_PAPER_BATCH_EXCLUSIVE: bool = True              # true 면 배치가 켜질 때 다른 사용자 계정의 kis·live 자동매매를 끈다(같은 Testbed 계좌 중복 주문 방지)
+    # true 면 배치가 켜질 때 다른 사용자 계정의 kis·live 자동매매를 끈다(같은 Testbed 계좌 중복 주문 방지).
+    # 2026-10-07 기본값 false: 사용자도 「AI 모의 투자 의사결정」·「KIS 모의투자 시작」으로 공용 Testbed 계좌에 모의주문을 낼 수 있게 한다.
+    # 쿨다운·일 주문 수·비중 한도는 사용자별로 따로 적용되고, 정합성 점검은 계좌 전체(전 사용자) 체결을 합산한다.
+    KIS_PAPER_BATCH_EXCLUSIVE: bool = False
 
     # ── 자동매매 사이클 주기 (celery-beat quant.auto_trade_cycle) ────────────────────────────
     # beat 스케줄·expires·태스크 time_limit·/api/health·화면 문구가 모두 이 값을 따른다. 2026-10-07: 5분 → 3분.

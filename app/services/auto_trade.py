@@ -857,6 +857,7 @@ async def _run_quant_cycle(user_id: str = "quant_system") -> None:
             cycle_log["signals"].append({
                 "symbol": stock["symbol"], "name": stock["name"],
                 "price": price, "action": action, "score": score,
+                "reasons": [str(r) for r in list(reasons)[:6]],   # 의사결정 화면 「판단 근거」 카드에 실제 사유를 보여 준다
             })
 
             if action in ("강력 매수", "매수"):

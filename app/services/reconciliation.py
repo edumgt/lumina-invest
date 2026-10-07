@@ -163,10 +163,13 @@ async def run_reconciliation(db: AsyncSession, uid=SYSTEM_USER_ID) -> dict:
         if p.quantity > 0:
             virtual[_code(p.symbol)] = int(p.quantity)
     day_start = (now.astimezone(timezone(timedelta(hours=9)))).replace(hour=0, minute=0, second=0, microsecond=0).astimezone(timezone.utc)
-    rows = list((await db.execute(select(LiveOrder).where(LiveOrder.user_id == uid).order_by(LiveOrder.created_at.desc()).limit(500))).scalars().all())
-    rows_all = rows
+    # KIS Testbed 계좌는 배치와 로그인 사용자들이 **공용**으로 쓴다(KIS_PAPER_BATCH_EXCLUSIVE=false). 실제 보유와 대조할 때는
+    # 같은 환경(env)의 모든 사용자 실주문 체결을 합산하고, 가상 장부·주문 상태 점검은 이 uid 의 주문만 본다.
+    rows_account = list((await db.execute(select(LiveOrder).where(LiveOrder.environment == env).order_by(LiveOrder.created_at.desc()).limit(1000))).scalars().all())
+    rows = [r for r in rows_account if getattr(r, "user_id", uid) == uid]
     rows_today = [r for r in rows if getattr(r, "created_at", None) and r.created_at.astimezone(timezone.utc) >= day_start]
-    net_live = net_filled_by_symbol(rows_all)
+    net_live = net_filled_by_symbol(rows)                 # 이 uid 의 봇 체결 순수량 (가상 장부 대조용)
+    net_account = net_filled_by_symbol(rows_account)      # 계좌 전체 체결 순수량 (KIS 보유 대조용)
     cycles = ((await cache_get(f"quant:cycle_log:{uid}", max_age_hours=24 * 30)) or {}).get("cycles") or []
 
     # 기준선: 봇이 거래를 시작하기 전의 계좌 보유. 첫 점검이 봇 체결 뒤에 돌 수 있으므로 "현재 보유 − 봇 체결 순수량" 으로 잡는다.
@@ -174,18 +177,18 @@ async def run_reconciliation(db: AsyncSession, uid=SYSTEM_USER_ID) -> dict:
     baseline = await cache_get(bkey, max_age_hours=24 * 365)
     if not baseline:
         pre_bot = {}
-        for code in set(actual_qty) | set(net_live):
-            q = int(actual_qty.get(code, 0)) - int(net_live.get(code, 0))
+        for code in set(actual_qty) | set(net_account):
+            q = int(actual_qty.get(code, 0)) - int(net_account.get(code, 0))
             if q > 0:
                 pre_bot[code] = q
-        baseline = {"captured_at": now.isoformat(), "holdings": pre_bot, "bot_net_filled_at_capture": net_live}
+        baseline = {"captured_at": now.isoformat(), "holdings": pre_bot, "bot_net_filled_at_capture": net_account}
         await cache_set(bkey, baseline)
         report["summary"]["baseline"] = "지금 수집(첫 점검)"
     else:
         report["summary"]["baseline"] = baseline.get("captured_at")
 
     issues: list[dict] = []
-    issues += compare_positions({k: int(v) for k, v in (baseline.get("holdings") or {}).items()}, net_live, actual_qty)
+    issues += compare_positions({k: int(v) for k, v in (baseline.get("holdings") or {}).items()}, net_account, actual_qty)
     issues += compare_virtual(virtual, net_live)
     issues += phantom_trades(cycles)
     issues += order_issues(rows_today, now, int(settings.RECONCILE_OPEN_ORDER_MAX_MIN), float(settings.RECONCILE_SLIPPAGE_ALERT_PCT))
@@ -194,7 +197,8 @@ async def run_reconciliation(db: AsyncSession, uid=SYSTEM_USER_ID) -> dict:
     for r in rows_today:
         counts[r.status] = counts.get(r.status, 0) + 1
     report["summary"].update({
-        "kis_holdings": actual_qty, "virtual": virtual, "bot_net_filled": net_live,
+        "kis_holdings": actual_qty, "virtual": virtual, "bot_net_filled": net_live, "account_net_filled": net_account,
+        "account_users": len({str(getattr(r, "user_id", uid)) for r in rows_account}),
         "live_orders_today": counts, "cycles_checked": min(len(cycles), 24),
     })
     report["issues"] = issues

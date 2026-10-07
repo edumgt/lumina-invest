@@ -141,3 +141,17 @@ def test_task_registered_and_scheduled():
     assert "quant.reconcile" in celery_app.tasks
     entry = celery_app.conf.beat_schedule["quant-reconcile"]
     assert entry["task"] == "quant.reconcile" and entry["schedule"] >= 60
+
+
+def test_shared_account_counts_other_users_fills_for_kis_but_not_virtual(env):
+    """공용 Testbed 계좌: KIS 보유 대조는 전 사용자 체결 합산, 가상 장부 대조는 이 uid 체결만."""
+    other = uuid.UUID("11111111-1111-1111-1111-111111111111")
+    mine = order("240810.KQ", "BUY", 2, "FILLED", avg=100.0); mine.user_id = SYSTEM_USER_ID
+    theirs = order("005930.KS", "BUY", 5, "FILLED", avg=70000.0, cid="c-user"); theirs.user_id = other
+    db = FakeDb(portfolio=[pos("240810.KQ", 2)], orders=[mine, theirs])
+    rep = run(db, {"240810": 2, "005930": 5})           # 실제 보유 = 내 2주 + 다른 사용자 5주, 기준선 0
+    assert rep["ok"] is True, rep["issues"]
+    assert rep["summary"]["account_net_filled"] == {"240810": 2, "005930": 5}
+    assert rep["summary"]["bot_net_filled"] == {"240810": 2} and rep["summary"]["account_users"] == 2
+    # 다른 사용자 체결을 내 가상 장부에 요구하지 않는다(virtual_vs_live_mismatch 없음)
+    assert not [i for i in rep["issues"] if i["type"] == "virtual_vs_live_mismatch"]

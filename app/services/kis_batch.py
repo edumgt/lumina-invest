@@ -14,7 +14,7 @@ Testbed 권장값(:data:`kis_quickstart.TESTBED_DEFAULTS`)으로 만들고 ``qua
     위험 한도(종목 비중·일손실·쿨다운·일 주문 수)는 덮어쓰지 않는다(쿨다운·일 주문 수는 공격 모드가 런타임에 덮어쓴다).
     ``broker=kis``, ``quant_mode=live`` 는 항상 보장.
   - ``KIS_PAPER_BATCH_ENABLED=false`` 로 바꾸면 다음 사이클에 시스템 행(kis·live)을 끈다. 사용자 계정 행은 건드리지 않는다.
-  - ``KIS_PAPER_BATCH_EXCLUSIVE=true``(기본) 면 배치가 켜져 있는 동안 **다른 사용자 계정의 kis·live 자동매매 행을 끈다**.
+  - ``KIS_PAPER_BATCH_EXCLUSIVE=true``(기본 false, 2026-10-07) 면 배치가 켜져 있는 동안 **다른 사용자 계정의 kis·live 자동매매 행을 끈다**.
     같은 KIS Testbed 계좌로 두 사이클이 주문을 내는 것을 막기 위함. 사용자 계정의 paper/mock 행은 건드리지 않는다.
 """
 from __future__ import annotations

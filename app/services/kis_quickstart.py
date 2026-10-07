@@ -92,6 +92,21 @@ async def _row(db: AsyncSession, uid: uuid.UUID) -> BrokerSettings | None:
     return (await db.execute(select(BrokerSettings).where(BrokerSettings.user_id == uid))).scalar_one_or_none()
 
 
+BATCH_EXCLUSIVE_MESSAGE = ("KIS 모의투자 배치가 단독 실행 모드(KIS_PAPER_BATCH_EXCLUSIVE=true)로 돌고 있어 사용자 계정의 KIS 자동매매는 "
+                           "다음 사이클에 자동으로 꺼집니다. 배치 결과는 「KIS 모의투자결과」 화면에서 보고, 직접 돌리려면 서버 설정에서 단독 실행을 끄세요.")
+
+
+async def _batch_exclusive_running(db: AsyncSession) -> bool:
+    """배치가 단독 실행 모드로 돌고 있으면 사용자 kis·live 세션은 다음 사이클에 꺼지므로 시작 자체를 막는다."""
+    if not settings.KIS_PAPER_BATCH_EXCLUSIVE:
+        return False
+    from app.services import kis_batch  # 지연 import (순환 방지)
+    try:
+        return bool((await kis_batch.system_status(db)).get("running"))
+    except Exception:
+        return False
+
+
 async def readiness(db: AsyncSession, uid: uuid.UUID) -> dict:
     """대시보드 패널 표시용: 시작 가능 여부와 현재 상태."""
     route = await resolve_route()
@@ -111,6 +126,8 @@ async def readiness(db: AsyncSession, uid: uuid.UUID) -> dict:
     already = running and mode == "live" and broker == "kis"
     from app.services import kis_batch  # 지연 import (순환 방지)
     system_batch = await kis_batch.system_status(db)
+    if ready and settings.KIS_PAPER_BATCH_EXCLUSIVE and system_batch.get("running"):
+        ready, reason = False, "batch_exclusive"
     return {
         "system_batch": system_batch,   # 계정·로그인 무관 백그라운드 배치(KIS_PAPER_BATCH_ENABLED) 상태
         "ready": ready, "reason": reason, "route": route.via, "environment": route.environment,
@@ -130,6 +147,9 @@ async def start(db: AsyncSession, user_id: str) -> dict:
         raise QuickstartBlocked("not_connected", route.detail)
     if route.environment != "paper":
         raise QuickstartBlocked("real_environment", "현재 KIS 경로가 실전(real)으로 설정되어 있어 원클릭 모의투자를 시작하지 않습니다. 종목 선정 화면에서 직접 설정하세요.")
+
+    if await _batch_exclusive_running(db):
+        raise QuickstartBlocked("batch_exclusive", BATCH_EXCLUSIVE_MESSAGE)
 
     row = await _row(db, uid)
     if row is None:
