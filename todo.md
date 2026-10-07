@@ -877,3 +877,20 @@ sudo docker exec fin-ai-postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_D
 | 테스트 | `test_kis_monitor_route.py` +2(구분·상태·방향·텍스트·페이지 / KST 기간·400·422), 기존 모니터 테스트에 owner 집계 단언. 전체 **239 passed** |
 
 **검증(배포 후)**: `#kis-monitor` → 구분 "봇(배치)" 선택 시 사용자 주문이 사라지고 요약 건수가 맞는지, 검색어 `018290` 과 `브이티` 가 같은 결과인지, 기간을 오늘로 좁히면 당일 요약과 같은 건수인지, CSV 열림. `/js` 는 no-cache 미들웨어라 버전 쿼리 불필요.
+
+### 6-25. 2026-10-07 LNB 메뉴 3개 제거 (사용자 요청)
+
+`public/js/core.js` NAV 로보 어드바이저 그룹에서 「신용 리스크 분석(agent-cb)」「맞춤 상품 추천(agent-products)」「투자 정보 리서치(agent-news)」 항목 제거. 뷰 마크업·라우팅·API 는 그대로 두어 `#agent-cb` 등 해시로는 여전히 열린다(메뉴에서만 숨김). 되돌리려면 세 줄 복원.
+
+### 6-26. 2026-10-07 「증권사 API 자동화」「TradingView 연동」 메뉴를 시스템관리(더보기 오프캔버스)로 이동 (사용자 요청)
+
+`public/js/core.js` GNB_MENUS: 두 항목을 `company`(투자 인디케이터 LNB) 에서 `sysadmin` 그룹으로 옮김. 오프캔버스는 agent·company 를 제외한 그룹을 그리므로 자동으로 「시스템관리」 아래에 표시되고, 해당 뷰를 열면 LNB 제목이 시스템관리로 바뀐다. 뷰·라우팅·초기화(`main.js` initTradingViewView 등)는 변경 없음.
+
+### 6-27. 2026-10-07 공통 타이포그래피 가이드 — 타이틀 Pretendard 18px 고정, 18px 초과 금지 (사용자 요청, 4개 사이트 공통)
+
+| 변경 | 내용 |
+|------|------|
+| `public/css/app.css` | 파일 맨 위에 공통 가이드 주석(4항), 주 CSS 맨 끝에 「타이틀 고정」 블록: `--title-size:18px`·`--title-font: Pretendard…`, `h1, h2, .page-title { font-size:18px !important; font-family: Pretendard !important }`(인라인·유틸리티 클래스보다 우선), `h1/h2` 안의 mark·small·span 은 inherit |
+| 적용 범위 | 타이틀(h1·h2)만 강제. 본문·KPI 숫자 등 기존 18px 초과 선언은 그대로 두었다(아래 수치) — 가이드 2항에 따라 새 규칙에서는 금지, 기존 값은 화면별로 줄여 나간다 |
+
+같은 블록이 pr(`frontend/style.css`)·fd(`public/css/app.css`)·st(`frontend/css/style.css`, 가이드 주석은 `kis-practice.css` 에도)·iv(`frontend/style.css`, `investment-native/styles.css`) 에 들어 있다. 캐시 버전이 있는 링크는 각 페이지에서 갱신 필요(st `style.css?v=…`, pr/iv `style.css?v=…`); fd `/css` 는 no-cache.

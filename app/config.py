@@ -24,10 +24,10 @@ class Settings(BaseSettings):
     JWT_REFRESH_TTL: int = 604800   # 7일 (초)
 
     OLLAMA_BASE_URL: str = "http://127.0.0.1:11434"
-    LLM_MODEL: str = "qwen2.5:1.5b"
+    LLM_MODEL: str = "qwen2.5:7b"
     EMBED_MODEL: str = "nomic-embed-text"
     VLM_MODEL: str = "llava"          # Vision-Language Model for image/slide description
-    OLLAMA_TIMEOUT: float = 300.0
+    OLLAMA_TIMEOUT: float = 600.0
 
     # ── LLM 서빙 백엔드 선택 (채팅/에이전트 전용, 임베딩은 항상 Ollama 사용) ─────
     # ollama(기본, 로컬/EC2 Ollama) | bedrock | sagemaker | vllm

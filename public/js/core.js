@@ -14,9 +14,6 @@ const GNB_MENUS = {
       { key: "robo-screening",  icon: "fa-solid fa-magnifying-glass-chart",label: "패턴 인식·종목 스크리닝" },
       { key: "robo-patterns",   icon: "fa-solid fa-chart-column",          label: "차트 패턴·지지/저항·멀티타임프레임" },
       { key: "robo-decision",   icon: "fa-solid fa-brain",                 label: "모의 투자 의사결정" },
-      { key: "agent-cb",        icon: "fa-solid fa-chart-bar",             label: "신용 리스크 분석" },
-      { key: "agent-products",  icon: "fa-solid fa-coins",                 label: "맞춤 상품 추천" },
-      { key: "agent-news",      icon: "fa-solid fa-newspaper",             label: "투자 정보 리서치" },
       { key: "kis-monitor",     icon: "fa-solid fa-chart-line",            label: "KIS 모의투자결과" },
     ],
   },
@@ -73,8 +70,6 @@ const GNB_MENUS = {
       { key: "indicator-custom",    icon: "fa-solid fa-code",           label: "커스텀 인디케이터 개발" },
       { key: "indicator-formula",   icon: "fa-solid fa-square-root-variable", label: "자유 산식 지표 (DSL·버전)" },
       { key: "indicator-backtest",  icon: "fa-solid fa-flask",          label: "성과 검증 (Python)" },
-      { key: "indicator-api",       icon: "fa-solid fa-plug",           label: "증권사 API 자동화" },
-      { key: "indicator-tradingview", icon: "fa-solid fa-satellite-dish", label: "TradingView 연동 (Webhook·교차검증)" },
       { key: "company-dashboard",   icon: "fa-solid fa-gauge",          label: "지표 대시보드" },
       { key: "company-compare",     icon: "fa-solid fa-table-columns",  label: "지표 비교 분석" },
       { key: "company-sector",      icon: "fa-solid fa-layer-group",    label: "섹터 인디케이터" },
@@ -112,6 +107,9 @@ const GNB_MENUS = {
     items: [
       { key: "sysadmin-dashboard", icon: "fa-solid fa-server",      label: "서버 대시보드" },
       { key: "sysadmin-logs",      icon: "fa-solid fa-scroll",      label: "감사 로그" },
+      // 2026-10-07 투자 인디케이터 LNB 에서 이동 — 외부 연동 설정은 시스템관리(더보기 오프캔버스)에서
+      { key: "indicator-api",       icon: "fa-solid fa-plug",           label: "증권사 API 자동화" },
+      { key: "indicator-tradingview", icon: "fa-solid fa-satellite-dish", label: "TradingView 연동 (Webhook·교차검증)" },
     ],
   },
 };

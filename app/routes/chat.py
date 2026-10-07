@@ -169,8 +169,14 @@ async def chat(
             docs = []
 
     if body.llm_mode == "rag":
-        # 순수 RAG: LLM 호출 없이 검색 청크만 반환
+        # RAG 모드도 공통 Qwen으로 검색 근거를 설명한다.
         result = _rag_only_answer(body.question, docs)
+        if docs:
+            result['answer'] = await llm.chat(settings.LLM_MODEL, [
+                {'role':'system','content':'검색 근거만 바탕으로 한국어로 간결히 답하세요. 출처 제목을 언급하고 근거가 부족하면 밝히세요. 매매를 단정하지 마세요.'},
+                {'role':'user','content':f'질문: {body.question}\n근거:\n{rag_context}'}],
+                options={'num_ctx':2048,'num_predict':160,'temperature':0.2})
+            result['model'] = settings.LLM_MODEL
     else:
         # LangGraph 에이전트 실행 (ollama: 서버 LLM / openai: 사용자 키)
         try:
