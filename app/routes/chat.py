@@ -201,11 +201,11 @@ async def chat(
                 body.question, history,
                 rag_context=rag_context,
             )
-            result["mode"] = "ollama" if body.use_rag else body.llm_mode
+            result["mode"] = body.llm_mode
             result["model"] = llm_model
         except httpx.HTTPStatusError as e:
             code = e.response.status_code
-            if body.llm_mode == "openai" and not body.use_rag:
+            if body.llm_mode == "openai":
                 if code == 401:
                     raise HTTPException(401, "OpenAI API 키가 유효하지 않습니다.")
                 if code == 429:
@@ -221,7 +221,7 @@ async def chat(
                 )
             raise HTTPException(503, f"Ollama 오류: {code}")
         except httpx.ConnectError:
-            target = settings.OPENAI_BASE_URL if body.llm_mode == "openai" and not body.use_rag else settings.OLLAMA_BASE_URL
+            target = settings.OPENAI_BASE_URL if body.llm_mode == "openai" else settings.OLLAMA_BASE_URL
             raise HTTPException(503, f"{llm_label} 서버({target})에 연결할 수 없습니다.")
         except httpx.TimeoutException:
             raise HTTPException(504, "LLM 응답 시간이 초과되었습니다.")

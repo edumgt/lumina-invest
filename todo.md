@@ -380,6 +380,26 @@ cd /home/ubuntu/lumina-invest && .venv/bin/python -m pytest tests/test_spec_rule
 
 ---
 
+
+### 6-28. 2026-10-07 공통 LLM 모델 qwen2.5:7b → 3b 교체 (사용자 요청)
+
+**배경**: fd 호스트는 2 vCPU · 8GB 를 15개 컨테이너가 공유한다. 7b(4.7GB)는 메모리의 절반 이상을 차지하고 콜드 로딩만 30초대였다.
+
+**fd Ollama 실측** (호스트 load 1.27, num_ctx 2048 · num_predict 160, 앱과 같은 조건)
+
+| 모델 | 콜드(로딩 포함) | 웜 | 생성 속도 |
+|------|------|------|------|
+| qwen2.5:3b | 40.7초 | 16.6초 (33토큰) | 1.99 tok/s |
+| qwen2.5:1.5b | 53.2초 | 39.4초 (160토큰) | 4.06 tok/s |
+
+토큰당 속도는 1.5b 가 3b 의 약 2배다. 160토큰 답변 기준 3b ≈ 80초, 1.5b ≈ 39초로 추정된다.
+
+**변경**: `app/config.py` `LLM_MODEL` 기본값 3b, `docker-compose.yml` 의 `COMPOSE_LLM_MODEL` 기본값 4곳·모델 pull 주석, 화면 라벨 「Qwen 7B」→「Qwen」(`public/js/agent.js`, `public/app.html`). 모델 크기는 서버 설정이 정하므로 UI 에 고정 표기하지 않는다.
+
+**주의**: 모델 교체만으로는 체감이 크게 좋아지지 않는다. `num_predict` 를 100 이하로 줄이고 `keep_alive` 를 30분 이상으로 두어 콜드 로딩을 피하는 쪽이 효과가 크다. 벤치마크 시 `ollama run` CLI 는 토큰 상한이 없어 수천 토큰을 생성하며 호스트를 포화시킨다(2026-10-07 실제 발생). HTTP API 에 `num_predict` 를 주고 측정할 것.
+
+**7b 삭제 순서**: 배포 전에 지우면 구 코드가 도는 컨테이너가 깨진다. ① 이 변경 배포 → ② `sudo docker exec fin-ai-ollama ollama rm qwen2.5:7b`(4.7GB 회수).
+
 ## 7. 사용자 의사결정 필요 항목 (에이전트가 대신 정할 수 없는 것)
 
 > 2026-10-02 기준. 결정되면 이 표를 갱신하고 관련 "다음 작업"을 6절에 추가한다.
