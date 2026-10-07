@@ -107,7 +107,8 @@ async def graph_rag_answer(query: str, top_k: int = 5, collection: str | None = 
         base_url=settings.OLLAMA_BASE_URL,
         model=settings.LLM_MODEL,
         temperature=0.2,
-        num_predict=2048,
+        num_predict=256,
+        num_ctx=2048,
     )
 
     chain = prompt | llm | StrOutputParser()

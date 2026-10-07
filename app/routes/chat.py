@@ -1,3 +1,4 @@
+import logging
 """채팅 API – 대화 스레드 + Redis 사용자 상태 연동.
 
 변경 사항:
@@ -30,6 +31,7 @@ from app.lib.user_state import get_active_conversation, set_active_conversation
 from app.services.langgraph_agent import run_agent
 from app.services.rag_pipeline import rag_search
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
 
 
@@ -145,7 +147,10 @@ async def chat(
     db: AsyncSession = Depends(get_pg_session),
 ):
     user_id = user["id"]
-    llm, llm_model, llm_label = _resolve_llm(body)
+    if body.use_rag or body.llm_mode == 'rag':
+        llm, llm_model, llm_label = get_llm_client(), settings.LLM_MODEL, 'Docker Qwen 7B'
+    else:
+        llm, llm_model, llm_label = _resolve_llm(body)
 
     # 대화 스레드 확보
     conversation_id = await _get_or_create_conversation(db, user_id, body.conversation_id)
@@ -171,12 +176,21 @@ async def chat(
     if body.llm_mode == "rag":
         # RAG 모드도 공통 Qwen으로 검색 근거를 설명한다.
         result = _rag_only_answer(body.question, docs)
+        result["llm_used"] = False
         if docs:
-            result['answer'] = await llm.chat(settings.LLM_MODEL, [
-                {'role':'system','content':'검색 근거만 바탕으로 한국어로 간결히 답하세요. 출처 제목을 언급하고 근거가 부족하면 밝히세요. 매매를 단정하지 마세요.'},
-                {'role':'user','content':f'질문: {body.question}\n근거:\n{rag_context}'}],
-                options={'num_ctx':2048,'num_predict':160,'temperature':0.2})
-            result['model'] = settings.LLM_MODEL
+            # 검색 근거가 있으면 LLM(기본 Qwen, openai 모드면 사용자 키)으로 짧게 설명한다. LLM 이 없거나 실패하면
+            # 규칙 기반 답변("LLM 미사용")을 그대로 둔다 — RAG 모드는 LLM 없이도 동작해야 한다.
+            try:
+                summary = await llm.chat(llm_model, [
+                    {'role': 'system', 'content': '검색 근거만 바탕으로 한국어로 간결히 답하세요. 출처 제목을 언급하고 근거가 부족하면 밝히세요. 매매를 단정하지 마세요.'},
+                    {'role': 'user', 'content': f'질문: {body.question}\n근거:\n{rag_context}'}],
+                    options={'num_ctx': 2048, 'num_predict': 160, 'temperature': 0.2})
+                if isinstance(summary, str) and summary.strip():
+                    result['answer'] = summary.strip()
+                    result['model'] = llm_model
+                    result['llm_used'] = True
+            except Exception as exc:  # LLM 미연결·타임아웃·모의 클라이언트 등
+                logger.warning("RAG 모드 LLM 요약 실패 — 규칙 기반 답변 유지: %s", exc)
     else:
         # LangGraph 에이전트 실행 (ollama: 서버 LLM / openai: 사용자 키)
         try:

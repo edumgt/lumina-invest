@@ -133,7 +133,7 @@ def build_graph(db: Any, ollama: OllamaClient, llm_model: str):
         messages.extend(state["messages"])
 
         raw = await ollama.chat(
-            llm_model, messages, {"temperature": 0.1, "num_predict": 2048}
+            llm_model, messages, {"temperature": 0.1, "num_predict": 256, "num_ctx": 2048}
         )
         action = _parse_action(raw)
 
@@ -195,7 +195,7 @@ def build_graph(db: Any, ollama: OllamaClient, llm_model: str):
             },
         ]
         answer = await ollama.chat(
-            llm_model, final_messages, {"temperature": 0.2, "num_predict": 3000}
+            llm_model, final_messages, {"temperature": 0.2, "num_predict": 256, "num_ctx": 2048}
         )
         return {"final_answer": answer}
 

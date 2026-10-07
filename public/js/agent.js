@@ -8,7 +8,7 @@ let chatHistory = [];
 // 선택값과 OpenAI 키는 이 브라우저의 localStorage 에만 저장되고, 키는 요청 본문으로만 서버에 전달된다(서버 저장 없음).
 const LLM_MODE_KEY = "lumina.chat.llmMode";
 const OPENAI_KEY_KEY = "lumina.chat.openaiKey";
-const LLM_MODE_LABEL = { ollama: "Local Ollama", openai: "OpenAI API", rag: "순수 RAG 청크" };
+const LLM_MODE_LABEL = { ollama: "Local Ollama", openai: "OpenAI API", rag: "Qwen 7B RAG" };
 
 function getLlmMode() {
   return document.getElementById("chat-llm-mode")?.value || "ollama";

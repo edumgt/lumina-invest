@@ -123,19 +123,41 @@ def chat_app(monkeypatch):
     return TestClient(app), calls
 
 
-def test_rag_mode_returns_chunks_without_llm(chat_app):
-    client, calls = chat_app
+def test_rag_mode_falls_back_to_rule_answer_when_llm_unavailable(chat_app):
+    """LLM 클라이언트가 chat 을 제공하지 않거나 실패하면 규칙 기반 답변("LLM 미사용")을 그대로 돌려준다."""
+    client, calls = chat_app                      # get_llm_client 스텁이 문자열 → llm.chat 실패 → 폴백
     res = client.post("/api/chat", json={"question": "삼성전자 실적", "llm_mode": "rag"})
     assert res.status_code == 200, res.text
     body = res.json()
-    assert body["mode"] == "rag"
+    assert body["mode"] == "rag" and body["llm_used"] is False
     assert len(body["chunks"]) == 2
-    assert calls["agent"] == []                    # LLM 미호출
+    assert calls["agent"] == []                    # LangGraph 에이전트 미호출
     assert calls["rag"] == ["삼성전자 실적"]
     assert "LLM 미사용" in body["answer"]
     assert "삼성전자 실적" in body["answer"] and "https://ex.com/a" in body["answer"]
     assert body["citations"][0]["title"] == "삼성전자 실적"
     assert body["citations"][1]["title"] == "upload"  # 제목 없으면 source 로 대체
+
+
+def test_rag_mode_uses_llm_summary_when_available(chat_app, monkeypatch):
+    """검색 근거가 있고 LLM 이 응답하면 그 요약이 답변이 되고 model·llm_used 가 채워진다. 근거 목록(chunks·citations)은 그대로."""
+    client, calls = chat_app
+    seen = {}
+
+    class FakeLLM:
+        async def chat(self, model, messages, options=None):
+            seen["model"], seen["messages"], seen["options"] = model, messages, options
+            return "  삼성전자 실적 근거에 따르면 2분기 영업이익이 개선되었습니다. (출처: 삼성전자 실적)  "
+
+    monkeypatch.setattr(chat_mod, "get_llm_client", lambda: FakeLLM())
+    res = client.post("/api/chat", json={"question": "삼성전자 실적", "llm_mode": "rag"})
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["llm_used"] is True and body["model"] == settings.LLM_MODEL
+    assert body["answer"].startswith("삼성전자 실적 근거에 따르면")
+    assert len(body["chunks"]) == 2 and calls["agent"] == []
+    assert seen["model"] == settings.LLM_MODEL and "삼성전자 실적" in seen["messages"][1]["content"]
+    assert seen["options"]["num_predict"] == 160
 
 
 def test_rag_mode_with_no_docs(chat_app, monkeypatch):
