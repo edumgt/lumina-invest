@@ -147,8 +147,10 @@ async def chat(
     db: AsyncSession = Depends(get_pg_session),
 ):
     user_id = user["id"]
-    if body.use_rag or body.llm_mode == 'rag':
-        llm, llm_model, llm_label = get_llm_client(), settings.LLM_MODEL, 'Docker Qwen 7B'
+    # rag 모드는 공통 서버 LLM(Docker Ollama Qwen)으로 검색 근거를 설명한다. use_rag 은 "검색 근거를 붙일지" 이지
+    # "어떤 LLM 을 쓸지" 가 아니므로 ollama/openai 모드의 LLM 선택(_resolve_llm)에는 영향을 주지 않는다.
+    if body.llm_mode == 'rag':
+        llm, llm_model, llm_label = get_llm_client(), settings.LLM_MODEL, f'Docker Ollama {settings.LLM_MODEL}'
     else:
         llm, llm_model, llm_label = _resolve_llm(body)
 
