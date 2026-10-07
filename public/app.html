@@ -1610,17 +1610,6 @@
           <div id="kism-updated" class="text-xs mt-2" style="color:var(--text-mute);"></div>
         </div>
 
-        <div class="grid lg:grid-cols-2 gap-4">
-          <div class="card">
-            <h3 class="font-semibold mb-2 text-sm">💼 KIS 계좌 보유 <span id="kism-holdings-note" class="text-xs" style="color:var(--text-mute);"></span></h3>
-            <div id="kism-holdings" class="overflow-x-auto text-xs"></div>
-          </div>
-          <div class="card">
-            <h3 class="font-semibold mb-2 text-sm">🔎 정합성 (로그 vs 실거래) <span id="kism-recon-note" class="text-xs" style="color:var(--text-mute);"></span></h3>
-            <div id="kism-recon" class="text-xs space-y-1"></div>
-          </div>
-        </div>
-
         <div class="card">
           <h3 class="font-semibold mb-2 text-sm">🧾 봇 실주문 (KIS 게이트웨이) <span id="kism-orders-note" class="text-xs" style="color:var(--text-mute);"></span></h3>
           <!-- 검색 툴바: GET /api/quant/kis/orders (구분 봇/사용자 · 상태 · 방향 · 기간 · 텍스트 · 건수). 결과는 컬럼 헤더 클릭으로 정렬 -->
@@ -1644,6 +1633,17 @@
           </form>
           <div id="kism-orders-result" class="text-xs mb-1" style="color:var(--text-mute);"></div>
           <div id="kism-orders" class="overflow-x-auto text-xs"></div>
+        </div>
+
+        <div class="grid lg:grid-cols-2 gap-4">
+          <div class="card">
+            <h3 class="font-semibold mb-2 text-sm">💼 KIS 계좌 보유 <span id="kism-holdings-note" class="text-xs" style="color:var(--text-mute);"></span></h3>
+            <div id="kism-holdings" class="overflow-x-auto text-xs"></div>
+          </div>
+          <div class="card">
+            <h3 class="font-semibold mb-2 text-sm">🔎 정합성 (로그 vs 실거래) <span id="kism-recon-note" class="text-xs" style="color:var(--text-mute);"></span></h3>
+            <div id="kism-recon" class="text-xs space-y-1"></div>
+          </div>
         </div>
 
         <div class="card">
