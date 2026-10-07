@@ -145,8 +145,8 @@ services:
     - OLLAMA_NUM_PARALLEL=1
     - OLLAMA_MAX_LOADED_MODELS=1
     - OLLAMA_KEEP_ALIVE=30m
-    # CPU 경합 시 앱 컨테이너보다 낮은 우선순위 (기본 1024). 유휴 시에는 제한 없음.
-    cpu_shares: 512
+    # 7B CPU 추론도 다른 서비스와 동일한 CPU 우선순위를 사용한다.
+    cpu_shares: 1024
     volumes:
     - ollama_data:/root/.ollama
     networks:

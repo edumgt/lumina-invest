@@ -14,10 +14,19 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import RunnablePassthrough, RunnableLambda
 from langchain_ollama import ChatOllama
-from qdrant_client import AsyncQdrantClient
+from qdrant_client import AsyncQdrantClient, QdrantClient
 from qdrant_client.http.models import Distance, VectorParams
 
 from app.config import settings
+
+
+class CompatibleQdrantStore(QdrantVectorStore):
+    @classmethod
+    def _document_from_point(cls, point, collection_name, content_payload_key, metadata_payload_key):
+        payload = point.payload or {}
+        metadata = dict(payload.get(metadata_payload_key) or {k:v for k,v in payload.items() if k not in ('text','page_content')})
+        metadata.update({'_id':point.id,'_collection_name':collection_name})
+        return Document(page_content=payload.get(content_payload_key) or payload.get('text') or payload.get('page_content') or '', metadata=metadata)
 
 
 # ── 내부 팩토리 ───────────────────────────────────────────────────────────────
@@ -62,38 +71,28 @@ async def rag_search(
     """
     coll = collection or settings.QDRANT_COLLECTION
     try:
+        vector = await _make_embeddings().aembed_query(query)
+        from qdrant_client.http.models import Filter, FieldCondition, MatchValue
+        qdrant_filter = Filter(must=[FieldCondition(key="source",match=MatchValue(value=filter_source))]) if filter_source else None
         client = AsyncQdrantClient(url=settings.QDRANT_URL)
-        await _get_or_create_collection(client, coll)
-
-        store = QdrantVectorStore(
-            client=client,
-            collection_name=coll,
-            embedding=_make_embeddings(),
-        )
-
-        qdrant_filter = None
-        if filter_source:
-            from qdrant_client.http.models import Filter, FieldCondition, MatchValue
-            qdrant_filter = Filter(
-                must=[FieldCondition(key="source", match=MatchValue(value=filter_source))]
-            )
-
-        results = await store.asimilarity_search_with_score(
-            query, k=top_k, filter=qdrant_filter
-        )
-        await client.close()
-
-        return [
-            {
-                "text":   doc.page_content,
-                "url":    doc.metadata.get("url", ""),
-                "title":  doc.metadata.get("title", ""),
-                "source": doc.metadata.get("source", ""),
-                "score":  float(score),
-            }
-            for doc, score in results
-        ]
+        try:
+            await _get_or_create_collection(client, coll)
+            results = await client.query_points(collection_name=coll, query=vector,
+                limit=top_k, query_filter=qdrant_filter, with_payload=True)
+        finally:
+            await client.close()
+        docs = []
+        for point in results.points:
+            payload = point.payload or {}
+            metadata = payload.get('metadata') or payload
+            text = payload.get('text') or payload.get('page_content') or ''
+            if text:
+                docs.append({'text':text,'url':metadata.get('url',''),
+                    'title':metadata.get('title',''),'source':metadata.get('source',''),'score':float(point.score)})
+        return docs
     except Exception:
+        import logging
+        logging.getLogger(__name__).exception('Qdrant RAG 검색 실패')
         return []
 
 
@@ -113,19 +112,22 @@ async def store_chunks(
 
     coll = collection or settings.QDRANT_COLLECTION
     try:
+        import uuid
+        from qdrant_client.http.models import PointStruct
+        vectors = await _make_embeddings().aembed_documents(chunks)
+        points = [PointStruct(id=str(uuid.uuid4()),vector=vector,
+            payload={**metadata,'text':chunk,'metadata':dict(metadata),'chunk_index':index})
+            for index,(chunk,vector) in enumerate(zip(chunks,vectors))]
         client = AsyncQdrantClient(url=settings.QDRANT_URL)
-        await _get_or_create_collection(client, coll)
-
-        store = QdrantVectorStore(
-            client=client,
-            collection_name=coll,
-            embedding=_make_embeddings(),
-        )
-        docs = [Document(page_content=chunk, metadata=metadata) for chunk in chunks]
-        await store.aadd_documents(docs)
-        await client.close()
-        return len(docs)
+        try:
+            await _get_or_create_collection(client, coll)
+            await client.upsert(collection_name=coll,points=points,wait=True)
+        finally:
+            await client.close()
+        return len(points)
     except Exception:
+        import logging
+        logging.getLogger(__name__).exception('Qdrant RAG 문서 저장 실패')
         return 0
 
 
@@ -143,10 +145,11 @@ def build_rag_chain(collection: str | None = None):
     from qdrant_client import QdrantClient
     sync_client = QdrantClient(url=settings.QDRANT_URL)
 
-    vector_store = QdrantVectorStore(
+    vector_store = CompatibleQdrantStore(
         client=sync_client,
         collection_name=coll,
         embedding=_make_embeddings(),
+        content_payload_key="text",
     )
     retriever = vector_store.as_retriever(search_kwargs={"k": settings.TOP_K})
 
