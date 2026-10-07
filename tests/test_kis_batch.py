@@ -109,22 +109,36 @@ def test_manual_symbols_from_env(monkeypatch):
     assert r.quant_per_trade_budget == 500_000.0
 
 
-def test_existing_row_is_only_enabled_not_overwritten():
-    r = row(quant_auto_enabled=False, quant_per_trade_budget=123_000.0, risk_cooldown_min=5,
+def test_existing_row_follows_env_for_budget_and_symbols_but_keeps_limits():
+    """2026-10-07: env 가 배치 행의 정본. 투자금·종목은 env 로 맞추고 위험 한도(쿨다운 등)는 그대로 둔다."""
+    r = row(quant_auto_enabled=False, quant_per_trade_budget=123_000.0, risk_cooldown_min=5, risk_max_position_pct=15.0,
             quant_symbol_source="manual", quant_selected_symbols=["000660.KS"])
     db = FakeDb(r)
     out = run(db)
     assert out["running"] and out["started"] and not out["created"]
     assert r.quant_auto_enabled is True
-    assert r.quant_per_trade_budget == 123_000.0 and r.risk_cooldown_min == 5 and r.quant_selected_symbols == ["000660.KS"]
+    assert r.quant_per_trade_budget == 300_000.0 and r.quant_symbol_source == "ai" and r.quant_selected_symbols == []
+    assert set(out["synced"]) == {"quant_per_trade_budget", "quant_symbol_source", "quant_selected_symbols"}
+    assert r.risk_cooldown_min == 5 and r.risk_max_position_pct == 15.0
     assert db.commits == 1
+
+
+def test_running_row_budget_updates_when_env_changes(monkeypatch):
+    """운영 중인 배치 행(30만 원)이 env 를 50만 원으로 바꾸면 다음 사이클에 50만 원이 된다. 재시작(audit)은 아니다."""
+    monkeypatch.setattr(settings, "KIS_PAPER_BATCH_PER_TRADE_BUDGET", 500_000)
+    r = row(quant_auto_enabled=True, quant_per_trade_budget=300_000.0)
+    db = FakeDb(r)
+    out = run(db)
+    assert out["running"] and not out["started"] and out["synced"] == ["quant_per_trade_budget"]
+    assert r.quant_per_trade_budget == 500_000.0 and db.commits == 1
+    kb.audit.assert_not_awaited()
 
 
 def test_idempotent_when_already_running():
     r = row(quant_auto_enabled=True)
     db = FakeDb(r)
     out = run(db)
-    assert out["running"] and not out["started"] and db.commits == 0
+    assert out["running"] and not out["started"] and out["synced"] == [] and db.commits == 0
     kb.audit.assert_not_awaited()
 
 

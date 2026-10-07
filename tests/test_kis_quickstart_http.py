@@ -95,7 +95,7 @@ def test_quickstart_readiness_and_start(client):
     body = r.json()
     assert body["started"] and body["environment"] == "paper" and body["settings"]["symbol_source"] == "ai"
     assert db.row.quant_mode == "live" and db.row.broker == "kis" and db.row.quant_symbol_source == "ai"
-    assert db.row.quant_per_trade_budget == 300_000.0 and db.row.risk_max_position_pct == 20.0
+    assert db.row.quant_per_trade_budget == 500_000.0 and db.row.risk_max_position_pct == 20.0
     start.assert_awaited_once()
     r = c.get("/api/quant/kis/quickstart")
     assert r.json()["already_started"] is False   # DB 플래그는 start_auto_trade(모킹)가 켜므로 여기선 False

@@ -12,7 +12,7 @@ async def health():
         "status": "ok",
         "service": "금융 AI Agent",
         "quant": {
-            "cycle_sec": 300,
+            "cycle_sec": int(settings.QUANT_CYCLE_SEC),
             "aggressive_mode": bool(settings.QUANT_AGGRESSIVE_MODE),
             "aggressive_interval": settings.QUANT_AGGRESSIVE_CANDLE_INTERVAL if settings.QUANT_AGGRESSIVE_MODE else None,
             "kis_paper_batch": bool(settings.KIS_PAPER_BATCH_ENABLED),

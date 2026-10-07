@@ -407,6 +407,7 @@ cd /home/ubuntu/lumina-invest && .venv/bin/python -m pytest tests/test_spec_rule
 | L15 | (2026-10-06) 비상 정지 후 배치 재가동 주체 | 사람이 kill switch 해제(현재) vs 다음 영업일 자동 재가동 | 손실 반복 위험으로 수동 유지 |
 | L21 | (2026-10-06) st 백엔드 정지 재발 방지 | fd `.env` `KIS_CHART_MINUTES=60`·`KIS_CHART_TIMEOUT=30`(env 만, 즉시) / 장외 분봉 생략 코드 / st 캐시 TTL·큐 상한 / st healthcheck+autoheal — stock-coin-trade todo 6-9 표 | env 2개 + 장외 생략 먼저, st 쪽은 다음 정지 때 |
 | L13 | 운영 계정에 LEAN 합격 전략 적용 시점 | pr(domain-rag-lab) 합격 전략 0건. 전략 선택 전까지 매수·매도 모두 기술지표 규칙만 사용(ML·LEAN 미적용) | domain-rag-lab 에서 ma_cross/momentum 백테스트 → export 후 종목 선정 화면에서 선택 |
+| L22 | (2026-10-07) 공격 모드 강도 2차 — 1회 50만 원·3분 사이클·쿨다운 3분·일 주문 300건(6-22) | 종목 비중 20% 한도 때문에 Testbed 총자산이 250만 원 미만이면 50만 원이 그대로 집행되지 않고 수량이 깎인다. 선택: 비중 한도 상향(예 30~40%) / 사이클 매수 2→3건 / 익절·손절 폭 조정 | 1~2일 체결 로그(`/api/quant/kis/monitor`) 에서 `[위험관리 생략]`·수량 축소 빈도 보고 비중 한도부터 조정 |
 
 ### 6-6. 2026-10-02 운영 시작 — 모의투자(Testbed) 자동매매 가동 (사용자 요청 + 7절 권고 수용)
 
@@ -835,3 +836,34 @@ ssh -i lumina-invest/fd.edumgt.co.kr.pem ubuntu@43.201.229.188 "cd /home/ubuntu/
 | 소요 | — | 종목당 약 2초(KIS 레인 대기 포함) → 전체 약 60~70초. 일괄 호출(32~54초)보다 길지만 진행이 보이고 중간 중지 가능. 줄이려면 6-19 권고 2(현재가 캐시) 또는 L21 env 적용 |
 
 **확인(사용자)**: `#robo-screening` → 실행 → 모달에 종목별 체크가 한 줄씩 늘어나는지 → 「중지」 → 상태 줄 "중지 — n/31" → 다시 실행 → 완료 → 「설명」 모달. 브라우저 실행 검증은 에이전트 환경에서 불가(괄호·템플릿 균형, 함수 정의 수 검사만).
+
+### 6-22. 2026-10-07 설정 변경 — 1회 50만 원 · 3분 사이클 · 공격 모드 강화 (사용자 요청 "1회 50만원, 3분마다 공격적으로")
+
+**현황 확인**: 공격 모드(`QUANT_AGGRESSIVE_MODE`)·배치(`KIS_PAPER_BATCH_ENABLED`)는 fd `compose.fd.yml` 기본값으로 이미 ON. 바꿀 것은 ① 1회 투자금 30만→50만, ② 사이클 5분→3분, ③ 3분 주기에 맞춘 쿨다운·캐시·일 주문 수. 단, **배치 행(시스템 사용자)은 DB 에 30만 원이 이미 저장**돼 있고 `ensure_system_batch` 가 기존 행의 한도·종목을 덮어쓰지 않는 설계라 env 만 바꿔서는 50만 원이 되지 않는다 → 배치 행의 투자금·종목은 env 를 정본으로 매 사이클 동기화하도록 변경.
+
+| 변경 | 내용 |
+|------|------|
+| `app/config.py` | `QUANT_CYCLE_SEC=180` 신설(사이클 주기 단일 출처). `KIS_PAPER_BATCH_PER_TRADE_BUDGET` 300,000→**500,000**. `QUANT_AGGRESSIVE_COOLDOWN_MIN` 5→**3**, `QUANT_AGGRESSIVE_CACHE_MIN` 4→**2**(3분 사이클마다 새 분봉), `QUANT_AGGRESSIVE_MAX_ORDERS_PER_DAY` 200→**300**(장중 130사이클×≤5건=650 보다 작게) |
+| `app/celery_app.py` | beat 항목 키 `quant-auto-trade-5min`→`quant-auto-trade-cycle`, `schedule=QUANT_CYCLE_SEC`(180), `expires=주기-20`(160) |
+| `app/tasks/sync_tasks.py` | `quant.auto_trade_cycle` `time_limit=주기-15`(165초). 6-21 기준 31종목 시그널 ≈ 60~70초라 여유 있음. 초과 시 그 사이클만 중단·다음 주기 재시도 |
+| `app/services/auto_trade.py` | `_INTERVAL_SEC=QUANT_CYCLE_SEC`, 상태 문구 `celery-beat (3분)` 동적 |
+| `app/services/kis_batch.py` | `_sync_env(row)`: 기존 배치 행의 `quant_per_trade_budget`·`quant_ai_top_n`·`quant_symbol_source`·`quant_selected_symbols` 를 매 사이클 env 값으로 맞춤(바뀐 필드만 commit, 응답 `synced`). **위험 한도(비중·일손실·쿨다운·일 주문 수)는 그대로**(쿨다운·일 주문 수는 공격 모드가 런타임에 덮어씀). 재시작 audit 은 발생하지 않음 |
+| `app/services/kis_quickstart.py` | `TESTBED_DEFAULTS.quant_per_trade_budget` 500,000. `interval_min()`·`effective_defaults()` 신설 — 대시보드 「설정 보기」가 공격 모드 적용값(쿨다운 3분·일 300건)을 보여 주도록 `readiness()` 에 `defaults`(적용값)·`interval_min`·`aggressive` 추가. `start()` 응답의 risk·interval_min 도 적용값 |
+| `app/routes/health.py`·`kis_monitor.py`·`stocks.py`·`notification.py` | `cycle_sec`·문구를 `QUANT_CYCLE_SEC` 기준으로 |
+| `public/js/dashboard.js`·`core.js`·`kis_monitor.js`·`app.html` | 문구 "10분/5분" → 서버 `interval_min`(기본 3분), 공격 모드 배지, 1회 50만 원·쿨다운 3분·일 주문 300건 표시 |
+| `.env.example`·`readme.md` | 새 기본값·`QUANT_CYCLE_SEC` 문서화 |
+| 테스트 | `test_universe_and_schedule.py`(3분·time_limit·health), `test_kis_batch.py` 기존 행 동기화 2건(한도 유지 검증 포함), quickstart 50만 원. 전체 **237 passed** |
+
+**fd 반영 방법(에이전트는 서버를 만지지 않음)**: push → `deploy.yml` 자동 배포(celery-beat·worker 재기동으로 새 스케줄 적용). 서버 `.env` 에 `KIS_PAPER_BATCH_PER_TRADE_BUDGET`·`QUANT_AGGRESSIVE_COOLDOWN_MIN`·`QUANT_AGGRESSIVE_CACHE_MIN`·`QUANT_AGGRESSIVE_MAX_ORDERS_PER_DAY`·`QUANT_CYCLE_SEC` 가 **명시돼 있으면 그 값이 코드 기본값보다 우선**하므로 있으면 지우거나 새 값으로 고칠 것(6-13 진단 당시 워커 env 에는 두 스위치만 있었음). 배포 후 확인:
+```bash
+curl -s https://fd.edumgt.co.kr/api/health | python3 -m json.tool       # quant.cycle_sec=180, aggressive_mode=true
+ssh -i lumina-invest/fd.edumgt.co.kr.pem ubuntu@43.201.229.188 "sudo docker logs --since 10m fin-ai-celery-worker 2>&1 | grep -E '배치 설정을 env 에 맞춤|auto_trade_cycle' | tail -5"
+sudo docker exec fin-ai-postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "select user_id, quant_per_trade_budget, quant_ai_top_n, risk_max_position_pct from broker_settings where broker='"'"'kis'"'"';"'   # 시스템 행 500000
+```
+첫 사이클 로그에 `KIS 모의투자 배치 설정을 env 에 맞춤: ['quant_per_trade_budget'] (1회 투자금 500000원, AI 3종목)` 이 한 번 찍히고 이후엔 조용하다.
+
+**주의**
+- **종목 비중 20%** 는 유지 → 1회 50만 원은 "총자산×20% − 기존 보유" 안에서만 집행된다. Testbed 총자산이 250만 원 미만이면 수량이 깎이거나 `[위험관리 생략]` 이 뜬다(L22).
+- 쿨다운 3분 = 사이클당 같은 종목·방향 1회. 멱등키는 분 단위라 3분 사이클에서도 유일.
+- 3분 사이클은 5분봉의 같은 봉을 두 번 볼 수 있다(KIS 1분봉→5분 집계). 시그널이 같으면 강제 로테이션 매수가 더 자주 걸릴 수 있음 → 손절 빈도 관찰(L16).
+- `confirm_fills` 2분·`quant.reconcile` 10분은 그대로. 브라우저 실행 검증은 에이전트 환경에서 불가(node 없음) — JS 는 문자열 치환만.

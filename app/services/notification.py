@@ -495,8 +495,9 @@ async def notify_order_error(
 
 async def notify_auto_trade_started(user_id: str | None = None) -> None:
     """자동매매 시작 알림."""
-    html  = "🤖 <b>자동매매 시작</b>\n\n5분 주기로 퀀트 신호를 분석합니다."
-    plain = "[자동매매] 시작 – 5분 주기로 퀀트 신호를 분석합니다."
+    minutes = max(1, int(settings.QUANT_CYCLE_SEC) // 60)
+    html  = f"🤖 <b>자동매매 시작</b>\n\n{minutes}분 주기로 퀀트 신호를 분석합니다."
+    plain = f"[자동매매] 시작 – {minutes}분 주기로 퀀트 신호를 분석합니다."
     await dispatch(plain, html_message=html, subject="[매매 알림] 자동매매 시작", user_id=user_id)
 
 

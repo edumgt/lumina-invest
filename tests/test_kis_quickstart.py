@@ -59,7 +59,7 @@ def test_readiness_ready_via_gateway_paper():
     st = asyncio.run(qs.readiness(FakeDb(None), UID))
     assert st["ready"] and st["route"] == "stock-coin-trade" and st["environment"] == "paper"
     assert st["running"] is False and st["already_started"] is False
-    assert st["defaults"]["quant_per_trade_budget"] == 300_000.0 and st["defaults"]["risk_max_position_pct"] == 20.0
+    assert st["defaults"]["quant_per_trade_budget"] == 500_000.0 and st["defaults"]["risk_max_position_pct"] == 20.0
 
 
 def test_readiness_blocked_when_nothing_connected(monkeypatch):
@@ -97,7 +97,7 @@ def test_start_creates_row_applies_testbed_defaults_and_enables():
     r = db.row
     assert isinstance(r, BrokerSettings) and db.commits == 1
     assert (r.broker, r.quant_mode, r.paper, r.quant_symbol_source, r.quant_ai_top_n) == ("kis", "live", False, "ai", 3)
-    assert r.quant_per_trade_budget == 300_000.0 and r.risk_max_position_pct == 20.0 and r.risk_max_orders_per_day == 10
+    assert r.quant_per_trade_budget == 500_000.0 and r.risk_max_position_pct == 20.0 and r.risk_max_orders_per_day == 10
     assert (r.app_key, r.app_secret, r.account_no) == ("", "", "")
     start.assert_awaited_once_with(db, str(UID))
     audit.assert_awaited_once()

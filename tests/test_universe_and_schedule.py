@@ -30,20 +30,30 @@ def test_universe_contains_core_names():
     assert {"삼성전자", "SK하이닉스", "NAVER", "카카오", "아모레퍼시픽", "LG생활건강"} <= names
 
 
-def test_auto_trade_cycle_is_five_minutes():
-    entry = celery_app.conf.beat_schedule["quant-auto-trade-5min"]
-    assert entry["task"] == "quant.auto_trade_cycle" and entry["schedule"] == 300.0
-    assert entry["options"]["expires"] < 300
-    assert auto_trade._INTERVAL_SEC == 300
+def test_auto_trade_cycle_is_three_minutes():
+    """2026-10-07: 5분 → 3분. 스케줄·_INTERVAL_SEC·expires 가 QUANT_CYCLE_SEC(기본 180) 하나를 따른다."""
+    from app.config import settings
+    assert settings.QUANT_CYCLE_SEC == 180
+    entry = celery_app.conf.beat_schedule["quant-auto-trade-cycle"]
+    assert entry["task"] == "quant.auto_trade_cycle" and entry["schedule"] == 180.0
+    assert entry["options"]["expires"] < 180
+    assert auto_trade._INTERVAL_SEC == 180
+    assert "quant-auto-trade-5min" not in celery_app.conf.beat_schedule
     assert "quant-auto-trade-10min" not in celery_app.conf.beat_schedule
 
 
 def test_cycle_task_time_limit_fits_in_period():
     import app.tasks.sync_tasks  # noqa: F401  태스크 등록
     task = celery_app.tasks["quant.auto_trade_cycle"]
-    assert task.time_limit is not None and task.time_limit < 300
+    assert task.time_limit is not None and 60 <= task.time_limit < 180
 
 
-def test_quickstart_reports_five_minute_interval():
-    import inspect
-    assert '"interval_min": 5' in inspect.getsource(kis_quickstart.start)
+def test_quickstart_reports_three_minute_interval():
+    assert kis_quickstart.interval_min() == 3
+    assert "interval_min()" in __import__("inspect").getsource(kis_quickstart.start)
+
+
+def test_health_reports_cycle_sec():
+    import asyncio
+    from app.routes.health import health
+    assert asyncio.run(health())["quant"]["cycle_sec"] == 180

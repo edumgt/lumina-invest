@@ -7,7 +7,7 @@
   - 실주문이 KIS **모의투자(Testbed)** 로만 나가는 경우에만 시작한다. 경로가 실전(real)이면 409.
   - 게이트웨이(stock-coin-trade)도, 서버 관리 KIS 자격증명도 없으면 409 (연동 안 됨).
   - 비상 정지(kill switch) 상태면 409.
-Testbed 권장값은 todo.md 7절 L1 (쿨다운 30분 · 1회 30만 원 · 종목 비중 20% · 일 주문 10건 · 일손실 3%).
+Testbed 권장값은 todo.md 7절 L1·L22 (1회 50만 원 · 종목 비중 20% · 일손실 3%; 쿨다운·일 주문 수는 공격 모드가 env 값으로 덮어쓴다).
 """
 from __future__ import annotations
 
@@ -18,8 +18,9 @@ from dataclasses import dataclass
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.models import BrokerSettings
-from app.services import auto_trade, kis_credentials
+from app.services import aggressive_mode, auto_trade, kis_credentials
 from app.services.audit import audit
 from app.services.brokers import stock_coin_trade_gateway as gateway
 
@@ -31,14 +32,28 @@ TESTBED_DEFAULTS = {
     "broker": "kis",
     "quant_symbol_source": "ai",      # AI 추천 종목
     "quant_ai_top_n": 3,
-    "quant_per_trade_budget": 300_000.0,
+    "quant_per_trade_budget": 500_000.0,   # 2026-10-07, 30만 → 50만
     "quant_buy_ratio": 1.0,
     "quant_sell_ratio": 0.5,
     "risk_daily_loss_limit_pct": 3.0,
     "risk_max_position_pct": 20.0,
-    "risk_max_orders_per_day": 10,
+    "risk_max_orders_per_day": 10,       # 공격 모드(QUANT_AGGRESSIVE_MODE)면 런타임에 QUANT_AGGRESSIVE_* 값으로 덮어써진다
     "risk_cooldown_min": 30,
 }
+
+
+def interval_min() -> int:
+    """사이클 주기(분). celery-beat 스케줄(QUANT_CYCLE_SEC)과 같은 값."""
+    return max(1, int(settings.QUANT_CYCLE_SEC) // 60)
+
+
+def effective_defaults() -> dict:
+    """화면에 보여 줄 실제 적용값. 공격 모드면 쿨다운·일 주문 수는 aggressive_mode.apply_limits 와 같은 env 값."""
+    d = {k: v for k, v in TESTBED_DEFAULTS.items() if k not in ("paper",)}
+    if aggressive_mode.is_enabled():
+        d["risk_cooldown_min"] = max(0, int(settings.QUANT_AGGRESSIVE_COOLDOWN_MIN))
+        d["risk_max_orders_per_day"] = max(0, int(settings.QUANT_AGGRESSIVE_MAX_ORDERS_PER_DAY))
+    return d
 
 
 class QuickstartBlocked(Exception):
@@ -102,7 +117,9 @@ async def readiness(db: AsyncSession, uid: uuid.UUID) -> dict:
         "route_detail": route.detail, "connected": route.configured,
         "running": running, "already_started": already, "mode": mode, "broker": broker,
         "kill_switch": kill, "kill_reason": (row.risk_halt_reason if row else "") or "",
-        "defaults": {k: v for k, v in TESTBED_DEFAULTS.items() if k not in ("paper",)},
+        "defaults": effective_defaults(),
+        "interval_min": interval_min(),
+        "aggressive": aggressive_mode.is_enabled(),
     }
 
 
@@ -128,6 +145,7 @@ async def start(db: AsyncSession, user_id: str) -> dict:
     await db.commit()
 
     started = await auto_trade.start_auto_trade(db, user_id)
+    eff = effective_defaults()
     await audit(user_id, "", "quant.kis_quickstart", {"route": route.via, "environment": route.environment, "started": started})
     logger.info("KIS 모의투자 원클릭 시작 user=%s route=%s started=%s", user_id, route.via, started)
     return {
@@ -136,7 +154,8 @@ async def start(db: AsyncSession, user_id: str) -> dict:
         "settings": {
             "mode": "live", "broker": "kis", "symbol_source": "ai", "ai_top_n": TESTBED_DEFAULTS["quant_ai_top_n"],
             "per_trade_budget": TESTBED_DEFAULTS["quant_per_trade_budget"],
-            "risk": {"daily_loss_limit_pct": 3.0, "max_position_pct": 20.0, "max_orders_per_day": 10, "cooldown_min": 30},
+            "risk": {"daily_loss_limit_pct": eff["risk_daily_loss_limit_pct"], "max_position_pct": eff["risk_max_position_pct"],
+                     "max_orders_per_day": eff["risk_max_orders_per_day"], "cooldown_min": eff["risk_cooldown_min"]},
         },
-        "interval_min": 5,
+        "interval_min": interval_min(),
     }

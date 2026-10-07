@@ -121,7 +121,7 @@ export async function loadKisMonitor() {
   try {
     const d = await api("/api/quant/kis/monitor");
     renderBadges(d); renderKpis(d); renderHoldings(d); renderRecon(d); renderOrders(d); renderCycles(d);
-    const u = document.getElementById("kism-updated"); if (u) u.textContent = `갱신 ${ts(d.checked_at)} (UTC) · 사이클 ${Math.round((d.cycle_sec || 300) / 60)}분`;
+    const u = document.getElementById("kism-updated"); if (u) u.textContent = `갱신 ${ts(d.checked_at)} (UTC) · 사이클 ${Math.round((d.cycle_sec || 180) / 60)}분`;
   } catch (e) {
     const el = document.getElementById("kism-badges"); if (el) el.innerHTML = badge(`불러오기 실패: ${e?.message || e}`, "bad");
   } finally { _loading = false; }

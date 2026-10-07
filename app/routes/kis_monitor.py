@@ -92,7 +92,7 @@ async def kis_monitor(limit: int = Query(50, ge=1, le=200), cycles: int = Query(
         "force_buy": bool(settings.QUANT_AGGRESSIVE_FORCE_BUY), "order_type": settings.QUANT_AGGRESSIVE_ORDER_TYPE or "LIMIT",
         "cooldown_min": settings.QUANT_AGGRESSIVE_COOLDOWN_MIN, "max_orders_per_day": settings.QUANT_AGGRESSIVE_MAX_ORDERS_PER_DAY,
     }
-    out["cycle_sec"] = 300
+    out["cycle_sec"] = int(settings.QUANT_CYCLE_SEC)
     out["heartbeat_age_sec"] = _heartbeat_age()
     out["market_data_source"] = settings.MARKET_DATA_SOURCE
     out["universe"] = {"sectors": list(QUANT_SECTORS), "count": len(QUANT_STOCKS)}

@@ -123,8 +123,12 @@ class Settings(BaseSettings):
     KIS_PAPER_BATCH_ENABLED: bool = False
     KIS_PAPER_BATCH_SYMBOLS: str = ""                   # 비우면 AI 추천 상위 N. "005930.KS,035720.KS" 처럼 주면 수동 종목
     KIS_PAPER_BATCH_AI_TOP_N: int = 3
-    KIS_PAPER_BATCH_PER_TRADE_BUDGET: float = 300_000   # 1회 투자금(원). 나머지 한도는 kis_quickstart.TESTBED_DEFAULTS
+    KIS_PAPER_BATCH_PER_TRADE_BUDGET: float = 500_000   # 1회 투자금(원) (2026-10-07, 30만→50만). 배치 행은 매 사이클 이 값으로 동기화된다. 나머지 한도는 kis_quickstart.TESTBED_DEFAULTS
     KIS_PAPER_BATCH_EXCLUSIVE: bool = True              # true 면 배치가 켜질 때 다른 사용자 계정의 kis·live 자동매매를 끈다(같은 Testbed 계좌 중복 주문 방지)
+
+    # ── 자동매매 사이클 주기 (celery-beat quant.auto_trade_cycle) ────────────────────────────
+    # beat 스케줄·expires·태스크 time_limit·/api/health·화면 문구가 모두 이 값을 따른다. 2026-10-07: 5분 → 3분.
+    QUANT_CYCLE_SEC: int = 180
 
     # ── 공격 모드: 5분봉 단기 시그널로 매 사이클 매수·매도 (app/services/aggressive_mode.py) ──────
     # true 면 자동매매 사이클이 일봉 지표 대신 5분봉(RSI·MA·모멘텀·거래량) 시그널을 쓰고, 매 사이클
@@ -133,9 +137,9 @@ class Settings(BaseSettings):
     QUANT_AGGRESSIVE_MODE: bool = False
     QUANT_AGGRESSIVE_CANDLE_INTERVAL: str = "5m"      # Yahoo 분봉 (1m/2m/5m/15m)
     QUANT_AGGRESSIVE_CANDLE_RANGE: str = "5d"         # 분봉 조회 범위(5m 은 최대 60d)
-    QUANT_AGGRESSIVE_CACHE_MIN: int = 4               # 분봉 캐시(분). 5분 사이클마다 새로 받도록 주기보다 짧게
-    QUANT_AGGRESSIVE_COOLDOWN_MIN: int = 5            # 같은 종목·방향 재주문 간격(분) — 사이클당 1회
-    QUANT_AGGRESSIVE_MAX_ORDERS_PER_DAY: int = 200
+    QUANT_AGGRESSIVE_CACHE_MIN: int = 2               # 분봉 캐시(분). 3분 사이클마다 새로 받도록 주기보다 짧게
+    QUANT_AGGRESSIVE_COOLDOWN_MIN: int = 3            # 같은 종목·방향 재주문 간격(분) — 사이클(3분)당 1회
+    QUANT_AGGRESSIVE_MAX_ORDERS_PER_DAY: int = 300    # 3분 사이클 장중 130회 × 사이클 최대 5건(650) 보다 작게
     QUANT_AGGRESSIVE_MAX_BUYS_PER_CYCLE: int = 2
     QUANT_AGGRESSIVE_MAX_SELLS_PER_CYCLE: int = 3
     QUANT_AGGRESSIVE_FORCE_BUY: bool = True           # 매수 시그널이 하나도 없으면 모멘텀 1위를 매수(로테이션)

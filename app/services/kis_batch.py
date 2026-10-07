@@ -1,6 +1,6 @@
 """KIS 모의투자(Testbed) 자동매매 — 계정·로그인과 무관한 백그라운드 배치.
 
-celery-beat 의 ``quant.auto_trade_cycle``(5분) 이 매 사이클 :func:`ensure_system_batch` 를 먼저 호출한다.
+celery-beat 의 ``quant.auto_trade_cycle``(QUANT_CYCLE_SEC, 기본 3분) 이 매 사이클 :func:`ensure_system_batch` 를 먼저 호출한다.
 ``KIS_PAPER_BATCH_ENABLED=true`` 이면 시스템 사용자(``SYSTEM_USER_ID``) 의 ``BrokerSettings`` 행을
 Testbed 권장값(:data:`kis_quickstart.TESTBED_DEFAULTS`)으로 만들고 ``quant_auto_enabled=True`` 로 켠다.
 그 뒤의 매수·매도·위험관리·게이트웨이 실주문은 사용자 계정과 똑같이 :mod:`auto_trade` 가 처리한다.
@@ -9,7 +9,10 @@ Testbed 권장값(:data:`kis_quickstart.TESTBED_DEFAULTS`)으로 만들고 ``qua
   - 실주문 경로가 KIS **paper(Testbed)** 일 때만 켠다. real 이면 켜지 않고, 켜져 있으면 끈다.
   - 게이트웨이(stock-coin-trade)·서버 관리 KIS 자격증명이 모두 없으면 켜지 않는다.
   - 비상 정지(``risk_kill_switch``) 된 행은 자동으로 재가동하지 않는다. 사람이 해제해야 한다.
-  - 기존 행의 한도·종목은 덮어쓰지 않는다(최초 생성 시에만 시드). ``broker=kis``, ``quant_mode=live`` 만 보장.
+  - **env 가 배치 행의 정본**(2026-10-07): 1회 투자금(``KIS_PAPER_BATCH_PER_TRADE_BUDGET``)·AI 종목 수·수동 종목은 매 사이클
+    env 값으로 맞춘다. 시스템 행은 화면에서 고칠 수 없으므로 env 를 바꾸면 재기동 후 다음 사이클에 반영된다.
+    위험 한도(종목 비중·일손실·쿨다운·일 주문 수)는 덮어쓰지 않는다(쿨다운·일 주문 수는 공격 모드가 런타임에 덮어쓴다).
+    ``broker=kis``, ``quant_mode=live`` 는 항상 보장.
   - ``KIS_PAPER_BATCH_ENABLED=false`` 로 바꾸면 다음 사이클에 시스템 행(kis·live)을 끈다. 사용자 계정 행은 건드리지 않는다.
   - ``KIS_PAPER_BATCH_EXCLUSIVE=true``(기본) 면 배치가 켜져 있는 동안 **다른 사용자 계정의 kis·live 자동매매 행을 끈다**.
     같은 KIS Testbed 계좌로 두 사이클이 주문을 내는 것을 막기 위함. 사용자 계정의 paper/mock 행은 건드리지 않는다.
@@ -96,6 +99,28 @@ async def system_status(db: AsyncSession) -> dict:
     }
 
 
+def _sync_env(row: BrokerSettings) -> list[str]:
+    """배치 행의 투자금·종목 설정을 env 와 맞춘다. 바뀐 필드명을 돌려준다(빈 리스트면 변경 없음)."""
+    changed: list[str] = []
+    budget = float(settings.KIS_PAPER_BATCH_PER_TRADE_BUDGET)
+    if float(row.quant_per_trade_budget or 0) != budget:
+        row.quant_per_trade_budget = budget
+        changed.append("quant_per_trade_budget")
+    top_n = int(settings.KIS_PAPER_BATCH_AI_TOP_N)
+    if int(row.quant_ai_top_n or 0) != top_n:
+        row.quant_ai_top_n = top_n
+        changed.append("quant_ai_top_n")
+    symbols = configured_symbols()
+    source = "manual" if symbols else "ai"
+    if (row.quant_symbol_source or "") != source:
+        row.quant_symbol_source = source
+        changed.append("quant_symbol_source")
+    if list(row.quant_selected_symbols or []) != symbols:
+        row.quant_selected_symbols = symbols
+        changed.append("quant_selected_symbols")
+    return changed
+
+
 async def ensure_system_batch(db: AsyncSession) -> dict:
     """배치 스위치(env)와 실주문 경로를 보고 시스템 행을 켜거나 끈다. 매 사이클 호출해도 안전(멱등)."""
     from app.services import kis_quickstart as qs  # 지연 import: kis_quickstart → auto_trade → (지연) kis_batch
@@ -147,6 +172,11 @@ async def ensure_system_batch(db: AsyncSession) -> dict:
         return {"enabled": True, "running": False, "reason": "kill_switch", "kill_reason": row.risk_halt_reason or "", "created": created}
 
     changed, started = created, False
+    synced = [] if created else _sync_env(row)
+    if synced:
+        changed = True
+        logger.info("KIS 모의투자 배치 설정을 env 에 맞춤: %s (1회 투자금 %.0f원, AI %d종목)",
+                    synced, float(row.quant_per_trade_budget), int(row.quant_ai_top_n))
     if row.broker != "kis":
         row.broker, changed = "kis", True
     if row.quant_mode != "live":
@@ -163,6 +193,6 @@ async def ensure_system_batch(db: AsyncSession) -> dict:
                     {"route": route.via, "environment": route.environment, "created": created,
                      "symbol_source": row.quant_symbol_source, "symbols": list(row.quant_selected_symbols or [])})
         logger.info("KIS 모의투자 배치 ON — route=%s env=%s created=%s", route.via, route.environment, created)
-    return {"enabled": True, "running": True, "created": created, "started": started,
+    return {"enabled": True, "running": True, "created": created, "started": started, "synced": synced,
             "route": route.via, "environment": route.environment, "symbol_source": row.quant_symbol_source,
             "exclusive_disabled_users": disabled_users}

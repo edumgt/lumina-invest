@@ -9,6 +9,7 @@ import asyncio
 import logging
 
 from app.celery_app import celery_app
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -111,9 +112,9 @@ def beat_heartbeat() -> str:
     return write_heartbeat()
 
 
-@celery_app.task(name="quant.auto_trade_cycle", time_limit=280)
+@celery_app.task(name="quant.auto_trade_cycle", time_limit=max(60, int(settings.QUANT_CYCLE_SEC) - 15))
 def quant_auto_trade_cycle() -> dict:
-    """자동매매 활성 사용자 전원의 5분 사이클 (Celery Beat). time_limit 은 주기(300초) 안에 끝나도록 280초."""
+    """자동매매 활성 사용자 전원의 사이클 (Celery Beat, QUANT_CYCLE_SEC 기본 3분). time_limit 은 주기 안에 끝나도록 주기-15초."""
 
     async def _async() -> dict:
         from app.database.postgres import connect_postgres, close_postgres

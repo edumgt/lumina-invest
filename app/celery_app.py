@@ -57,10 +57,10 @@ celery_app.conf.update(
             "schedule": 60.0,             # 1분 — beat/worker 생존 신호 (healthcheck → autoheal 재시작)
             "options": {"expires": 50},
         },
-        "quant-auto-trade-5min": {
+        "quant-auto-trade-cycle": {
             "task": "quant.auto_trade_cycle",
-            "schedule": 300.0,            # 5분 — 자동매매 활성 사용자 사이클 (2026-10-06, 10분→5분)
-            "options": {"expires": 270},  # 다음 주기 전에 만료 — 지연된 사이클이 겹쳐 실행되지 않게
+            "schedule": float(settings.QUANT_CYCLE_SEC),                       # 기본 3분 — 자동매매 활성 사용자 사이클 (2026-10-07, 5분→3분)
+            "options": {"expires": max(30, int(settings.QUANT_CYCLE_SEC) - 20)},  # 다음 주기 전에 만료 — 지연된 사이클이 겹쳐 실행되지 않게
         },
         "quant-confirm-fills-2min": {
             "task": "quant.confirm_fills",
