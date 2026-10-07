@@ -867,3 +867,13 @@ sudo docker exec fin-ai-postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_D
 - 쿨다운 3분 = 사이클당 같은 종목·방향 1회. 멱등키는 분 단위라 3분 사이클에서도 유일.
 - 3분 사이클은 5분봉의 같은 봉을 두 번 볼 수 있다(KIS 1분봉→5분 집계). 시그널이 같으면 강제 로테이션 매수가 더 자주 걸릴 수 있음 → 손절 빈도 관찰(L16).
 - `confirm_fills` 2분·`quant.reconcile` 10분은 그대로. 브라우저 실행 검증은 에이전트 환경에서 불가(node 없음) — JS 는 문자열 치환만.
+
+### 6-23. 2026-10-07 KIS 모의투자결과 「봇 실주문」 그리드 — 봇/사용자 구분 컬럼 + 검색·정렬·페이지·CSV (사용자 요청)
+
+| 변경 | 내용 |
+|------|------|
+| `app/routes/kis_monitor.py` | `GET /api/quant/kis/orders` 신설: `owner=all|batch|me`, `status=`(쉼표 목록, 대소문자 무시), `side=BUY|SELL`, `q=`(종목코드·.KS/.KQ 표기·종목명·주문번호·clientOrderId·메모 부분 일치), `date_from/date_to`(KST 일자, 종료일 포함, 형식 오류·역전은 400), `limit≤500`, `offset`. DB 에서 소유자·기간으로 최신순 최대 2,000건을 받아 나머지를 파이썬에서 거르고 최신순 정렬 후 페이지. 응답 `total·rows·counts_by_owner·counts_by_status·truncated·filters`. `_order_dict` 에 `owner_label`(봇(배치)/사용자) 추가, `/monitor` 의 `orders.today_owner_counts` 추가 |
+| `public/app.html`·`public/js/kis_monitor.js` | 그리드 위 검색 툴바(구분·상태(단일/열린 주문/미해결·실패 묶음)·방향·기간·검색어·건수·검색·초기화·CSV·이전/다음). 「구분」 컬럼(봇=보라, 사용자=초록 배지)·「주문번호」 컬럼(툴팁 clientOrderId) 추가. 헤더 클릭 정렬(클라이언트), 결과 요약 "검색 결과 N건 (봇 a · 사용자 b) · 상태 …", 카드 제목 옆 당일 요약에 봇/사용자 건수. 60초 자동 새로고침은 현재 검색 조건·페이지를 유지한 채 갱신. CSV 는 현재 정렬 결과를 BOM 포함 UTF-8 로 내려받기 |
+| 테스트 | `test_kis_monitor_route.py` +2(구분·상태·방향·텍스트·페이지 / KST 기간·400·422), 기존 모니터 테스트에 owner 집계 단언. 전체 **239 passed** |
+
+**검증(배포 후)**: `#kis-monitor` → 구분 "봇(배치)" 선택 시 사용자 주문이 사라지고 요약 건수가 맞는지, 검색어 `018290` 과 `브이티` 가 같은 결과인지, 기간을 오늘로 좁히면 당일 요약과 같은 건수인지, CSV 열림. `/js` 는 no-cache 미들웨어라 버전 쿼리 불필요.

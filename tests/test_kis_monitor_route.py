@@ -94,6 +94,8 @@ def test_monitor_assembles_everything(client):
     assert [x["status"] for x in o["unresolved"]] == ["LOST"] and o["avg_slippage_pct"] == 0.3
     owners = {x["symbol"]: x["owner"] for x in o["recent"]}
     assert owners["005930.KS"] == "me" and owners["240810.KQ"] == "batch"
+    assert o["today_owner_counts"] == {"batch": 2, "me": 1}
+    assert {x["owner_label"] for x in o["recent"]} == {"봇(배치)", "사용자"}
     a = d["account"]
     assert a["connected"] and a["total"] == 10_500_000 and a["positions"] == 2 and a["bot_positions"] == 1
     bot = next(h for h in a["holdings"] if h["symbol"] == "240810")
@@ -110,3 +112,31 @@ def test_monitor_without_gateway(client, monkeypatch):
     d = client.get("/api/quant/kis/monitor").json()
     assert d["gateway_configured"] is False and d["account"] == {"connected": False}
     assert d["orders"]["today_total"] == 3           # 주문 기록은 게이트웨이와 무관하게 보인다
+
+
+def test_orders_search_owner_status_side_text(client):
+    """봇 실주문 그리드 검색: 구분·상태·방향·텍스트·페이지."""
+    d = client.get("/api/quant/kis/orders").json()
+    assert d["total"] == 3 and len(d["rows"]) == 3 and d["counts_by_owner"] == {"batch": 2, "me": 1}
+    assert d["counts_by_status"] == {"FILLED": 1, "LOST": 1, "ACCEPTED": 1} and d["rows"][0]["symbol"] == "005930.KS"   # 최신순
+    assert d["rows"][0]["owner_label"] == "사용자" and d["rows"][1]["owner_label"] == "봇(배치)"
+    assert [r["owner"] for r in client.get("/api/quant/kis/orders?owner=batch").json()["rows"]] == ["batch", "batch"]
+    assert [r["symbol"] for r in client.get("/api/quant/kis/orders?owner=me").json()["rows"]] == ["005930.KS"]
+    assert [r["status"] for r in client.get("/api/quant/kis/orders?status=lost,error").json()["rows"]] == ["LOST"]
+    assert client.get("/api/quant/kis/orders?side=SELL").json()["total"] == 0
+    assert [r["symbol"] for r in client.get("/api/quant/kis/orders?q=005930").json()["rows"]] == ["005930.KS"]      # 코드
+    assert [r["symbol"] for r in client.get("/api/quant/kis/orders?q=018290.kq").json()["rows"]] == ["018290.KQ"]   # 대소문자 무시
+    assert client.get("/api/quant/kis/orders?q=c-240810").json()["total"] == 1                                       # clientOrderId
+    page = client.get("/api/quant/kis/orders?limit=1&offset=1").json()
+    assert page["total"] == 3 and [r["symbol"] for r in page["rows"]] == ["018290.KQ"]   # 최신순 2번째(20분 전)
+
+
+def test_orders_search_date_range_kst(client):
+    from datetime import timedelta as td
+    kst_today = (NOW + td(hours=9)).strftime("%Y-%m-%d")
+    tomorrow = (NOW + td(hours=9) + td(days=1)).strftime("%Y-%m-%d")
+    assert client.get(f"/api/quant/kis/orders?date_from={kst_today}&date_to={kst_today}").json()["total"] == 3
+    assert client.get(f"/api/quant/kis/orders?date_from={tomorrow}").json()["total"] == 0
+    assert client.get("/api/quant/kis/orders?date_from=2026/10/07").status_code == 400
+    assert client.get(f"/api/quant/kis/orders?date_from={tomorrow}&date_to={kst_today}").status_code == 400
+    assert client.get("/api/quant/kis/orders?owner=nobody").status_code == 422

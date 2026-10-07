@@ -9,7 +9,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -57,9 +57,18 @@ def realized_pnl(rows: list) -> dict:
             "open_cost": {k: {"qty": v["qty"], "avg": round(v["cost"] / v["qty"], 2) if v["qty"] else None} for k, v in pos.items() if v["qty"] > 0}}
 
 
+OWNER_LABEL = {"batch": "봇(배치)", "me": "사용자"}
+ORDER_STATUSES = ("PENDING", "ACCEPTED", "PARTIALLY_FILLED", "FILLED", "CANCEL_REQUESTED", "CANCELLED", "REJECTED", "UNKNOWN", "LOST", "ERROR")
+
+
+def _owner(r: LiveOrder) -> str:
+    return "batch" if r.user_id == SYSTEM_USER_ID else "me"
+
+
 def _order_dict(r: LiveOrder) -> dict:
+    owner = _owner(r)
     return {
-        "owner": "batch" if r.user_id == SYSTEM_USER_ID else "me",
+        "owner": owner, "owner_label": OWNER_LABEL[owner],
         "client_order_id": r.client_order_id, "environment": r.environment, "symbol": r.symbol, "name": r.name, "side": r.side,
         "order_type": r.order_type, "quantity": r.quantity, "price": r.price, "order_no": r.order_no, "status": r.status,
         "filled_quantity": r.filled_quantity, "avg_filled_price": r.avg_filled_price, "message": r.message,
@@ -103,14 +112,16 @@ async def kis_monitor(limit: int = Query(50, ge=1, le=200), cycles: int = Query(
     day_start = now.astimezone(KST).replace(hour=0, minute=0, second=0, microsecond=0).astimezone(timezone.utc)
     today = [r for r in rows if r.created_at and r.created_at.astimezone(timezone.utc) >= day_start]
     counts: dict[str, int] = {}
+    owner_counts: dict[str, int] = {"batch": 0, "me": 0}
     for r in today:
         counts[r.status] = counts.get(r.status, 0) + 1
+        owner_counts[_owner(r)] += 1
     filled_today = [r for r in today if r.status == "FILLED"]
     slips = [((float(r.avg_filled_price) / float(r.price)) - 1) * 100 for r in filled_today if r.price and r.avg_filled_price]
     pnl = realized_pnl(rows)
     out["orders"] = {
         "recent": [_order_dict(r) for r in rows[:limit]],
-        "today_counts": counts, "today_total": len(today), "today_filled": len(filled_today),
+        "today_counts": counts, "today_owner_counts": owner_counts, "today_total": len(today), "today_filled": len(filled_today),
         "fill_rate_pct": round(len(filled_today) / len(today) * 100, 1) if today else None,
         "today_buy_amount": round(sum(float(r.avg_filled_price) * int(r.filled_quantity) for r in filled_today if str(r.side).upper() == "BUY" and r.avg_filled_price), 0),
         "today_sell_amount": round(sum(float(r.avg_filled_price) * int(r.filled_quantity) for r in filled_today if str(r.side).upper() == "SELL" and r.avg_filled_price), 0),
@@ -173,3 +184,98 @@ async def kis_monitor(limit: int = Query(50, ge=1, le=200), cycles: int = Query(
     # 정합성
     out["reconcile"] = await reconciliation.latest()
     return out
+
+
+def _safe_code(symbol: str) -> str:
+    """6자리 KRX 코드면 접미사를 뗀 코드, 아니면 빈 문자열(검색어가 코드가 아닐 때 예외를 내지 않게)."""
+    try:
+        return gateway.normalize_symbol(symbol).lower()
+    except Exception:
+        return ""
+
+
+def _kst_day_bounds(date_from: str, date_to: str) -> tuple[datetime | None, datetime | None]:
+    """YYYY-MM-DD(KST) → UTC [from 00:00, to 24:00). 형식이 틀리면 400."""
+    def parse(raw: str, end: bool) -> datetime | None:
+        raw = (raw or "").strip()
+        if not raw:
+            return None
+        try:
+            d = datetime.strptime(raw, "%Y-%m-%d")
+        except ValueError:
+            raise HTTPException(status_code=400, detail="날짜는 YYYY-MM-DD 형식이어야 합니다.")
+        d = d.replace(tzinfo=KST) + (timedelta(days=1) if end else timedelta())
+        return d.astimezone(timezone.utc)
+    start, end = parse(date_from, False), parse(date_to, True)
+    if start and end and start >= end:
+        raise HTTPException(status_code=400, detail="시작일은 종료일보다 앞서야 합니다.")
+    return start, end
+
+
+@router.get("/orders")
+async def kis_orders(
+    owner: str = Query("all", pattern="^(all|batch|me)$", description="all | batch(봇·배치) | me(로그인 사용자)"),
+    status: str = Query("", max_length=200, description="쉼표 구분 상태 목록. 비우면 전체"),
+    side: str = Query("", pattern="^(|BUY|SELL)$"),
+    q: str = Query("", max_length=80, description="종목코드·종목명·주문번호·clientOrderId·메모 부분 일치(대소문자 무시)"),
+    date_from: str = Query("", description="YYYY-MM-DD (KST)"), date_to: str = Query("", description="YYYY-MM-DD (KST, 포함)"),
+    limit: int = Query(50, ge=1, le=500), offset: int = Query(0, ge=0),
+    user=Depends(get_current_user), db: AsyncSession = Depends(get_pg_session),
+):
+    """봇 실주문 그리드 검색 — 구분(봇/사용자)·상태·방향·기간·텍스트로 거르고 페이지로 돌려준다.
+
+    대상은 /monitor 와 같이 시스템 사용자(배치)와 로그인 사용자의 실주문. DB 에서는 소유자·기간으로 최대 2,000건을 최신순으로
+    받고, 나머지 조건은 파이썬에서 거른다(모니터링 규모에서 충분하고 테스트 DB 대체물과도 같은 결과).
+    """
+    me = uuid.UUID(str(user["id"]))
+    if owner == "batch":
+        owners = [SYSTEM_USER_ID]
+    elif owner == "me":
+        owners = [me]
+    else:
+        owners = [me, SYSTEM_USER_ID] if me != SYSTEM_USER_ID else [me]
+    start, end = _kst_day_bounds(date_from, date_to)
+    stmt = select(LiveOrder).where(LiveOrder.user_id.in_(owners))
+    if start:
+        stmt = stmt.where(LiveOrder.created_at >= start)
+    if end:
+        stmt = stmt.where(LiveOrder.created_at < end)
+    rows = list((await db.execute(stmt.order_by(LiveOrder.created_at.desc()).limit(2000))).scalars().all())
+
+    wanted_status = {x.strip().upper() for x in status.split(",") if x.strip()}
+    needle = q.strip().lower()
+    code_needle = _safe_code(needle)   # "005930.KS" 로 검색해도 코드 "005930" 과 맞게
+
+    def keep(r: LiveOrder) -> bool:
+        if r.user_id not in owners:
+            return False
+        created = r.created_at.astimezone(timezone.utc) if r.created_at else None
+        if start and (created is None or created < start):
+            return False
+        if end and (created is None or created >= end):
+            return False
+        if wanted_status and str(r.status).upper() not in wanted_status:
+            return False
+        if side and str(r.side).upper() != side:
+            return False
+        if needle:
+            hay = " ".join(str(x or "") for x in (r.symbol, _safe_code(r.symbol), r.name, r.order_no, r.client_order_id, r.message)).lower()
+            if needle not in hay and not (code_needle and code_needle in hay):
+                return False
+        return True
+
+    matched = sorted((r for r in rows if keep(r)),
+                     key=lambda r: r.created_at.astimezone(timezone.utc) if r.created_at else datetime.min.replace(tzinfo=timezone.utc), reverse=True)
+    counts_by_status: dict[str, int] = {}
+    counts_by_owner: dict[str, int] = {"batch": 0, "me": 0}
+    for r in matched:
+        counts_by_status[str(r.status)] = counts_by_status.get(str(r.status), 0) + 1
+        counts_by_owner[_owner(r)] += 1
+    page = matched[offset:offset + limit]
+    return {
+        "total": len(matched), "offset": offset, "limit": limit, "truncated": len(rows) >= 2000,
+        "counts_by_status": counts_by_status, "counts_by_owner": counts_by_owner,
+        "filters": {"owner": owner, "status": sorted(wanted_status), "side": side, "q": q.strip(), "date_from": date_from, "date_to": date_to},
+        "statuses": list(ORDER_STATUSES), "owner_labels": OWNER_LABEL,
+        "rows": [_order_dict(r) for r in page],
+    }
