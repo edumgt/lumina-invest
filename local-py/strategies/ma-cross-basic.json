@@ -1,0 +1,10 @@
+{
+  "strategy_id": "ma-cross-basic",
+  "version": 1,
+  "description": "5/20일 이동평균 교차. 단기선이 중기선 위면 보유, 아래로 내려오면 청산.",
+  "universe": [],
+  "position_sizing": {"max_symbols": 3},
+  "signal_weights": {"buy_threshold": 0.25, "sell_threshold": -0.25, "technical": 1.0, "lightgbm": 0.0},
+  "entry": {"indicator": "ma_cross", "condition": "short_above_long", "params": {"short_window": 5, "long_window": 20}},
+  "exit":  {"indicator": "ma_cross", "condition": "short_below_long", "params": {"short_window": 5, "long_window": 20}}
+}

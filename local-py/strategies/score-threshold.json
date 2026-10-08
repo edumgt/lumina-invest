@@ -1,0 +1,8 @@
+{
+  "strategy_id": "score-threshold",
+  "version": 1,
+  "description": "규칙 없이 지표 점수만 쓴다. 정규화 점수 ±0.25(= 원점수 ±2) 에서 매수/매도.",
+  "universe": [],
+  "position_sizing": {"max_symbols": 5},
+  "signal_weights": {"buy_threshold": 0.25, "sell_threshold": -0.25, "technical": 1.0, "lightgbm": 0.0}
+}

@@ -1,0 +1,5 @@
+# 외부 의존성 없음 — Python 3.11+ 표준 라이브러리만 쓴다.
+# (app/ 쪽은 fastapi·sqlalchemy·httpx 등을 쓰지만 local-py 는 urllib 로 직접 호출한다)
+#
+# 설치할 것이 없으므로 그대로 실행하면 된다:
+#   python3 trade.py signals

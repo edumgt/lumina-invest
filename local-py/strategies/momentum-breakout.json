@@ -1,0 +1,10 @@
+{
+  "strategy_id": "momentum-breakout",
+  "version": 1,
+  "description": "20일 신고가 돌파 시 진입, 20일 신저가 이탈 시 청산.",
+  "universe": [],
+  "position_sizing": {"max_symbols": 2},
+  "signal_weights": {"buy_threshold": 0.3, "sell_threshold": -0.3, "technical": 1.0, "lightgbm": 0.0},
+  "entry": {"indicator": "momentum", "condition": "breakout_high", "params": {"breakout_window": 20}},
+  "exit":  {"indicator": "momentum", "condition": "breakdown_low", "params": {"breakout_window": 20}}
+}
