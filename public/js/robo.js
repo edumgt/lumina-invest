@@ -477,11 +477,18 @@ document.getElementById("screen-stop-btn")?.addEventListener("click", requestScr
 
 // ── 로보 어드바이저: 차트 패턴 · 지지/저항 · 멀티타임프레임 ─────────────
 let patternChart = null;
+let patternSeries = null;
+let patternMarkers = null;
+let patternPriceLines = [];
 let patternChartData = null;
 let patternRun = 0;
 
 function clearPatternResults() {
-  patternChart?.destroy();
+  patternMarkers?.detach();
+  patternMarkers = null;
+  patternChart?.remove();
+  patternSeries = null;
+  patternPriceLines = [];
   patternChart = null;
   patternChartData = null;
   for (const id of ["pt-chart-card", "pt-mtf", "pt-patterns", "pt-sr", "pt-breakouts"]) {
@@ -490,68 +497,105 @@ function clearPatternResults() {
   document.getElementById("pt-chart").replaceChildren();
 }
 
-function patternAnnotations(pat, candles) {
+function patternMarkersData(pat, candles) {
   const colors = { bullish: "#089981", bearish: "#ef4444", neutral: "#64748b" };
-  const yaxis = document.getElementById("pt-show-sr").checked ? pat.support_resistance.levels.map(level => {
-    const color = level.type === "support" ? colors.bullish : colors.bearish;
-    return { y: level.price, borderColor: color, strokeDashArray: 4,
-      label: { text: `${level.type === "support" ? "지지" : "저항"} ${fmt(level.price)} · ${level.touches}회`,
-        style: { color: "#fff", background: color, fontSize: "10px" }, position: "left" } };
-  }) : [];
-  const points = [];
-  if (document.getElementById("pt-show-patterns").checked) {
-    // Group labels on the same candle so simultaneous patterns remain readable.
-    const groups = new Map();
-    for (const pattern of pat.patterns) {
-      const candle = candles.find(c => new Date(c.time * 1000).toISOString().slice(0, 10) === pattern.date);
-      if (!candle) continue;
-      const key = `${candle.time}:${pattern.direction}`;
-      if (!groups.has(key)) groups.set(key, { candle, direction: pattern.direction, names: [] });
-      groups.get(key).names.push(pattern.name);
-    }
-    if (pat.breakouts.length && candles.length) {
-      const candle = candles[candles.length - 1];
-      for (const event of pat.breakouts) {
-        const key = `${candle.time}:${event.direction}`;
-        if (!groups.has(key)) groups.set(key, { candle, direction: event.direction, names: [] });
-        groups.get(key).names.push(event.name);
-      }
-    }
-    for (const { candle, direction, names } of groups.values()) {
-      const color = colors[direction] || colors.neutral;
-      points.push({ x: candle.time * 1000, y: direction === "bullish" ? candle.low : direction === "bearish" ? candle.high : candle.close,
-        marker: { size: 5, fillColor: color, strokeColor: "#fff" },
-        label: { text: names.join(" · "), offsetY: direction === "bullish" ? 28 : direction === "neutral" ? -42 : -12,
-          borderColor: color, style: { color: "#fff", background: color, fontSize: "10px" } } });
+  const groups = new Map();
+  for (const pattern of pat.patterns) {
+    const candle = candles.find(c => new Date(c.time * 1000).toISOString().slice(0, 10) === pattern.date);
+    if (!candle) continue;
+    const key = `${candle.time}:${pattern.direction}`;
+    if (!groups.has(key)) groups.set(key, { candle, direction: pattern.direction, names: [] });
+    groups.get(key).names.push(pattern.name);
+  }
+  if (candles.length) {
+    const candle = candles[candles.length - 1];
+    for (const event of pat.breakouts) {
+      const key = `${candle.time}:${event.direction}`;
+      if (!groups.has(key)) groups.set(key, { candle, direction: event.direction, names: [] });
+      groups.get(key).names.push(event.name);
     }
   }
-  return { yaxis, points };
+  return [...groups.values()].map(({ candle, direction, names }) => ({
+    time: candle.time,
+    position: direction === "bullish" ? "belowBar" : "aboveBar",
+    shape: direction === "bullish" ? "arrowUp" : direction === "bearish" ? "arrowDown" : "circle",
+    color: colors[direction] || colors.neutral,
+    text: names.join(" · "),
+  })).sort((a, b) => a.time - b.time);
+}
+
+function updatePatternOverlays() {
+  if (!patternSeries || !patternChartData) return;
+  const { pat, candles } = patternChartData;
+  patternPriceLines.forEach(line => patternSeries.removePriceLine(line));
+  patternPriceLines = [];
+  if (document.getElementById("pt-show-sr").checked) {
+    patternPriceLines = pat.support_resistance.levels.filter(l => Number.isFinite(l.price) && l.price > 0).map(level => patternSeries.createPriceLine({
+      price: level.price, color: level.type === "support" ? "#089981" : "#ef4444",
+      lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible: true,
+      title: `${level.type === "support" ? "지지" : "저항"} · ${level.touches}회`,
+    }));
+  }
+  patternMarkers.setMarkers(document.getElementById("pt-show-patterns").checked ? patternMarkersData(pat, candles) : []);
+  // Refresh autoscale after changing level visibility without resetting zoom or scroll.
+  patternSeries.applyOptions({ autoscaleInfoProvider: patternAutoscale });
+}
+
+function patternAutoscale(original) {
+  const info = original();
+  if (!info || !patternChartData || !document.getElementById("pt-show-sr").checked) return info;
+  const prices = patternChartData.pat.support_resistance.levels.map(l => l.price).filter(v => Number.isFinite(v) && v > 0);
+  return { ...info, priceRange: {
+    minValue: Math.min(info.priceRange.minValue, ...prices),
+    maxValue: Math.max(info.priceRange.maxValue, ...prices),
+  } };
 }
 
 async function renderPatternChart(pat, symbol) {
-  const candles = (pat.candles || []).filter(c => Number.isFinite(c.time) &&
-    [c.open, c.high, c.low, c.close].every(v => Number.isFinite(v) && v > 0)).sort((a, b) => a.time - b.time);
+  if (!window.LightweightCharts) throw new Error("TradingView 차트 라이브러리를 불러오지 못했습니다. 페이지를 새로고침하세요.");
+  // Lightweight Charts requires strictly increasing, unique timestamps.
+  const unique = new Map();
+  for (const c of pat.candles || []) {
+    if (Number.isFinite(c.time) && [c.open, c.high, c.low, c.close].every(v => Number.isFinite(v) && v > 0)) {
+      const time = Math.floor(c.time);
+      unique.set(time, { time, open: c.open, high: c.high, low: c.low, close: c.close });
+    }
+  }
+  const candles = [...unique.values()].sort((a, b) => a.time - b.time);
   if (!candles.length) throw new Error("차트에 표시할 일봉 데이터가 없습니다.");
   patternChartData = { pat, candles };
-  const prices = candles.flatMap(c => [c.low, c.high]).concat(pat.support_resistance.levels.map(l => l.price));
-  const low = Math.min(...prices), high = Math.max(...prices);
-  const pricePadding = Math.max((high - low) * 0.08, high * 0.005);
   document.getElementById("pt-chart-card").classList.remove("hidden");
-  document.getElementById("pt-chart-title").textContent = `${symbol} · 지지·저항 및 캔들 패턴 (${pat.as_of} 기준)`;
+  document.getElementById("pt-chart-title").textContent = `${symbol} · TradingView · 지지·저항 및 캔들 패턴 (${pat.as_of} 기준)`;
   document.getElementById("pt-chart-note").textContent = `패턴은 최근 5봉에 표시합니다. ${pat.patterns.length ? "표시된 패턴의 상세 해설은 아래 표에서 확인하세요." : "최근 5봉에서 뚜렷한 패턴이 없습니다."} 지지·저항은 과거 피벗 가격대이며 향후 반등·돌파를 보장하지 않습니다.`;
-  patternChart = new ApexCharts(document.getElementById("pt-chart"), {
-    chart: { type: "candlestick", height: 440, background: "transparent", animations: { enabled: false }, toolbar: { show: true }, fontFamily: "Pretendard, sans-serif" },
-    series: [{ name: "일봉", data: candles.map(c => ({ x: c.time * 1000, y: [c.open, c.high, c.low, c.close] })) }],
-    annotations: patternAnnotations(pat, candles),
-    xaxis: { type: "datetime", min: candles[0].time * 1000 - 86400000,
-      max: candles[candles.length - 1].time * 1000 + 86400000 * 10, labels: { datetimeUTC: true } },
-    yaxis: { min: Math.max(0, low - pricePadding), max: high + pricePadding,
-      tooltip: { enabled: true }, labels: { formatter: v => fmt(v) } },
-    plotOptions: { candlestick: { colors: { upward: "#089981", downward: "#ef4444" }, wick: { useFillColor: true } } },
-    grid: { borderColor: "#e0e3eb", padding: { left: 12, right: 48, top: 40, bottom: 30 } },
-    tooltip: { theme: "light" },
+  const css = getComputedStyle(document.documentElement);
+  const background = css.getPropertyValue("--surf").trim() || "#ffffff";
+  const text = css.getPropertyValue("--text-dim").trim() || "#334155";
+  const border = css.getPropertyValue("--border").trim() || "#e0e3eb";
+  patternChart = LightweightCharts.createChart(document.getElementById("pt-chart"), {
+    autoSize: true,
+    layout: { background: { type: LightweightCharts.ColorType.Solid, color: background }, textColor: text, fontFamily: "Pretendard, sans-serif", attributionLogo: true },
+    grid: { vertLines: { color: border }, horzLines: { color: border } },
+    rightPriceScale: { borderColor: border, scaleMargins: { top: 0.2, bottom: 0.18 } },
+    timeScale: { borderColor: border, rightOffset: 8, timeVisible: false },
+    crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+    localization: { locale: "ko-KR", priceFormatter: value => new Intl.NumberFormat("ko-KR", { maximumFractionDigits: 2 }).format(value) },
   });
-  await patternChart.render();
+  patternSeries = patternChart.addSeries(LightweightCharts.CandlestickSeries, {
+    upColor: "#089981", downColor: "#ef4444", borderVisible: false,
+    wickUpColor: "#089981", wickDownColor: "#ef4444", autoscaleInfoProvider: patternAutoscale,
+  });
+  patternSeries.setData(candles);
+  patternMarkers = LightweightCharts.createSeriesMarkers(patternSeries, [], { autoScale: true });
+  updatePatternOverlays();
+  const showOhlc = candle => {
+    document.getElementById("pt-chart-ohlc").textContent = `${new Date(candle.time * 1000).toISOString().slice(0, 10)} · 시가 ${fmt(candle.open)} · 고가 ${fmt(candle.high)} · 저가 ${fmt(candle.low)} · 종가 ${fmt(candle.close)}`;
+  };
+  showOhlc(candles[candles.length - 1]);
+  patternChart.subscribeCrosshairMove(param => {
+    const candle = param.seriesData.get(patternSeries);
+    showOhlc(candle?.open != null ? candle : candles[candles.length - 1]);
+  });
+  patternChart.timeScale().fitContent();
 }
 
 async function loadPatternAnalysis() {
@@ -594,9 +638,13 @@ async function loadPatternAnalysis() {
       pat.patterns.length ? `<table><thead><tr><th>일자</th><th>패턴</th><th>방향</th><th>해설</th></tr></thead><tbody>${pat.patterns.map(p => `<tr><td class="text-xs">${p.date}${p.bars_ago===0?" <b>(최신)</b>":""}</td><td style="font-weight:600">${escHtml(p.name)}</td><td>${dirBadge(p.direction)}</td><td class="text-xs" style="color:var(--text-dim)">${escHtml(p.description)}</td></tr>`).join("")}</tbody></table>`
       : `<p class="text-sm" style="color:var(--text-mute)">최근 5봉에서 뚜렷한 캔들 패턴이 없습니다.</p>`}`);
     const sr = pat.support_resistance;
-    box("pt-sr", `<h3 class="font-semibold text-sm mb-2">📏 지지·저항선 (최근 ${sr.lookback_bars}봉 피벗 군집) · 현재가 ${fmt(sr.last_price)}</h3>
+    box("pt-sr", `<h3 class="font-semibold text-sm mb-2">📏 지지·저항선 (최근 ${sr.lookback_bars}봉 피벗 군집) · 분석 기준가 ${fmt(sr.last_price)}</h3>
       <div class="flex gap-3 text-xs mb-2">${sr.nearest_resistance ? `<span class="badge-sell">가장 가까운 저항 ${fmt(sr.nearest_resistance.price)} (${sr.nearest_resistance.distance_pct>0?"+":""}${sr.nearest_resistance.distance_pct}%)</span>` : ""}${sr.nearest_support ? `<span class="badge-buy">가장 가까운 지지 ${fmt(sr.nearest_support.price)} (${sr.nearest_support.distance_pct}%)</span>` : ""}</div>
-      ${sr.levels.length ? `<table><thead><tr><th>가격대</th><th>구분</th><th style="text-align:right">터치</th><th>강도</th><th style="text-align:right">현재가 대비</th></tr></thead><tbody>${sr.levels.map(l => `<tr><td style="font-weight:600">${fmt(l.price)}</td><td>${l.type==="support"?'<span class="badge-buy">지지</span>':'<span class="badge-sell">저항</span>'}</td><td style="text-align:right">${l.touches}회</td><td>${l.strength}</td><td style="text-align:right;color:${l.distance_pct>=0?"var(--green)":"var(--red)"}">${l.distance_pct>0?"+":""}${l.distance_pct}%</td></tr>`).join("")}</tbody></table>` : `<p class="text-sm" style="color:var(--text-mute)">레벨을 찾지 못했습니다.</p>`}`);
+      <div class="text-xs mb-3 space-y-1" style="color:var(--text-dim);line-height:1.7;">
+        <p>${sr.nearest_support ? `가까운 지지 ${fmt(sr.nearest_support.price)}: 기준가보다 ${Math.abs(sr.nearest_support.distance_pct)}% 낮은 가격대입니다. 가격이 내려올 때 이 부근에서 하락이 멈추는지 또는 아래로 이탈하는지 살펴보세요.` : "표시된 후보 중 기준가 아래의 지지는 없습니다. 하락할 수 없다는 의미는 아닙니다."}</p>
+        <p>${sr.nearest_resistance ? `가까운 저항 ${fmt(sr.nearest_resistance.price)}: ${sr.nearest_resistance.distance_pct === 0 ? "기준가와 같은" : `기준가보다 ${Math.abs(sr.nearest_resistance.distance_pct)}% 높은`} 가격대입니다. 가격이 올라올 때 이 부근에서 상승이 막히는지 또는 위로 돌파하는지 살펴보세요.` : "표시된 후보 중 기준가 이상의 저항은 없습니다. 계속 상승한다는 의미는 아닙니다."}</p>
+      </div>
+      ${sr.levels.length ? `<table><thead><tr><th>가격대</th><th>구분</th><th style="text-align:right">터치</th><th>강도</th><th style="text-align:right">기준가 대비</th></tr></thead><tbody>${sr.levels.map(l => `<tr><td style="font-weight:600">${fmt(l.price)}</td><td>${l.type==="support"?'<span class="badge-buy">지지</span>':'<span class="badge-sell">저항</span>'}</td><td style="text-align:right">${l.touches}회</td><td>${l.strength}</td><td style="text-align:right;color:${l.distance_pct>=0?"var(--green)":"var(--red)"}">${l.distance_pct>0?"+":""}${l.distance_pct}%</td></tr>`).join("")}</tbody></table>` : `<p class="text-sm" style="color:var(--text-mute)">레벨을 찾지 못했습니다.</p>`}`);
     box("pt-breakouts", `<h3 class="font-semibold text-sm mb-2">🚀 돌파·크로스 이벤트 (${pat.as_of} 기준)</h3>${
       pat.breakouts.length ? `<div class="flex flex-wrap gap-2">${pat.breakouts.map(e => `<div class="rounded-lg p-2 text-xs" style="background:var(--surf2);border:1px solid var(--border);min-width:220px;">${dirBadge(e.direction)} <b>${escHtml(e.name)}</b>${e.confirmed ? ' <span style="color:var(--green)">✔ 확인</span>' : ''}<div style="color:var(--text-dim);margin-top:2px;">${escHtml(e.detail || "")}</div></div>`).join("")}</div>`
       : `<p class="text-sm" style="color:var(--text-mute)">현재 봉에서 돌파·크로스 이벤트가 없습니다.</p>`}`);
@@ -613,9 +661,13 @@ async function loadPatternAnalysis() {
 }
 for (const id of ["pt-show-sr", "pt-show-patterns"]) {
   document.getElementById(id)?.addEventListener("change", () => {
-    if (patternChart && patternChartData) patternChart.updateOptions({ annotations: patternAnnotations(patternChartData.pat, patternChartData.candles) });
+    updatePatternOverlays();
   });
 }
+document.getElementById("pt-chart-reset")?.addEventListener("click", () => {
+  patternChart?.priceScale("right").applyOptions({ autoScale: true });
+  patternChart?.timeScale().fitContent();
+});
 function invalidatePatternAnalysis() {
   ++patternRun;
   clearPatternResults();
@@ -676,18 +728,53 @@ function renderRoboDecisionLog(logs) {
     </div>`).join("") : `<div style="color:var(--text-mute);">AI 의사결정 로그가 없습니다. 시작 버튼을 눌러 실행하세요.</div>`;
 }
 
+// 판단 근거는 반드시 실제 시장 데이터에서 나온 것만 보여 준다.
+// - basis(출처·봉 종류·봉 수·마지막 봉 시각)를 카드에 명시해 무엇을 보고 판단했는지 확인할 수 있게 한다.
+// - 데이터를 못 받은 종목(signal NONE)은 '관망' 이 아니라 '판단 불가' 로, 근거 자리에 사유를 적는다.
+// - reasons 가 비면 임의 문구를 만들지 않는다 (예전엔 "관망 — 추세 확인 중" 을 프런트가 붙였다).
+const RATIONALE_SOURCE = { kis: "KIS", yahoo: "Yahoo", kis_live: "KIS 현재가", last_close: "마지막 봉 종가" };
+const RATIONALE_INTERVAL = { "1m": "1분봉", "2m": "2분봉", "5m": "5분봉", "15m": "15분봉", "1d": "일봉" };
+
+function rationaleAgo(epochSec) {
+  const min = Math.floor((Date.now() / 1000 - Number(epochSec)) / 60);
+  if (!Number.isFinite(min) || min < 0) return "";
+  return min < 1 ? "방금" : min < 60 ? `${min}분 전` : min < 1440 ? `${Math.floor(min / 60)}시간 전` : `${Math.floor(min / 1440)}일 전`;
+}
+
+function rationaleBasis(s) {
+  const b = s.basis || {};
+  if (!b.as_of && !b.bars) return `<span style="color:var(--danger,#e53935);">데이터 출처 미기록</span>`;
+  const when = new Date(Number(b.as_of) * 1000);
+  const parts = [
+    RATIONALE_SOURCE[b.source] || b.source || "출처 미기록",
+    RATIONALE_INTERVAL[b.interval] || b.interval || "",
+    b.bars ? `${b.bars}봉` : "",
+    b.as_of ? `${when.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })} 기준 (${rationaleAgo(b.as_of)})` : "",
+  ].filter(Boolean);
+  const price = b.price_source ? ` · 가격 ${RATIONALE_SOURCE[b.price_source] || b.price_source}` : "";
+  return `${escHtml(parts.join(" · "))}${escHtml(price)}`;
+}
+
 function renderRoboRationale(signals) {
   const el = document.getElementById("robo-rationale");
   if (!el) return;
   if (!signals?.length) { el.innerHTML = `<div class="col-span-3 text-sm" style="color:var(--text-mute);">실행 후 판단 근거가 표시됩니다.</div>`; return; }
-  // 최근 사이클의 매수·매도 시그널을 우선 보여 주고, 사유(reasons)는 엔진이 실제로 쓴 지표 문구다
-  const ranked = [...signals].reverse().sort((a, b) => (a.signal === "HOLD") - (b.signal === "HOLD")).slice(0, 6);
-  el.innerHTML = ranked.map(s => `
+  // 최근 사이클의 매수·매도를 먼저, 관망 다음, 데이터 없음(NONE)은 맨 뒤. 사유(reasons)는 엔진이 실제로 쓴 지표 문구다.
+  const rank = v => (v.signal === "NONE" ? 2 : v.signal === "HOLD" ? 1 : 0);
+  const ranked = [...signals].reverse().sort((a, b) => rank(a) - rank(b)).slice(0, 6);
+  el.innerHTML = ranked.map(s => {
+    const none = s.signal === "NONE";
+    const badge = none ? `<span style="color:var(--danger,#e53935);">판단 불가</span>`
+      : `<span class="${s.signal === "BUY" ? "badge-buy" : s.signal === "SELL" ? "badge-sell" : ""}" style="${s.signal === "HOLD" ? "color:var(--text-mute);" : ""}">${escHtml(s.action || s.signal)}</span>`;
+    const reasons = (s.reasons && s.reasons.length) ? s.reasons : ["표시할 근거가 없습니다 (지표 문구 미기록)"];
+    return `
     <div class="card" style="padding:14px;">
-      <div class="flex items-center justify-between gap-2 mb-1"><div class="font-semibold text-sm">${escHtml(s.name || s.symbol)}</div><span class="${s.signal === "BUY" ? "badge-buy" : s.signal === "SELL" ? "badge-sell" : ""}" style="${s.signal === "HOLD" ? "color:var(--text-mute);" : ""}">${escHtml(s.action || s.signal)}</span></div>
-      <div class="text-xs mb-2" style="color:var(--text-mute);">신호 점수 ${Number(s.score ?? 0).toFixed(1)} · ${s.price != null ? `${Number(s.price).toLocaleString("ko-KR")}원 · ` : ""}${s.source === "batch" ? "배치" : "내 계정"}</div>
-      <ul class="text-xs space-y-1" style="color:var(--text-dim);list-style:disc;padding-left:16px;">${(s.reasons && s.reasons.length ? s.reasons : [s.signal === "BUY" ? "매수 시그널" : s.signal === "SELL" ? "매도 시그널" : "관망 — 추세 확인 중"]).map(r => `<li>${escHtml(r)}</li>`).join("")}</ul>
-    </div>`).join("");
+      <div class="flex items-center justify-between gap-2 mb-1"><div class="font-semibold text-sm">${escHtml(s.name || s.symbol)}</div>${badge}</div>
+      <div class="text-xs mb-1" style="color:var(--text-mute);">신호 점수 ${Number(s.score ?? 0).toFixed(1)} · ${s.price != null ? `${Number(s.price).toLocaleString("ko-KR")}원 · ` : ""}${s.source === "batch" ? "배치" : "내 계정"}${s.cycle_time ? ` · 사이클 ${escHtml(s.cycle_time)}` : ""}</div>
+      <div class="text-xs mb-2" style="color:var(--text-mute);">📡 ${rationaleBasis(s)}</div>
+      <ul class="text-xs space-y-1" style="color:var(--text-dim);list-style:disc;padding-left:16px;">${reasons.map(r => `<li>${escHtml(r)}</li>`).join("")}</ul>
+    </div>`;
+  }).join("");
 }
 
 document.getElementById("robo-decision-start").addEventListener("click", async () => {

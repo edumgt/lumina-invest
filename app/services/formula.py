@@ -16,6 +16,7 @@ import ast
 import hashlib
 import json
 import math
+import re
 from typing import Any
 
 import numpy as np
@@ -376,37 +377,189 @@ def compute(candles: list[dict], indicator_expr: str, buy_expr: str | None = Non
 
 # ── 코드 생성 (Pine / Python) ─────────────────────────────────────────────
 
-_PINE_FUNCS = {"sma": "ta.sma", "ema": "ta.ema", "rsi": "ta.rsi", "atr": "ta.atr", "std": "ta.stdev", "highest": "ta.highest",
-               "lowest": "ta.lowest", "crossover": "ta.crossover", "crossunder": "ta.crossunder", "abs": "math.abs", "log": "math.log",
-               "sqrt": "math.sqrt", "sign": "math.sign", "max": "math.max", "min": "math.min", "sum": "math.sum", "obv": "ta.obv",
-               "change": "ta.change", "barssince": "ta.barssince", "nz": "nz"}
+# DSL 함수 → Pine Script v6 식. 렌더러가 인자를 문자열로 넘기므로 기본값도 문자열이며,
+# 키워드 인자를 그대로 쓸 수 있도록 파라미터 이름을 DSL(make_functions) 쪽과 똑같이 맞춰 두었다.
+# Pine 의 함정: 거듭제곱 연산자(^, **)가 없어 math.pow 를 써야 하고, ta.obv 는 함수가 아닌 내장 변수이며,
+# 참·거짓은 소문자(true/false), 원주율은 math.pi 다. 길이 인자는 series int 여야 해 input.int 로 낸다.
+def _pine_len(a: str) -> str:
+    """기간 인자. Pine 의 length 는 정수라 식(n*2, n/2 …)은 int() 로 감싼다 — v6 는 정수끼리 나눠도 실수다."""
+    return a if re.fullmatch(r"[A-Za-z_]\w*|\d+", a.strip()) else f"int({a})"
+
+
+def _pine_hist(x: str, n: str) -> str:
+    """Pine 의 과거 참조 연산자. 같은 값에 두 번 쓸 수 없다(close[1][2] 는 오류)."""
+    if x.rstrip().endswith("]"):
+        raise FormulaError("shift()/pct_change() 를 중첩할 수 없습니다 — Pine 은 같은 값에 과거 참조([]) 를 "
+                           "한 번만 허용합니다. shift(close, 3) 처럼 기간을 합쳐 쓰세요.")
+    return f"({x})[{n}]"
+
+
+_PINE_SPEC: dict[str, Any] = {
+    "sma":         lambda x, n: f"ta.sma({x}, {_pine_len(n)})",
+    "ema":         lambda x, n: f"ta.ema({x}, {_pine_len(n)})",
+    "rsi":         lambda x, n="14": f"ta.rsi({x}, {_pine_len(n)})",
+    "macd":        lambda x, f="12", s="26", sig="9": f"(ta.ema({x}, {_pine_len(f)}) - ta.ema({x}, {_pine_len(s)}))",
+    "macd_signal": lambda x, f="12", s="26", sig="9": f"ta.ema(ta.ema({x}, {_pine_len(f)}) - ta.ema({x}, {_pine_len(s)}), {_pine_len(sig)})",
+    "macd_hist":   lambda x, f="12", s="26", sig="9": f"((ta.ema({x}, {_pine_len(f)}) - ta.ema({x}, {_pine_len(s)})) - ta.ema(ta.ema({x}, {_pine_len(f)}) - ta.ema({x}, {_pine_len(s)}), {_pine_len(sig)}))",
+    "bb_upper":    lambda x, n="20", k="2.0": f"(ta.sma({x}, {_pine_len(n)}) + {k} * ta.stdev({x}, {_pine_len(n)}))",
+    "bb_mid":      lambda x, n="20", k="2.0": f"ta.sma({x}, {_pine_len(n)})",
+    "bb_lower":    lambda x, n="20", k="2.0": f"(ta.sma({x}, {_pine_len(n)}) - {k} * ta.stdev({x}, {_pine_len(n)}))",
+    "atr":         lambda n="14": f"ta.atr({_pine_len(n)})",
+    "std":         lambda x, n: f"ta.stdev({x}, {_pine_len(n)})",
+    "highest":     lambda x, n: f"ta.highest({x}, {_pine_len(n)})",
+    "lowest":      lambda x, n: f"ta.lowest({x}, {_pine_len(n)})",
+    "sum":         lambda x, n: f"math.sum({x}, {_pine_len(n)})",
+    "mean":        lambda x, n: f"ta.sma({x}, {_pine_len(n)})",
+    "shift":       lambda x, n="1": _pine_hist(x, _pine_len(n)),
+    "change":      lambda x, n="1": f"ta.change({x}, {_pine_len(n)})",
+    "pct_change":  lambda x, n="1": f"(({x}) / {_pine_hist(x, _pine_len(n))} - 1)",
+    "zscore":      lambda x, n="20": f"(({x} - ta.sma({x}, {_pine_len(n)})) / ta.stdev({x}, {_pine_len(n)}))",
+    "normalize":   lambda x, n="20": f"(({x} - ta.lowest({x}, {_pine_len(n)})) / (ta.highest({x}, {_pine_len(n)}) - ta.lowest({x}, {_pine_len(n)})))",
+    "rank":        lambda x, n="20": f"(ta.percentrank({x}, {_pine_len(n)}) / 100)",
+    "crossover":   lambda a, b: f"ta.crossover({a}, {b})",
+    "crossunder":  lambda a, b: f"ta.crossunder({a}, {b})",
+    "where":       lambda cond, a, b: f"({cond} ? {a} : {b})",
+    "abs":         lambda x: f"math.abs({x})",
+    "log":         lambda x: f"math.log({x})",
+    "sqrt":        lambda x: f"math.sqrt({x})",
+    "sign":        lambda x: f"math.sign({x})",
+    "clip":        lambda x, lo_, hi_: f"math.min(math.max({x}, {lo_}), {hi_})",
+    "max":         lambda a, b: f"math.max({a}, {b})",
+    "min":         lambda a, b: f"math.min({a}, {b})",
+    "nz":          lambda x, v="0.0": f"nz({x}, {v})",
+    "typical":     lambda: "hlc3",
+    "vwap":        lambda n="20": f"(math.sum(hlc3 * volume, {_pine_len(n)}) / math.sum(volume, {_pine_len(n)}))",
+    "obv":         lambda: "ta.obv",
+    "barssince":   lambda cond: f"ta.barssince({cond})",
+}
+
+_PINE_BINOPS = {ast.Add: "+", ast.Sub: "-", ast.Mult: "*", ast.Div: "/", ast.Mod: "%"}
+_PINE_CMPOPS = {ast.Lt: "<", ast.LtE: "<=", ast.Gt: ">", ast.GtE: ">=", ast.Eq: "==", ast.NotEq: "!="}
+_PINE_BOOL_FUNCS = ("crossover", "crossunder")
+
+
+def _pine_is_bool(node: ast.AST) -> bool:
+    """이 노드가 Pine 에서 bool 로 평가되는지. v6 는 숫자→bool 암묵 변환을 없앴다."""
+    if isinstance(node, ast.Expression):
+        return _pine_is_bool(node.body)
+    if isinstance(node, (ast.Compare, ast.BoolOp)):
+        return True
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.Not, ast.Invert)):
+        return True
+    if isinstance(node, ast.BinOp) and isinstance(node.op, (ast.BitAnd, ast.BitOr)):
+        return True
+    if isinstance(node, ast.Constant) and isinstance(node.value, bool):
+        return True
+    if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+        return node.func.id in _PINE_BOOL_FUNCS
+    return False
+
+
+def _pine_expr(node: ast.AST) -> str:
+    """검증된 DSL AST → Pine Script v6 식 문자열."""
+    if isinstance(node, ast.Expression):
+        return _pine_expr(node.body)
+    if isinstance(node, ast.Constant):
+        if isinstance(node.value, bool):
+            return "true" if node.value else "false"
+        return repr(node.value)
+    if isinstance(node, ast.Name):
+        return {"pi": "math.pi", "True": "true", "False": "false"}.get(node.id, node.id)
+    if isinstance(node, ast.BinOp):
+        left, right = _pine_expr(node.left), _pine_expr(node.right)
+        if isinstance(node.op, ast.Pow):           # Pine 에는 거듭제곱 연산자가 없다
+            return f"math.pow({left}, {right})"
+        if isinstance(node.op, (ast.BitAnd, ast.BitOr)):   # DSL 의 & | → Pine and/or
+            return f"({left} {'and' if isinstance(node.op, ast.BitAnd) else 'or'} {right})"
+        op = _PINE_BINOPS.get(type(node.op))
+        if op is None:
+            raise FormulaError(f"Pine 으로 변환할 수 없는 연산자입니다: {type(node.op).__name__}")
+        return f"({left} {op} {right})"
+    if isinstance(node, ast.UnaryOp):
+        operand = _pine_expr(node.operand)
+        if isinstance(node.op, (ast.Not, ast.Invert)):
+            return f"(not {operand})"
+        return f"({'-' if isinstance(node.op, ast.USub) else '+'}{operand})"
+    if isinstance(node, ast.BoolOp):
+        op = "and" if isinstance(node.op, ast.And) else "or"
+        return "(" + f" {op} ".join(_pine_expr(v) for v in node.values) + ")"
+    if isinstance(node, ast.Compare):
+        # Pine 은 a < b < c 연쇄 비교가 없어 and 로 풀어 쓴다.
+        parts, left = [], node.left
+        for op, right in zip(node.ops, node.comparators):
+            sym = _PINE_CMPOPS.get(type(op))
+            if sym is None:
+                raise FormulaError(f"Pine 으로 변환할 수 없는 비교 연산자입니다: {type(op).__name__}")
+            parts.append(f"({_pine_expr(left)} {sym} {_pine_expr(right)})")
+            left = right
+        return parts[0] if len(parts) == 1 else "(" + " and ".join(parts) + ")"
+    if isinstance(node, ast.Call):
+        name = node.func.id
+        spec = _PINE_SPEC.get(name)
+        if spec is None:
+            raise FormulaError(f"Pine 으로 변환할 수 없는 함수입니다: {name}()")
+        try:
+            return spec(*[_pine_expr(a) for a in node.args], **{k.arg: _pine_expr(k.value) for k in node.keywords})
+        except TypeError as exc:
+            raise FormulaError(f"{name}(): Pine 변환 인자가 맞지 않습니다 ({exc}).")
+    raise FormulaError(f"Pine 으로 변환할 수 없는 구문입니다: {type(node).__name__}")
+
+
+# 각 함수에서 '기간(length)' 에 해당하는 인자 이름 — 이 자리에 바로 쓰인 파라미터는 input.int 로 낸다.
+_PINE_LEN_ARGS = {
+    "sma": ("n",), "ema": ("n",), "rsi": ("n",), "macd": ("f", "s", "sig"), "macd_signal": ("f", "s", "sig"),
+    "macd_hist": ("f", "s", "sig"), "bb_upper": ("n",), "bb_mid": ("n",), "bb_lower": ("n",), "atr": ("n",),
+    "std": ("n",), "highest": ("n",), "lowest": ("n",), "sum": ("n",), "mean": ("n",), "shift": ("n",),
+    "change": ("n",), "pct_change": ("n",), "zscore": ("n",), "normalize": ("n",), "rank": ("n",), "vwap": ("n",),
+}
+
+
+def _pine_length_params(*exprs: str | None) -> set[str]:
+    """기간 자리에 직접 쓰인 파라미터 이름. 나머지(배수 k 등)는 input.float 로 둬야 2.5 를 넣을 수 있다."""
+    import inspect
+    out: set[str] = set()
+    for e in exprs:
+        if not e or not str(e).strip():
+            continue
+        for node in ast.walk(parse_expr(e)):
+            if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)):
+                continue
+            lens, spec = _PINE_LEN_ARGS.get(node.func.id), _PINE_SPEC.get(node.func.id)
+            if not lens or spec is None:
+                continue
+            bound = dict(zip(inspect.signature(spec).parameters, node.args))
+            bound.update({k.arg: k.value for k in node.keywords if k.arg})
+            out |= {bound[ln].id for ln in lens if isinstance(bound.get(ln), ast.Name)}
+    return out
 
 
 def to_pine(name: str, indicator_expr: str, buy_expr: str | None, sell_expr: str | None, params: dict | None) -> str:
-    """DSL → Pine Script v5 (기본 함수는 1:1 매핑, 나머지는 주석으로 안내)."""
-    import re
-    def conv(expr: str) -> str:
-        e = expr
-        e = re.sub(r'\bshift\(([^,()]+),\s*(\d+)\)', r'\1[\2]', e)
-        e = re.sub(r'\bpct_change\(([^,()]+),\s*(\d+)\)', r'(\1 / \1[\2] - 1)', e)
-        e = re.sub(r'\bzscore\(([^,()]+),\s*([^,()]+)\)', r'((\1 - ta.sma(\1, \2)) / ta.stdev(\1, \2))', e)
-        e = re.sub(r'\bbb_upper\(([^,()]+),\s*([^,()]+),\s*([^,()]+)\)', r'(ta.sma(\1, \2) + \3 * ta.stdev(\1, \2))', e)
-        e = re.sub(r'\bbb_lower\(([^,()]+),\s*([^,()]+),\s*([^,()]+)\)', r'(ta.sma(\1, \2) - \3 * ta.stdev(\1, \2))', e)
-        e = re.sub(r'\bbb_mid\(([^,()]+),\s*([^,()]+)(?:,\s*[^,()]+)?\)', r'ta.sma(\1, \2)', e)
-        e = re.sub(r'\bmacd\(([^,()]+)(?:,\s*(\d+),\s*(\d+),\s*(\d+))?\)', lambda m: f"(ta.ema({m.group(1)}, {m.group(2) or 12}) - ta.ema({m.group(1)}, {m.group(3) or 26}))", e)
-        e = re.sub(r'\bwhere\(', 'iff_(', e)
-        for k, v in _PINE_FUNCS.items():
-            e = re.sub(rf'(?<![\w.]){k}\(', v + '(', e)   # 이미 ta./math. 접두어가 붙은 것은 건너뜀
-        e = e.replace(" and ", " and ").replace(" or ", " or ").replace("**", "^")
-        return e
-    lines = [f'//@version=5', f'indicator("{name}", overlay=false)', '// lumina-invest 자유 산식 DSL 에서 생성 — 함수 인자 순서/의미가 Pine 과 다를 수 있어 검토 후 사용하세요.',
-             'iff_(c, a, b) => c ? a : b']
+    """DSL → Pine Script v6. 변환할 수 없는 함수·구문은 깨진 코드를 내보내지 않고 FormulaError 로 알린다."""
+    def expr(e: str, as_bool: bool = False) -> str:
+        tree = parse_expr(e)
+        out = _pine_expr(tree)
+        # v6 는 숫자를 bool 로 암묵 변환하지 않는다 → 신호 자리에는 bool() 로 명시 캐스팅.
+        return f"bool({out})" if as_bool and not _pine_is_bool(tree) else out
+
+    title = str(name).replace("\\", "").replace('"', "'") or "lumina indicator"
+    lines = ["//@version=6",
+             f'indicator("{title}", overlay=false)',
+             "// lumina-invest 자유 산식 DSL 에서 자동 생성 (Pine Script v6).",
+             "// 근사한 부분: bb_* 는 ta.stdev(표본), rank() 는 ta.percentrank/100(<= 기준),",
+             "//            vwap(n) 은 세션 ta.vwap 이 아니라 hlc3·거래량의 n봉 롤링 가중평균입니다."]
+    length_params = _pine_length_params(indicator_expr, buy_expr, sell_expr)
     for k, v in (params or {}).items():
-        lines.append(f'{k} = input.float({float(v)}, "{k}")')
-    lines.append(f'ind = {conv(indicator_expr)}')
-    lines.append('plot(ind, "indicator", color=color.blue)')
-    if buy_expr: lines.append(f'buy_signal  = {conv(buy_expr)}'); lines.append('plotshape(buy_signal, style=shape.triangleup, location=location.bottom, color=color.green)')
-    if sell_expr: lines.append(f'sell_signal = {conv(sell_expr)}'); lines.append('plotshape(sell_signal, style=shape.triangledown, location=location.top, color=color.red)')
+        fv = float(v)
+        lines.append(f'{k} = input.int({int(round(fv))}, "{k}")' if k in length_params
+                     else f'{k} = input.float({fv}, "{k}")')
+    lines.append(f"ind = {expr(indicator_expr)}")
+    lines.append('plot(ind, title="indicator", color=color.blue)')
+    if buy_expr and str(buy_expr).strip():
+        lines.append(f"buy_signal  = {expr(buy_expr, as_bool=True)}")
+        lines.append('plotshape(buy_signal, title="buy", style=shape.triangleup, location=location.bottom, color=color.green)')
+    if sell_expr and str(sell_expr).strip():
+        lines.append(f"sell_signal = {expr(sell_expr, as_bool=True)}")
+        lines.append('plotshape(sell_signal, title="sell", style=shape.triangledown, location=location.top, color=color.red)')
     return "\n".join(lines)
 
 

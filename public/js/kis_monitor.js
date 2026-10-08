@@ -22,7 +22,29 @@ const STATUS_KIND = { FILLED: "ok", ACCEPTED: "", PARTIALLY_FILLED: "", PENDING:
 
 function pnlColor(v) { return v > 0 ? "var(--up, #e5484d)" : v < 0 ? "var(--down, #2962ff)" : ""; }
 function won(v) { return v == null ? "-" : `${fmt(v)}원`; }
-function ts(s) { return s ? escHtml(String(s).replace("T", " ").slice(0, 19)) : "-"; }
+const kisTimeFormatter = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit",
+  hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23",
+});
+function kisDate(value) {
+  if (value == null || value === "") return null;
+  // Backend timestamps without an explicit offset are UTC as well.
+  const raw = String(value).trim();
+  const normalized = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}/.test(raw) && !/(Z|[+-]\d{2}:?\d{2})$/i.test(raw) ? `${raw}Z` : raw;
+  const date = new Date(normalized);
+  return Number.isFinite(date.getTime()) ? date : null;
+}
+export function formatKisTime(value) {
+  const date = kisDate(value); if (!date) return "-";
+  const parts = Object.fromEntries(kisTimeFormatter.formatToParts(date).map(p => [p.type, p.value]));
+  return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}:${parts.second}`;
+}
+function ts(s) { return escHtml(formatKisTime(s)); }
+const timeColumn = (field) => textColumn(field, "시각 (KST)", {
+  width: 190, valueFormatter: ({ value }) => formatKisTime(value),
+  tooltipValueGetter: ({ value }) => `${formatKisTime(value)} (KST, UTC+9)`,
+  comparator: (a, b) => (kisDate(a)?.getTime() ?? 0) - (kisDate(b)?.getTime() ?? 0),
+});
 
 function renderBadges(d) {
   const el = document.getElementById("kism-badges"); if (!el) return;
@@ -57,32 +79,69 @@ function renderKpis(d) {
   ].join("");
 }
 
+const grids = new Map();
+const numberFormat = ({ value }) => value == null ? "-" : fmt(value);
+const numericColumn = (field, headerName, extra = {}) => ({ field, headerName, filter: "agNumberColumnFilter", valueFormatter: numberFormat, cellStyle: { textAlign: "right" }, ...extra });
+const textColumn = (field, headerName, extra = {}) => ({ field, headerName, filter: "agTextColumnFilter", ...extra });
+function textCell(value, color = "") {
+  const el = document.createElement("span"); el.textContent = value ?? "-"; if (color) el.style.color = color; return el;
+}
+function updateGrid(id, columns, rows, emptyMessage, resetPage = false) {
+  const el = document.getElementById(id); if (!el) return null;
+  let grid = grids.get(id);
+  if (!grid) {
+    if (!window.agGrid) throw new Error("AG Grid를 불러오지 못했습니다. 페이지를 새로고침하세요.");
+    const css = getComputedStyle(document.documentElement);
+    grid = agGrid.createGrid(el, {
+      theme: agGrid.themeQuartz.withParams({ backgroundColor: css.getPropertyValue("--surf").trim() || "#fff", foregroundColor: css.getPropertyValue("--text").trim() || "#0f172a", borderColor: css.getPropertyValue("--border").trim() || "#e0e3eb", accentColor: css.getPropertyValue("--accent").trim() || "#2962ff", fontFamily: "inherit", fontSize: 12, spacing: 6 }),
+      columnDefs: columns, rowData: [],
+      defaultColDef: { sortable: true, resizable: true, minWidth: 110, width: 145, tooltipValueGetter: ({ value }) => value == null ? "" : String(value) },
+      pagination: true, paginationPageSize: 10, paginationPageSizeSelector: false,
+      paginationPanels: ["rowSummary", "pageSummary"],
+      domLayout: "autoHeight", rowHeight: 40, headerHeight: 44,
+      suppressMovableColumns: true,
+      overlayNoRowsTemplate: "<span></span>",
+      localeText: { noRowsToShow: "데이터 없음", page: "페이지", of: "/", to: "–", more: "더 보기", firstPage: "첫 페이지", lastPage: "마지막 페이지", nextPage: "다음 페이지", previousPage: "이전 페이지", pageSizeSelectorLabel: "페이지당", filterOoo: "필터…", contains: "포함", notContains: "미포함", equals: "같음", notEqual: "다름", startsWith: "시작", endsWith: "끝", lessThan: "미만", greaterThan: "초과", lessThanOrEqual: "이하", greaterThanOrEqual: "이상", inRange: "범위", blank: "빈 값", notBlank: "값 있음", andCondition: "그리고", orCondition: "또는" },
+    });
+    grids.set(id, grid);
+  }
+  const page = resetPage ? 0 : grid.paginationGetCurrentPage();
+  grid.setGridOption("overlayNoRowsTemplate", `<span>${escHtml(emptyMessage)}</span>`);
+  grid.setGridOption("rowData", rows);
+  grid.paginationGoToPage(Math.min(page, Math.max(0, grid.paginationGetTotalPages() - 1)));
+  return grid;
+}
+
+let currentHoldings = null;
+function holdingSymbol(symbol) {
+  const raw = String(symbol || "").trim().toUpperCase();
+  return raw.match(/^(?:KRX:)?(\d{6})(?:\.(?:KS|KQ))?$/)?.[1] || raw;
+}
+function currentQuantity(symbol) {
+  if (currentHoldings === null) return null;
+  const key = holdingSymbol(symbol);
+  return currentHoldings.has(key) ? currentHoldings.get(key) : 0;
+}
 function renderHoldings(d) {
-  const el = document.getElementById("kism-holdings"), note = document.getElementById("kism-holdings-note"); if (!el) return;
-  const a = d.account || {};
-  if (!a.connected) { el.innerHTML = `<div style="color:var(--text-mute);">KIS 계좌 미연동 ${escHtml(a.error || "")}</div>`; return; }
-  const rows = (a.holdings || []).slice().sort((x, y) => (y.bot_managed - x.bot_managed) || (y.eval_amount - x.eval_amount));
-  if (note) note.textContent = `· ${rows.length}종목 (★ = 봇 관리)`;
-  el.innerHTML = rows.length ? `<table class="w-full"><thead><tr style="color:var(--text-mute);"><th class="text-left">종목</th><th class="text-right">수량</th><th class="text-right">봇수량</th><th class="text-right">평균단가</th><th class="text-right">현재가</th><th class="text-right">평가</th><th class="text-right">손익</th></tr></thead><tbody>${
-    rows.map(h => `<tr style="border-top:1px solid var(--border);${h.bot_managed ? "" : "opacity:.65;"}">
-      <td>${h.bot_managed ? "★ " : ""}${escHtml(h.name || h.symbol)} <span style="color:var(--text-mute);">${escHtml(h.symbol)}</span></td>
-      <td class="text-right">${fmt(h.quantity)}</td><td class="text-right">${h.bot_quantity ? fmt(h.bot_quantity) : "-"}</td>
-      <td class="text-right">${fmt(h.avg_price)}</td><td class="text-right">${fmt(h.current_price)}</td><td class="text-right">${fmt(h.eval_amount)}</td>
-      <td class="text-right" style="color:${pnlColor(h.profit_loss)}">${fmt(h.profit_loss)} (${Number(h.profit_loss_rate || 0).toFixed(2)}%)</td></tr>`).join("")
-  }</tbody></table>` : `<div style="color:var(--text-mute);">보유 종목 없음</div>`;
+  const a = d.account || {}, note = document.getElementById("kism-holdings-note");
+  currentHoldings = a.connected && Array.isArray(a.holdings) ? new Map(a.holdings.map(h => [holdingSymbol(h.symbol), h.quantity == null || !Number.isFinite(Number(h.quantity)) ? null : Number(h.quantity)])) : null;
+  const rows = a.connected ? (a.holdings || []).slice().sort((x, y) => (y.bot_managed - x.bot_managed) || (y.eval_amount - x.eval_amount)) : [];
+  if (note) note.textContent = `· ${rows.length}종목 · 페이지당 10건 (★ = 봇 관리)`;
+  updateGrid("kism-holdings", [
+    textColumn("name", "종목", { width: 190, cellRenderer: ({ data }) => textCell(`${data.bot_managed ? "★ " : ""}${data.name || data.symbol}`) }),
+    textColumn("symbol", "종목코드"), numericColumn("quantity", "수량"), numericColumn("bot_quantity", "봇수량"),
+    numericColumn("avg_price", "평균단가"), numericColumn("current_price", "현재가"), numericColumn("eval_amount", "평가금액"),
+    numericColumn("profit_loss", "평가손익", { cellStyle: ({ value }) => ({ textAlign: "right", color: pnlColor(value) }) }),
+    numericColumn("profit_loss_rate", "손익률 (%)", { valueFormatter: ({ value }) => value == null ? "-" : Number(value).toFixed(2) }),
+  ], rows, a.connected ? "보유 종목 없음" : `KIS 계좌 미연동 ${a.error || ""}`);
 }
 
 function renderRecon(d) {
-  const el = document.getElementById("kism-recon"), note = document.getElementById("kism-recon-note"); if (!el) return;
-  const r = d.reconcile;
-  if (!r) { el.innerHTML = `<div style="color:var(--text-mute);">아직 점검 결과가 없습니다 (10분마다 실행).</div>`; return; }
-  if (note) note.textContent = `· ${ts(r.checked_at)} · 기준선 ${escHtml(String(r.summary?.baseline || "-"))}`;
-  if (r.ok === null) { el.innerHTML = `<div style="color:var(--text-mute);">${escHtml(r.summary?.note || "점검 불가")}</div>`; return; }
-  if (r.ok) { el.innerHTML = `<div>${badge("로그와 KIS 실거래 일치", "ok")} <span style="color:var(--text-mute);">가상 ${escHtml(JSON.stringify(r.summary?.virtual || {}))} · 봇 체결 ${escHtml(JSON.stringify(r.summary?.bot_net_filled || {}))}</span></div>`; return; }
-  el.innerHTML = (r.issues || []).slice(0, 20).map(i => {
-    const rest = Object.entries(i).filter(([k]) => !["type", "symbol", "detail"].includes(k)).map(([k, v]) => `${k}=${typeof v === "object" ? JSON.stringify(v) : v}`).join(", ");
-    return `<div class="rounded p-2" style="background:var(--surf2);border:1px solid var(--border);">${badge(i.type, "bad")} <b>${escHtml(i.symbol || "")}</b> <span style="color:var(--text-dim);">${escHtml(rest)}</span>${i.detail ? `<div style="color:var(--text-mute);">${escHtml(i.detail)}</div>` : ""}</div>`;
-  }).join("");
+  const r = d.reconcile, note = document.getElementById("kism-recon-note"), summary = document.getElementById("kism-recon-summary");
+  if (note) note.textContent = r ? `· ${ts(r.checked_at)} (KST) · 기준선 ${String(r.summary?.baseline || "-")}` : "";
+  if (summary) summary.textContent = !r ? "아직 점검 결과가 없습니다 (10분마다 실행)." : r.ok === null ? (r.summary?.note || "점검 불가") : r.ok ? `로그와 KIS 실거래 일치 · 가상 ${JSON.stringify(r.summary?.virtual || {})} · 봇 체결 ${JSON.stringify(r.summary?.bot_net_filled || {})}` : `정합성 불일치 ${(r.issues || []).length}건 · 페이지당 10건`;
+  const rows = (r?.issues || []).map(i => ({ ...i, values: Object.entries(i).filter(([k]) => !["type", "symbol", "detail"].includes(k)).map(([k, v]) => `${k}=${typeof v === "object" ? JSON.stringify(v) : v}`).join(", ") }));
+  updateGrid("kism-recon", [textColumn("type", "문제 유형", { width: 180 }), textColumn("symbol", "종목코드"), textColumn("values", "비교 값", { width: 300 }), textColumn("detail", "상세", { width: 300 })], rows, !r ? "점검 결과 없음" : r.ok === null ? "점검 불가" : "정합성 문제 없음");
 }
 
 function renderOrdersSummary(d) {
@@ -94,128 +153,107 @@ function renderOrdersSummary(d) {
 
 /* ── 실주문 검색 그리드: GET /api/quant/kis/orders ─────────────────────────────── */
 const ORDER_COLUMNS = [
-  ["created_at", "시각", "text-left"], ["owner", "구분", ""], ["name", "종목", "text-left"], ["side", "방향", ""], ["order_type", "유형", ""],
-  ["quantity", "수량", "text-right"], ["price", "가상가", "text-right"], ["avg_filled_price", "체결가", "text-right"], ["status", "상태", ""],
-  ["order_no", "주문번호", "text-left"], ["message", "메모", "text-left"],
+  { ...timeColumn("created_at"), sort: "desc" },
+  textColumn("owner_label", "구분", { width: 115, cellRenderer: ({ data }) => textCell(data.owner_label || (data.owner === "batch" ? "봇(배치)" : "사용자"), data.owner === "batch" ? "#6366f1" : "#15803d") }),
+  textColumn("name", "종목", { width: 175, valueGetter: ({ data }) => data?.name || data?.symbol }), textColumn("symbol", "종목코드"),
+  textColumn("side", "방향", { width: 110, cellRenderer: ({ value }) => textCell(value, value === "BUY" ? "#15803d" : "#dc2626") }),
+  textColumn("order_type", "유형"), numericColumn("quantity", "주문수량"), numericColumn("filled_quantity", "체결수량"),
+  numericColumn("current_quantity", "현 보유수량", { headerTooltip: "최근 KIS 계좌 조회 기준의 종목 전체 보유수량 (기존 보유 포함). 미보유는 0, 계좌 조회 불가는 -입니다.", tooltipValueGetter: ({ value }) => value == null ? "계좌 보유수량 조회 불가" : `최근 KIS 계좌 조회 기준 ${fmt(value)}주 (기존 보유 포함)` }),
+  numericColumn("price", "가상가"), numericColumn("avg_filled_price", "체결가"),
+  textColumn("status", "상태", { width: 165, cellRenderer: ({ value }) => textCell(value, STATUS_KIND[value] === "bad" ? "#dc2626" : STATUS_KIND[value] === "ok" ? "#15803d" : "") }),
+  textColumn("order_no", "주문번호", { width: 180, tooltipValueGetter: ({ data }) => data.client_order_id || data.order_no || "" }),
+  textColumn("message", "메모", { width: 300 }),
 ];
-const ordersState = { rows: [], total: 0, offset: 0, limit: 50, counts_by_owner: {}, counts_by_status: {}, sortKey: "created_at", sortDir: -1, truncated: false };
-
+const ordersState = { rows: [], total: 0, counts_by_owner: {}, counts_by_status: {}, truncated: false };
+let ordersRun = 0;
 function readOrderFilters() {
   const v = id => document.getElementById(id)?.value ?? "";
-  return { owner: v("kism-o-owner") || "all", status: v("kism-o-status"), side: v("kism-o-side"), date_from: v("kism-o-from"), date_to: v("kism-o-to"), q: v("kism-o-q").trim(), limit: Number(v("kism-o-limit")) || 50 };
+  return { owner: v("kism-o-owner") || "all", status: v("kism-o-status"), side: v("kism-o-side"), date_from: v("kism-o-from"), date_to: v("kism-o-to"), q: v("kism-o-q").trim() };
 }
-
-function ownerBadge(r) {
-  const batch = r.owner === "batch";
-  return `<span style="display:inline-block;padding:1px 7px;border-radius:999px;font-weight:600;${batch ? "background:rgba(99,102,241,.15);color:#818cf8;" : "background:rgba(34,197,94,.15);color:#22c55e;"}">${escHtml(r.owner_label || (batch ? "봇(배치)" : "사용자"))}</span>`;
-}
-
 function sortedOrderRows() {
-  const { rows, sortKey, sortDir } = ordersState;
-  const numeric = new Set(["quantity", "price", "avg_filled_price"]);
-  return [...rows].sort((a, b) => {
-    let x = a[sortKey], y = b[sortKey];
-    if (numeric.has(sortKey)) { x = Number(x || 0); y = Number(y || 0); }
-    else { x = String(x ?? ""); y = String(y ?? ""); }
-    return (x < y ? -1 : x > y ? 1 : 0) * sortDir;
-  });
+  const rows = [], grid = grids.get("kism-orders");
+  if (grid) grid.forEachNodeAfterFilterAndSort(node => rows.push(node.data));
+  return rows;
 }
-
-function renderOrdersTable() {
-  const el = document.getElementById("kism-orders"), result = document.getElementById("kism-orders-result"); if (!el) return;
-  const st = ordersState; const rows = sortedOrderRows();
-  const oc = st.counts_by_owner || {};
-  if (result) {
-    const statusText = Object.entries(st.counts_by_status || {}).map(([k, v]) => `${k} ${v}`).join(", ") || "없음";
-    result.textContent = `검색 결과 ${fmt(st.total)}건 (봇 ${fmt(oc.batch ?? 0)} · 사용자 ${fmt(oc.me ?? 0)}) · 상태 ${statusText}${st.truncated ? " · 최근 2,000건까지만 검색" : ""}`;
-  }
-  const page = document.getElementById("kism-o-page");
-  if (page) page.textContent = st.total ? `${st.offset + 1}–${Math.min(st.offset + st.limit, st.total)} / ${fmt(st.total)}` : "0 / 0";
-  const prev = document.getElementById("kism-o-prev"), next = document.getElementById("kism-o-next");
-  if (prev) prev.disabled = st.offset <= 0;
-  if (next) next.disabled = st.offset + st.limit >= st.total;
-  const head = ORDER_COLUMNS.map(([key, label, cls]) => {
-    const active = st.sortKey === key;
-    return `<th class="${cls}" data-sort="${key}" style="cursor:pointer;white-space:nowrap;${active ? "color:var(--text);" : ""}" title="클릭해 정렬">${escHtml(label)}${active ? (st.sortDir < 0 ? " ▼" : " ▲") : ""}</th>`;
-  }).join("");
-  el.innerHTML = rows.length ? `<table class="w-full"><thead><tr style="color:var(--text-mute);">${head}</tr></thead><tbody>${
-    rows.map(r => `<tr style="border-top:1px solid var(--border);">
-      <td style="white-space:nowrap;">${ts(r.created_at)}</td>
-      <td class="text-center">${ownerBadge(r)}</td>
-      <td>${escHtml(r.name || r.symbol)} <span style="color:var(--text-mute);">${escHtml(r.symbol)}</span></td>
-      <td class="text-center"><span class="${r.side === "BUY" ? "badge-buy" : "badge-sell"}">${escHtml(r.side)}</span></td>
-      <td class="text-center">${escHtml(r.order_type || "")}</td>
-      <td class="text-right">${fmt(r.quantity)}${r.filled_quantity ? ` <span style="color:var(--text-mute);">/${fmt(r.filled_quantity)}</span>` : ""}</td>
-      <td class="text-right">${fmt(r.price)}</td><td class="text-right">${r.avg_filled_price ? fmt(r.avg_filled_price) : "-"}</td>
-      <td class="text-center">${badge(r.status, STATUS_KIND[r.status] ?? "")}</td>
-      <td style="color:var(--text-dim);white-space:nowrap;" title="${escHtml(r.client_order_id || "")}">${escHtml(r.order_no || "-")}</td>
-      <td style="color:var(--text-dim);max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escHtml(r.message || "")}">${escHtml(r.message || "")}</td></tr>`).join("")
-  }</tbody></table>` : `<div style="color:var(--text-mute);">조건에 맞는 실주문이 없습니다.</div>`;
-  el.querySelectorAll("th[data-sort]").forEach(th => th.addEventListener("click", () => {
-    const key = th.dataset.sort;
-    if (ordersState.sortKey === key) ordersState.sortDir *= -1; else { ordersState.sortKey = key; ordersState.sortDir = key === "created_at" ? -1 : 1; }
-    renderOrdersTable();
-  }));
+function renderOrdersTable(resetPage = false) {
+  const st = ordersState, result = document.getElementById("kism-orders-result");
+  const oc = st.counts_by_owner || {}, statusText = Object.entries(st.counts_by_status || {}).map(([k, v]) => `${k} ${v}`).join(", ") || "없음";
+  if (result) result.textContent = `검색 결과 ${fmt(st.total)}건 (봇 ${fmt(oc.batch ?? 0)} · 사용자 ${fmt(oc.me ?? 0)}) · 상태 ${statusText} · 페이지당 10건${st.truncated ? " · 최근 2,000건까지만 검색" : ""}`;
+  updateGrid("kism-orders", ORDER_COLUMNS, st.rows.map(r => ({ ...r, current_quantity: currentQuantity(r.symbol) })), "조건에 맞는 실주문이 없습니다.", resetPage);
 }
-
-export async function loadKisOrders({ offset = 0 } = {}) {
-  const el = document.getElementById("kism-orders"); if (!el) return;
-  const f = readOrderFilters();
-  const params = new URLSearchParams({ owner: f.owner, status: f.status, side: f.side, q: f.q, date_from: f.date_from, date_to: f.date_to, limit: String(f.limit), offset: String(offset) });
+export async function loadKisOrders({ resetPage = true } = {}) {
+  const run = ++ordersRun, f = readOrderFilters(), collected = [];
+  const result = document.getElementById("kism-orders-result");
+  if (result) result.textContent = "실주문 검색 중…";
+  if (resetPage) updateGrid("kism-orders", ORDER_COLUMNS, [], "검색 중…", true);
   try {
-    const res = await api(`/api/quant/kis/orders?${params}`);
-    Object.assign(ordersState, { rows: res.rows || [], total: res.total || 0, offset: res.offset || 0, limit: res.limit || f.limit,
-      counts_by_owner: res.counts_by_owner || {}, counts_by_status: res.counts_by_status || {}, truncated: Boolean(res.truncated) });
-    renderOrdersTable();
+    let offset = 0, first;
+    do {
+      const params = new URLSearchParams({ ...f, limit: "500", offset: String(offset) });
+      const res = await api(`/api/quant/kis/orders?${params}`);
+      if (run !== ordersRun) return;
+      if (!first) first = res;
+      const rows = res.rows || [];
+      collected.push(...rows); offset += rows.length;
+      if (!rows.length) break;
+    } while (offset < Math.min(first.total || 0, 2000));
+    if (run !== ordersRun) return;
+    // Pagination and sorting apply to the complete search result, not a single API page.
+    const rows = [...new Map(collected.map(r => [r.id || r.client_order_id || JSON.stringify(r), r])).values()];
+    Object.assign(ordersState, { rows, total: first.total || 0, counts_by_owner: first.counts_by_owner || {}, counts_by_status: first.counts_by_status || {}, truncated: Boolean(first.truncated) });
+    renderOrdersTable(resetPage);
   } catch (e) {
-    el.innerHTML = `<div style="color:var(--down, #e5484d);">실주문 검색 실패: ${escHtml(e?.message || e)}</div>`;
+    if (run !== ordersRun) return;
+    ordersState.rows = [];
+    updateGrid("kism-orders", ORDER_COLUMNS, [], "실주문 검색 실패", true);
+    if (result) result.textContent = `실주문 검색 실패: ${e?.message || e}`;
   }
 }
 
 function downloadOrdersCsv() {
   const rows = sortedOrderRows(); if (!rows.length) return;
-  const cols = ["created_at", "owner_label", "symbol", "name", "side", "order_type", "quantity", "filled_quantity", "price", "avg_filled_price", "status", "order_no", "client_order_id", "environment", "message"];
+  const cols = ["created_at", "owner_label", "symbol", "name", "side", "order_type", "quantity", "filled_quantity", "current_quantity", "price", "avg_filled_price", "status", "order_no", "client_order_id", "environment", "message"];
   const cell = v => `"${String(v ?? "").replace(/"/g, '""')}"`;
-  const csv = "\ufeff" + [cols.join(","), ...rows.map(r => cols.map(c => cell(r[c])).join(","))].join("\r\n");
+  const csv = "\ufeff" + [cols.map(c => c === "created_at" ? "created_at_kst" : c).join(","), ...rows.map(r => cols.map(c => cell(c === "created_at" ? formatKisTime(r[c]) : r[c])).join(","))].join("\r\n");
   const a = document.createElement("a");
   a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
-  a.download = `kis-orders-${new Date().toISOString().slice(0, 10)}.csv`; a.click();
+  a.download = `kis-orders-${formatKisTime(new Date().toISOString()).slice(0, 10)}.csv`; a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
 
-document.getElementById("kism-orders-form")?.addEventListener("submit", () => loadKisOrders({ offset: 0 }));
-["kism-o-owner", "kism-o-status", "kism-o-side", "kism-o-limit", "kism-o-from", "kism-o-to"].forEach(id => document.getElementById(id)?.addEventListener("change", () => loadKisOrders({ offset: 0 })));
+document.getElementById("kism-orders-form")?.addEventListener("submit", e => { e.preventDefault(); loadKisOrders({ resetPage: true }); });
+["kism-o-owner", "kism-o-status", "kism-o-side", "kism-o-from", "kism-o-to"].forEach(id => document.getElementById(id)?.addEventListener("change", () => loadKisOrders({ resetPage: true })));
 document.getElementById("kism-o-reset")?.addEventListener("click", () => {
   ["kism-o-status", "kism-o-side", "kism-o-from", "kism-o-to", "kism-o-q"].forEach(id => { const n = document.getElementById(id); if (n) n.value = ""; });
   const owner = document.getElementById("kism-o-owner"); if (owner) owner.value = "all";
-  const limit = document.getElementById("kism-o-limit"); if (limit) limit.value = "50";
-  loadKisOrders({ offset: 0 });
+  loadKisOrders({ resetPage: true });
 });
-document.getElementById("kism-o-prev")?.addEventListener("click", () => loadKisOrders({ offset: Math.max(0, ordersState.offset - ordersState.limit) }));
-document.getElementById("kism-o-next")?.addEventListener("click", () => loadKisOrders({ offset: ordersState.offset + ordersState.limit }));
 document.getElementById("kism-o-csv")?.addEventListener("click", downloadOrdersCsv);
 
 function renderCycles(d) {
-  const el = document.getElementById("kism-cycles"), note = document.getElementById("kism-cycles-note"); if (!el) return;
-  const c = d.cycles || {}; const rows = c.recent || [];
-  if (note) note.textContent = `· 누적 ${c.count ?? 0} · 마지막 ${ts(c.last_time)}${d.last_beat_run ? ` · beat ${ts(d.last_beat_run.time)} (실행 ${d.last_beat_run.ran}, 실패 ${d.last_beat_run.failed})` : ""}`;
-  el.innerHTML = rows.length ? rows.map(cy => {
-    const trades = (cy.trades || []).map(t => `<span class="${t.action === "buy" ? "badge-buy" : "badge-sell"}">${escHtml(t.action === "buy" ? "매수" : "매도")} ${escHtml(t.name || t.symbol)} ${fmt(t.quantity)}주 @${fmt(t.price)}</span> <span style="color:${t.live === "submitted" ? "var(--text-dim)" : "var(--down, #e5484d)"};">실주문 ${escHtml(t.live || "없음")}${t.live_reason ? `(${escHtml(t.live_reason)})` : ""}</span>`).join(" · ");
-    return `<div class="rounded p-2" style="background:var(--surf2);border:1px solid var(--border);">
-      <div><b>${ts(cy.time)}</b> <span style="color:var(--text-mute);">대상 ${(cy.symbols || []).length}종목 · 매수계획 ${(cy.buy || []).length} · 매도계획 ${Object.keys(cy.sell || {}).length} · 생략 ${cy.skipped}${cy.halted ? ` · <span class="badge-sell">비상 정지: ${escHtml(cy.halt_reason || "")}</span>` : ""}${cy.equity != null ? ` · 가상 평가 ${fmt(cy.equity)}원` : ""}</span></div>
-      ${trades ? `<div class="mt-1">${trades}</div>` : `<div class="mt-1" style="color:var(--text-mute);">거래 없음</div>`}
-      ${(cy.notes || []).length ? `<div class="mt-1" style="color:var(--text-dim);">${cy.notes.map(escHtml).join(" · ")}</div>` : ""}
-    </div>`;
-  }).join("") : `<div style="color:var(--text-mute);">사이클 기록이 없습니다.</div>`;
+  const c = d.cycles || {}, note = document.getElementById("kism-cycles-note");
+  const rows = (c.recent || []).map(cy => ({ ...cy,
+    symbol_count: (cy.symbols || []).length, buy_count: (cy.buy || []).length, sell_count: Object.keys(cy.sell || {}).length,
+    halt_status: cy.halted ? `비상 정지: ${cy.halt_reason || ""}` : "정상",
+    trade_details: (cy.trades || []).map(t => `${t.action === "buy" ? "매수" : "매도"} ${t.name || t.symbol} ${fmt(t.quantity)}주 @${fmt(t.price)} · 실주문 ${t.live || "없음"}${t.live_reason ? ` (${t.live_reason})` : ""}`).join(" · ") || "거래 없음",
+    note_text: (cy.notes || []).join(" · "),
+  }));
+  if (note) note.textContent = `· 누적 ${c.count ?? 0} · 최근 ${rows.length}건 표시 · 페이지당 10건 · 마지막 ${ts(c.last_time)} (KST)${d.last_beat_run ? ` · beat ${ts(d.last_beat_run.time)} (KST) (실행 ${d.last_beat_run.ran}, 실패 ${d.last_beat_run.failed})` : ""}`;
+  updateGrid("kism-cycles", [
+    timeColumn("time"),
+    numericColumn("symbol_count", "대상 종목 수"), numericColumn("buy_count", "매수계획"), numericColumn("sell_count", "매도계획"), numericColumn("skipped", "생략"),
+    textColumn("halt_status", "실행 상태", { width: 200 }), numericColumn("equity", "가상 평가 (원)"),
+    textColumn("trade_details", "거래 내역", { width: 420 }), textColumn("note_text", "비고", { width: 350 }),
+  ], rows, "사이클 기록이 없습니다.");
 }
 
 export async function loadKisMonitor() {
   if (_loading) return; _loading = true;
   try {
-    const d = await api("/api/quant/kis/monitor");
+    const d = await api("/api/quant/kis/monitor?cycles=48");
     renderBadges(d); renderKpis(d); renderHoldings(d); renderRecon(d); renderOrdersSummary(d); renderCycles(d);
-    await loadKisOrders({ offset: ordersState.offset });   // 현재 검색 조건·페이지 유지한 채 그리드 갱신
-    const u = document.getElementById("kism-updated"); if (u) u.textContent = `갱신 ${ts(d.checked_at)} (UTC) · 사이클 ${Math.round((d.cycle_sec || 180) / 60)}분`;
+    await loadKisOrders({ resetPage: false });   // 현재 검색 조건·페이지 유지한 채 그리드 갱신
+    const u = document.getElementById("kism-updated"); if (u) u.textContent = `갱신 ${ts(d.checked_at)} (KST, UTC+9) · 사이클 ${Math.round((d.cycle_sec || 180) / 60)}분`;
   } catch (e) {
     const el = document.getElementById("kism-badges"); if (el) el.innerHTML = badge(`불러오기 실패: ${e?.message || e}`, "bad");
   } finally { _loading = false; }

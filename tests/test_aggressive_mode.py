@@ -73,10 +73,24 @@ def test_get_intraday_indicators_uses_minute_candles_with_short_cache(monkeypatc
     assert out["current_price"] == 129 and out["intraday"] is True and out["signal"]["action"] in ("매수", "강력 매수")
 
 
-def test_get_intraday_indicators_without_candles_is_hold(monkeypatch):
+def test_get_intraday_indicators_without_candles_is_not_a_judgement(monkeypatch):
+    """데이터가 없으면 '관망' 으로 판단한 척하지 않고 '판단 불가' + 사유를 남긴다 (근거 없는 판단 금지)."""
     monkeypatch.setattr(ag, "get_candles", AsyncMock(return_value={"candles": []}))
     out = asyncio.run(ag.get_intraday_indicators("X"))
-    assert out["current_price"] is None and out["signal"]["action"] == "관망"
+    assert out["current_price"] is None
+    assert out["signal"]["action"] == "판단 불가" and out["signal"]["error"] == "분봉 없음"
+    assert out["signal"]["action"] not in ("매수", "강력 매수", "매도")   # 거래로 이어지지 않는다
+    assert out["as_of"] is None
+
+
+def test_get_intraday_indicators_reports_data_basis(monkeypatch):
+    """판단 근거가 어느 시장 데이터에서 나왔는지(출처·봉 종류·봉 수·마지막 봉 시각)를 함께 낸다."""
+    candles = [{"close": 100 + i, "volume": 10, "time": 1700000000 + i * 300} for i in range(30)]
+    monkeypatch.setattr(ag, "get_candles", AsyncMock(return_value={"candles": candles}))
+    out = asyncio.run(ag.get_intraday_indicators("X"))
+    assert out["source"] == "yahoo" and out["bars"] == 30
+    assert out["as_of"] == candles[-1]["time"] and out["price_source"] == "last_close"
+    assert out["signal"]["reasons"], "근거 문구가 실제 지표에서 생성돼야 한다"
 
 
 # ── 한도 ──────────────────────────────────────────────────────────────────

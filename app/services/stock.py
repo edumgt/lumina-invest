@@ -149,7 +149,7 @@ async def get_fundamentals(symbol: str) -> dict:
     제공하지 않는 경우가 있어 해당 값은 null로 반환한다 — 프론트엔드가 '데이터 없음'
     으로 표시하며, 값을 지어내지 않는다.
     """
-    cache_key = f"fundamentals:{symbol}"
+    cache_key = f"fundamentals:v2:{symbol}"
     cached = await cache_get(cache_key, max_age_hours=6)
     if cached is not None:
         return cached
@@ -217,6 +217,21 @@ async def get_fundamentals(symbol: str) -> dict:
         "div": _raw(summary, "dividendRate"),
         "divYield": _pct(summary, "dividendYield"),
         "opMargin": _pct(fin, "operatingMargins"),
+        "forwardPer": _raw(stats, "forwardPE"),
+        "psr": _raw(summary, "priceToSalesTrailing12Months"),
+        "evEbitda": _raw(stats, "enterpriseToEbitda"),
+        "grossMargin": _pct(fin, "grossMargins"),
+        "netMargin": _pct(fin, "profitMargins"),
+        "revenueGrowth": _pct(fin, "revenueGrowth"),
+        "earningsGrowth": _pct(fin, "earningsGrowth"),
+        "payoutRatio": _pct(summary, "payoutRatio"),
+        "currentRatio": _raw(fin, "currentRatio"),
+        "quickRatio": _raw(fin, "quickRatio"),
+        "totalRevenue": _eok(_raw(fin, "totalRevenue")),
+        "totalCash": _eok(_raw(fin, "totalCash")),
+        "totalDebt": _eok(_raw(fin, "totalDebt")),
+        "operatingCashflow": _eok(_raw(fin, "operatingCashflow")),
+        "freeCashflow": _eok(_raw(fin, "freeCashflow")),
         "revenue": revenue,
         "op": op,
         "net": net,
@@ -244,6 +259,7 @@ async def get_candles(symbol: str, period: str = "1y", interval: str = "1d", max
         try:
             result = await kmd.get_daily_candles(symbol, period)
             if result.get("candles"):
+                result.setdefault("source", "kis")
                 await cache_set(cache_key, result)
                 return result
             logger.warning("KIS 일봉 빈 응답 %s", symbol)
@@ -278,7 +294,7 @@ async def get_candles(symbol: str, period: str = "1y", interval: str = "1d", max
             "volume": volumes[i] if i < len(volumes) else None,
         })
 
-    result = {"symbol": symbol, "interval": interval, "period": period, "candles": candles}
+    result = {"symbol": symbol, "interval": interval, "period": period, "candles": candles, "source": "yahoo"}
     if candles:
         await cache_set(cache_key, result)
     return result
@@ -377,6 +393,11 @@ async def get_quant_indicators(symbol: str, period: str = "2y") -> dict:
         "signal": signal,
         "current_price": closes[-1],
         "current_rsi": rsi[-1],
+        # 판단 근거의 데이터 출처 (의사결정 화면 「판단 근거」 카드에 그대로 표시된다)
+        "interval": "1d",
+        "bars": len(closes),
+        "as_of": times[-1] if times else None,
+        "source": data.get("source"),
     }
 
 

@@ -952,8 +952,10 @@ async def quant_auto_status(user=Depends(get_current_user), db: AsyncSession = D
             for sig in cycle.get("signals", []):
                 action = sig.get("action", "관망")
                 signals.append({
-                    **sig, "source": "batch" if prefix else "me",
-                    "signal": "BUY" if "매수" in action else "SELL" if "매도" in action else "HOLD",
+                    **sig, "source": "batch" if prefix else "me", "cycle_time": cycle.get("time", ""),
+                    # NONE = 시장 데이터를 못 받아 판단하지 않은 종목. 관망(HOLD)과 구분해야 근거 없는 판단으로 보이지 않는다.
+                    "signal": "NONE" if sig.get("error") else
+                              "BUY" if "매수" in action else "SELL" if "매도" in action else "HOLD",
                 })
             account = cycle.get("account")
             if account:

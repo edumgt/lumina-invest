@@ -914,3 +914,71 @@ sudo docker exec fin-ai-postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_D
 | 적용 범위 | 타이틀(h1·h2)만 강제. 본문·KPI 숫자 등 기존 18px 초과 선언은 그대로 두었다(아래 수치) — 가이드 2항에 따라 새 규칙에서는 금지, 기존 값은 화면별로 줄여 나간다 |
 
 같은 블록이 pr(`frontend/style.css`)·fd(`public/css/app.css`)·st(`frontend/css/style.css`, 가이드 주석은 `kis-practice.css` 에도)·iv(`frontend/style.css`, `investment-native/styles.css`) 에 들어 있다. 캐시 버전이 있는 링크는 각 페이지에서 갱신 필요(st `style.css?v=…`, pr/iv `style.css?v=…`); fd `/css` 는 no-cache.
+
+### 6-28. 2026-10-08 pr.edumgt.co.kr 라우트가 fd 배포마다 사라지는 문제 (근본 수정)
+
+증상: pr 컨테이너(`domain-rag-lab-api-1`)는 healthy·shared-net 연결 정상인데 `https://pr.edumgt.co.kr/health` 가 연결 실패. 서버 Caddy 로그의 `enabling automatic TLS certificate management domains:["fd.edumgt.co.kr"]` 로 pr 블록 자체가 설정에 없음을 확인. 서버 `infra/fd-edumgt/Caddyfile` 수정 시각 2026-10-07 08:37.
+
+| 변경 | 내용 |
+|------|------|
+| `infra/fd-edumgt/Caddyfile` | `pr.edumgt.co.kr → reverse_proxy pr-api:8000` 블록 추가 + 경고 주석 |
+
+원인: `.github/workflows/deploy.yml` 의 코드 동기화가 `rsync -az --delete` 로 저장소 전체를 서버에 덮어쓰는데, 이 Caddyfile 에 pr 블록이 없었다. 그래서 fd 를 배포할 때마다 서버에서 수동으로 넣어 둔 pr 블록이 날아가고 pr 사이트만 끊겼다(반복 재발의 진짜 이유). 이제 저장소가 정본이므로 다음 fd 배포부터 pr 라우트가 유지된다.
+
+즉시 복구(서버에서 1회, 이 커밋을 배포하기 전이라면):
+
+```bash
+ssh -i /home/ubuntu/lumina-invest/fd.edumgt.co.kr.pem ubuntu@43.201.229.188
+f=/home/ubuntu/lumina-invest/infra/fd-edumgt/Caddyfile
+cp -p $f ~/Caddyfile.bak.$(date +%s)
+printf '\npr.edumgt.co.kr {\n    encode zstd gzip\n    reverse_proxy pr-api:8000\n}\n' | tee -a $f   # bind mount 이므로 같은 inode 유지(tee, sed -i 금지)
+sudo docker exec lumina-invest-proxy-1 caddy reload --config /etc/caddy/Caddyfile
+curl -sk --resolve pr.edumgt.co.kr:443:43.201.229.188 -o /dev/null -w '%{http_code}\n' https://pr.edumgt.co.kr/health
+```
+
+참고: 기존 README(`domain-rag-lab/deploy/pr-edumgt/README.md`)의 CloudFront 원본용 `http://ec2-…compute.amazonaws.com` 블록은 CloudFront 를 쓰지 않으므로 넣지 않았다.
+
+### 6-29. 2026-10-08 자유 산식 지표(#indicator-formula) Pine 내보내기 — v6 전환 + 문법 오류 교정 (사용자 요청)
+
+`to_pine` 이 정규식 치환으로 코드를 만들어 TradingView 에서 컴파일되지 않는 출력이 여러 갈래로 나왔다. 생성기를 DSL AST 를 직접 순회하는 방식으로 바꾸고 `//@version=6` 으로 올렸다.
+
+| 변경 | 내용 |
+|------|------|
+| `app/services/formula.py` | `_PINE_SPEC`(DSL 36개 함수 → v6 식 매핑)·`_pine_expr`(AST→Pine)·`_pine_len`·`_pine_hist`·`_pine_length_params` 신설, `to_pine` 재작성. `_PINE_FUNCS` 와 `iff_` 헬퍼·정규식 치환 제거. 모듈 상단에 `import re` 추가 |
+| `app/routes/formula.py` | `/export` 에서 `FormulaError` → 422 (변환 불가 시 깨진 코드 대신 메시지) |
+| `tests/test_formula.py` | v6 단언으로 교체 + 4개 신설(문법 함정·bool 캐스팅·파라미터 입력형·중첩 과거참조). 전체 **248 passed** |
+
+고친 문법 오류(모두 TradingView 컴파일 실패였다):
+
+| 증상 | 원인 | 조치 |
+|------|------|------|
+| `close ^ 2` | `**` → `^` 치환. Pine 에는 거듭제곱 연산자가 없다 | `math.pow(a, b)` |
+| `ta.obv()` | `obv` 를 함수로 매핑. `ta.obv` 는 내장 **변수** | `ta.obv` (괄호 없음) |
+| `ta.sma(close, n)` + `n = input.float(20.0)` | length 는 `series int` 인데 실수 입력을 넘김 | 기간 자리에 쓰인 파라미터만 `input.int`, 식이면 `int(...)` |
+| `macd_signal(...)`·`mean`·`normalize`·`rank`·`clip`·`typical`·`vwap` 미변환 | `_PINE_FUNCS` 누락 8개 → Undeclared identifier | 전부 매핑(36/36). 미지원 함수는 `FormulaError` |
+| `shift(sma(close,5), 3)` 변환 실패 | 정규식 `[^,()]+` 가 중첩 괄호를 못 받음 | AST 순회로 해결 → `(ta.sma(close, 5))[3]` |
+| `30 < rsi(close,14) < 70` | Pine 은 연쇄 비교가 없다 | `(30 < x) and (x < 70)` 로 분해 |
+| `True`·`pi` | Pine 은 `true`·`math.pi` | 상수/이름 매핑 |
+| `shift(shift(close,1),2)` → `close[1][2]` | Pine 은 같은 값에 `[]` 를 한 번만 허용 | 변환 거부(FormulaError, 기간 합치라고 안내) |
+| 숫자 산식을 buy/sell 로 쓰면 plotshape 오류 | v6 는 숫자→bool 암묵 변환을 없앴다 | bool 이 아닌 신호만 `bool(...)` 로 캐스팅 |
+
+근사치로 남긴 부분(생성 코드 주석에 명시): `bb_*` 는 `ta.stdev`(표본), `rank()` 는 `ta.percentrank/100`(`<=` 기준), `vwap(n)` 은 세션 `ta.vwap` 이 아니라 hlc3·거래량 n봉 롤링 가중평균.
+
+`public/js/indicator.js`(#indicator-custom)의 Pine 생성기는 이미 v6 이고 따로 문법 문제가 없어 손대지 않았다.
+
+### 6-30. 2026-10-08 모의 투자 의사결정(#robo-decision) 「판단 근거」 — 실제 시장 데이터 기반임을 보장·표시 (사용자 요청)
+
+요구사항: 판단 근거가 실제 주식 데이터 기반으로 판단되어야 함. 확인 결과 근거 문구는 전부 실제 수치에서 생성되고 있었으나(아래 "검증"), **데이터를 못 받은 종목이 화면에서 「관망 — 추세 확인 중」으로 보이는** 경로가 있어 근거 없는 판단으로 읽혔다. 또 근거가 어느 데이터에서 나왔는지 화면에 전혀 없었다.
+
+| 변경 | 내용 |
+|------|------|
+| `app/services/stock.py` | `get_candles` 응답에 `source`(kis/yahoo) 기록. `get_quant_indicators` 에 `interval="1d"`·`bars`·`as_of`(마지막 봉 epoch)·`source` 추가 |
+| `app/services/aggressive_mode.py` | `get_intraday_indicators` 에 `as_of`·`price_source`(kis_live/last_close) 추가. 분봉이 없을 때 `action` 을 「관망」 → **「판단 불가」**(+`error`)로 바꿔 판단한 척하지 않게 |
+| `app/services/auto_trade.py` | `_signal_basis()` 신설, 사이클이 각 시그널에 `basis`(출처·봉 종류·봉 수·마지막 봉 시각)와 `error` 를 함께 기록. 지표 계산 실패 종목도 「판단 불가」 + 사유로 기록(종전에는 symbol·error 만 남아 화면에서 관망으로 보였다) |
+| `app/routes/stocks.py` | `/quant/auto/status` 가 `error` 있는 시그널을 `signal:"NONE"`(관망과 구분)으로 내고, 각 시그널에 `cycle_time` 부착 |
+| `public/js/robo.js` | `renderRoboRationale` 재작성: 카드마다 `📡 출처 · 봉 종류 · 봉 수 · HH:MM 기준 (N분 전)` 표시, NONE 은 「판단 불가」(빨강)로 맨 뒤 정렬, **reasons 가 비면 임의 문구를 만들지 않음**(종전 "관망 — 추세 확인 중"·"매수 시그널" 제거) |
+| 테스트 | `test_aggressive_mode.py` 2개(판단 불가 계약·데이터 출처), `test_auto_status_batch_merge.py` 1개(NONE·basis·cycle_time 전달), `test_kis_market_data.py` 단언 갱신. 전체 **250 passed** |
+
+**검증(서버 실측, 2026-10-08 10:05~10:17 KST)**: `QUANT_AGGRESSIVE_MODE=true` 로 5분봉 사용. `data_cache` 의 `candles:005930.KS:5d:5m` 에 삼성전자 5분봉이 실제로 적재돼 있고(267,500 → 266,500원, 봉별 거래량 8만~25만주), 마지막 봉 시각이 조회 시점과 1~4분 차이. 근거 문구는 `score_intraday()`·`_generate_signal()` 이 그 종가 배열로 계산한 RSI·MA5/MA20·모멘텀 수치 그대로다. 신호 경로에 난수·더미·하드코딩 데이터는 없다(`mock` 은 체결 브로커 이름일 뿐 시세와 무관).
+
+**남은 데이터 품질 이슈(미수정, 거래 로직이 바뀌므로 판단 필요)**: Yahoo 분봉 응답의 **마지막 봉은 미완성 의사(擬似) 봉**이다 — 5분 경계가 아닌 현재 시각(`time: 1791421035`), `volume: 0`, 시·고·저·종가가 모두 현재가. 현재가 자체는 실제값이라 `current_price` 로는 맞지만, 이 봉이 RSI·MA·모멘텀 계산에 한 점으로 들어가 지표를 약간 둔화시킨다. 완성봉만으로 지표를 계산하고 현재가는 따로 쓰려면 `_intraday_candles` 에서 마지막 봉을 분리해야 한다.

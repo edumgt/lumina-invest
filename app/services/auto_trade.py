@@ -82,6 +82,20 @@ async def set_enabled(db: AsyncSession, uid: uuid.UUID, enabled: bool) -> None:
     await db.commit()
 
 
+def _signal_basis(indicators: dict) -> dict:
+    """판단 근거가 어느 시장 데이터에서 나왔는지 — 의사결정 화면 「판단 근거」 카드에 그대로 표시한다.
+
+    source: kis | yahoo, interval: 5m|1d, bars: 사용한 봉 수, as_of: 마지막 봉 시각(epoch).
+    """
+    return {
+        "source":   indicators.get("source"),
+        "interval": indicators.get("interval"),
+        "bars":     indicators.get("bars"),
+        "as_of":    indicators.get("as_of"),
+        "price_source": indicators.get("price_source"),
+    }
+
+
 async def get_status(db: AsyncSession, uid: uuid.UUID) -> dict:
     """DB 플래그 + 공유 캐시 로그 기반 상태 (프로세스에 무관)."""
     enabled = await is_enabled(db, uid)
@@ -700,7 +714,12 @@ async def _run_quant_cycle(user_id: str = "quant_system") -> None:
 
             except Exception:
                 logger.exception("자동매매 지표 계산 실패: %s", stock["symbol"])
-                cycle_log["signals"].append({"symbol": stock["symbol"], "error": "지표 계산 실패"})
+                # 시장 데이터를 못 받은 종목은 판단하지 않는다 — 화면에서 '관망' 으로 보이면 근거 없는 판단이 된다.
+                cycle_log["signals"].append({
+                    "symbol": stock["symbol"], "name": stock["name"], "error": "지표 계산 실패",
+                    "action": "판단 불가", "score": 0,
+                    "reasons": ["시장 데이터를 받지 못해 판단하지 않았습니다"], "basis": {},
+                })
 
         if symbol_source == "manual":
             target_symbols = [s for s in selected_symbols if s in stock_map]
@@ -858,6 +877,8 @@ async def _run_quant_cycle(user_id: str = "quant_system") -> None:
                 "symbol": stock["symbol"], "name": stock["name"],
                 "price": price, "action": action, "score": score,
                 "reasons": [str(r) for r in list(reasons)[:6]],   # 의사결정 화면 「판단 근거」 카드에 실제 사유를 보여 준다
+                "error": signal.get("error"),
+                "basis": _signal_basis(indicators),               # 그 근거가 어느 시장 데이터에서 나왔는지
             })
 
             if action in ("강력 매수", "매수"):

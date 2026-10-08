@@ -1,5 +1,6 @@
 /* 투자 인디케이터: 기본 전략, 커스텀 인디케이터(Pine/Python 생성·저장), 성과 검증, 증권사 API 자동화
  * app.html 인라인 스크립트에서 분리됨. 엔트리는 main.js */
+import { checkPineV6 } from "/js/pine-lint.js";
 import { api, getMe, setToast, escHtml, fmt, fmtPct, colorPct } from "/js/common.js";
 import { compareTrayAdd, renderCompareTrayAll, tt } from "/js/core.js";
 import { renderXaiBlock } from "/js/robo.js";
@@ -60,27 +61,32 @@ document.getElementById("ind-load-btn").addEventListener("click", async () => {
 function generatePineCode() {
   const name   = document.getElementById("ci-name").value || "MyIndicator";
   const base   = document.getElementById("ci-base").value || "rsi_ma";
-  const short  = document.getElementById("ci-short").value || 5;
-  const mid    = document.getElementById("ci-mid").value || 20;
-  const rsiLen = document.getElementById("ci-rsi").value || 14;
-  const buyTh  = document.getElementById("ci-buy-th").value || 35;
+  const intValue = (id, fallback, min, max = 10000) => {
+    const raw = document.getElementById(id).value;
+    const value = raw === "" ? fallback : Number(raw);
+    return Number.isFinite(value) ? Math.min(max, Math.max(min, Math.trunc(value))) : fallback;
+  };
+  const short = intValue("ci-short", 5, 1);
+  const mid = intValue("ci-mid", 20, 1);
+  const rsiLen = intValue("ci-rsi", 14, 1);
+  const buyTh = intValue("ci-buy-th", 35, 0, 100);
   const signalCode = base === "macd_bb"
-    ? `macd_line = ta.ema(close, 12) - ta.ema(close, 26)\nmacd_sig  = ta.ema(macd_line, 9)\nbb_mid = ta.sma(close, mid_len)\nbuy_signal  = ta.crossover(macd_line, macd_sig) and close < bb_mid\nsell_signal = ta.crossunder(macd_line, macd_sig) or close > bb_mid + 2 * ta.stdev(close, mid_len)`
+    ? `macd_line = ta.ema(close, 12) - ta.ema(close, 26)\nmacd_sig  = ta.ema(macd_line, 9)\nbb_mid = ta.sma(close, mid_len)\nbb_upper = bb_mid + 2 * ta.stdev(close, mid_len)\nbuy_signal  = ta.crossover(macd_line, macd_sig) and close < bb_mid\nsell_signal = ta.crossunder(macd_line, macd_sig) or close > bb_upper`
     : base === "volume_rsi"
     ? `vol_ma = ta.sma(volume, mid_len)\nbuy_signal  = rsi_val < buy_th and volume > vol_ma\nsell_signal = rsi_val > sell_th`
     : base === "triple_ma"
     ? `ma_long = ta.sma(close, mid_len * 2)\nbuy_signal  = ta.crossover(ma_short, ma_mid) and ma_mid > ma_long\nsell_signal = ta.crossunder(ma_short, ma_mid) or ma_mid < ma_long`
     : `buy_signal  = ta.crossover(ma_short, ma_mid) and rsi_val < buy_th\nsell_signal = ta.crossunder(ma_short, ma_mid) or rsi_val > sell_th`;
 
-  return `//@version=5
-indicator("${name}", overlay=true)
+  return `//@version=6
+indicator(${JSON.stringify(name)}, overlay=true)
 
 // 파라미터
-short_len = input.int(${short}, "단기 MA 기간")
-mid_len   = input.int(${mid},   "중기 MA 기간")
-rsi_len   = input.int(${rsiLen}, "RSI 기간")
+short_len = input.int(${short}, "단기 MA 기간", minval=1)
+mid_len   = input.int(${mid},   "중기 MA 기간", minval=1)
+rsi_len   = input.int(${rsiLen}, "RSI 기간", minval=1)
 buy_th    = input.int(${buyTh}, "매수 RSI 임계값")
-sell_th   = input.int(100 - parseInt(buyTh), "매도 RSI 임계값")
+sell_th   = input.int(${100 - Number(buyTh)}, "매도 RSI 임계값")
 
 // 인디케이터 계산
 ma_short = ta.sma(close, short_len)
@@ -132,12 +138,40 @@ ${pySignal}
     return df`;
 }
 
+function renderPineCheck() {
+  const editor = document.getElementById("ci-pine-code");
+  const output = document.getElementById("ci-pine-check-result");
+  const { diagnostics, errors } = checkPineV6(editor.value);
+  output.replaceChildren();
+  const summary = document.createElement("p");
+  summary.textContent = errors ? `기본 문법 검사: 오류 ${errors}개` : "기본 문법 검사: 발견된 오류 없음 (컴파일 검증 전)";
+  summary.style.color = errors ? "var(--red)" : "var(--green)";
+  output.append(summary);
+  diagnostics.forEach(d => {
+    const button = document.createElement("button");
+    button.type = "button"; button.className = "block text-left text-xs mt-2";
+    button.textContent = `${d.line}행 ${d.column}열: ${d.message}`;
+    button.onclick = () => {
+      const lines = editor.value.split("\n");
+      const start = lines.slice(0, d.line - 1).reduce((n, v) => n + v.length + 1, 0) + d.column - 1;
+      editor.focus(); editor.setSelectionRange(start, start + 1);
+      editor.scrollTop = Math.max(0, (d.line - 3) * parseFloat(getComputedStyle(editor).lineHeight));
+    };
+    output.append(button);
+  });
+}
+document.getElementById("ci-check-pine").addEventListener("click", renderPineCheck);
+document.getElementById("ci-pine-code").addEventListener("input", () => {
+  document.getElementById("ci-pine-check-result").textContent = "코드가 변경되었습니다. 문법 체크를 다시 실행하세요.";
+});
+
 document.getElementById("ci-generate-btn").addEventListener("click", () => {
-  document.getElementById("ci-pine-code").textContent   = generatePineCode();
+  document.getElementById("ci-pine-code").value = generatePineCode();
+  renderPineCheck();
   document.getElementById("ci-python-code").textContent = generatePythonCode();
 });
 document.getElementById("ci-copy-pine").addEventListener("click", () => {
-  navigator.clipboard.writeText(document.getElementById("ci-pine-code").textContent);
+  navigator.clipboard.writeText(document.getElementById("ci-pine-code").value);
   setToast("PineScript 복사됨", "ok");
 });
 document.getElementById("ci-copy-py").addEventListener("click", () => {
@@ -183,7 +217,7 @@ generatePineCode && (() => {
   const py   = generatePythonCode();
   const pineEl = document.getElementById("ci-pine-code");
   const pyEl   = document.getElementById("ci-python-code");
-  if (pineEl) pineEl.textContent = pine;
+  if (pineEl) { pineEl.value = pine; renderPineCheck(); }
   if (pyEl)   pyEl.textContent   = py;
 })();
 

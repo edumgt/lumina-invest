@@ -116,7 +116,7 @@ def test_aggressive_no_fallback_when_disabled(monkeypatch):
     kmd.set_transport(httpx.MockTransport(lambda r: httpx.Response(500, json={"ok": False, "message": "down"})))
     with patch.object(ag, "get_candles", AsyncMock(side_effect=AssertionError("폴백 금지"))):
         out = asyncio.run(ag.get_intraday_indicators("005930.KS"))
-    assert out["current_price"] is None and out["signal"]["action"] == "관망"
+    assert out["current_price"] is None and out["signal"]["action"] == "판단 불가"
 
 
 def test_stock_get_candles_prefers_kis_and_caches_separately():

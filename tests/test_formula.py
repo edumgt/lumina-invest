@@ -59,7 +59,8 @@ def test_where_and_params_and_templates_run():
 
 def test_code_generation():
     pine = fx.to_pine("Test", "zscore(close, n)", "crossover(ema(close,5), ema(close,20))", "rsi(close,14) > 70", {"n": 20})
-    assert "//@version=5" in pine and "ta.crossover(ta.ema(close,5), ta.ema(close,20))" in pine and "input.float(20.0" in pine
+    # 기간 파라미터는 input.int 로 내야 한다 (Pine 의 length 는 series int, input.float 를 넘기면 컴파일 오류)
+    assert "//@version=6" in pine and "ta.crossover(ta.ema(close, 5), ta.ema(close, 20))" in pine and 'input.int(20, "n")' in pine
     py = fx.to_python("Test", "sma(close, 20)", None, None, {})
     assert "compute(candles" in py
 
@@ -75,3 +76,46 @@ def test_negative_shift_rejected_at_validation():
 def test_pine_no_double_prefix():
     pine = fx.to_pine("Z", "zscore(close, n)", None, None, {"n": 20})
     assert "ta.ta." not in pine and "ta.sma(close, n)" in pine
+
+
+def test_pine_v6_syntax_pitfalls():
+    """Pine 에 없는 문법으로 새지 않는지 — 거듭제곱·obv·상수·중첩 인자·연쇄 비교."""
+    pine = fx.to_pine("Edge", "sqrt(std(close, 20) ** 2) + obv() / 1000 + pi",
+                      "30 < rsi(close, 14) < 70", "where(True, close, shift(sma(close, 5), 3)) > close", {})
+    assert "**" not in pine and "^" not in pine and "math.pow(ta.stdev(close, 20), 2)" in pine
+    assert "ta.obv /" in pine and "ta.obv(" not in pine   # ta.obv 는 변수, 함수 호출이 아니다
+    assert "math.pi" in pine and "True" not in pine and "true ?" in pine
+    assert "(ta.sma(close, 5))[3]" in pine                 # 중첩 인자도 shift 변환됨 (구 정규식은 실패)
+    assert "((30 < ta.rsi(close, 14)) and (ta.rsi(close, 14) < 70))" in pine  # 연쇄 비교 분해
+
+
+def test_pine_casts_numeric_signal_to_bool():
+    """v6 는 숫자→bool 암묵 변환을 없앴다 — plotshape 에 넘기는 신호는 bool() 로 감싼다."""
+    pine = fx.to_pine("B", "close", "barssince(close > open)", "crossunder(close, open)", {})
+    assert "buy_signal  = bool(ta.barssince((close > open)))" in pine
+    assert "sell_signal = ta.crossunder(close, open)" in pine   # 이미 bool 이면 덧씌우지 않는다
+
+
+def test_pine_param_input_types():
+    """기간 파라미터만 input.int — Pine length 는 정수여야 하고, 배수(k)는 2.5 를 넣을 수 있어야 한다."""
+    pine = fx.to_pine("BB", "zscore(close, n)", "close < bb_lower(close, n, k)", None, {"n": 20, "k": 2.0})
+    assert 'n = input.int(20, "n")' in pine and 'k = input.float(2.0, "k")' in pine
+    # 기간이 식이면 int() 로 감싼다 (v6 는 정수끼리 나눠도 실수라 length 자리에 못 쓴다)
+    assert "ta.sma(close, int((n * 2)))" in fx.to_pine("E", "sma(close, n * 2)", None, None, {"n": 10})
+    assert "ta.sma(close, n)" in fx.to_pine("E", "sma(close, n)", None, None, {"n": 10})
+
+
+def test_pine_rejects_nested_history_operator():
+    """Pine 은 같은 값에 [] 를 한 번만 허용한다 — close[1][2] 가 되는 중첩은 거부."""
+    import pytest as _pt
+    assert "(close)[3]" in fx.to_pine("S", "shift(close, 3)", None, None, {})
+    with _pt.raises(fx.FormulaError, match="중첩"):
+        fx.to_pine("S", "shift(shift(close, 1), 2)", None, None, {})
+    with _pt.raises(fx.FormulaError, match="중첩"):
+        fx.to_pine("S", "pct_change(shift(close, 1))", None, None, {})
+
+
+def test_pine_rejects_unconvertible_function():
+    import pytest as _pt
+    with _pt.raises(fx.FormulaError):
+        fx._pine_expr(fx.parse_expr("nope(close)"))

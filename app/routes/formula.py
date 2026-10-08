@@ -266,4 +266,8 @@ async def list_results(ind_id: str, limit: int = Query(30, ge=1, le=200), user=D
 async def export_code(ind_id: str, format: str = Query("pine", pattern="^(pine|python)$"), user=Depends(get_current_user_any), db: AsyncSession = Depends(get_pg_session)):
     row = await _get_owned(db, user, ind_id)
     gen = fx.to_pine if format == "pine" else fx.to_python
-    return gen(row.name, row.indicator_expr, row.buy_expr or None, row.sell_expr or None, row.params)
+    try:
+        # to_pine 은 Pine 으로 옮길 수 없는 함수·구문을 만나면 깨진 코드를 내보내지 않고 FormulaError 를 낸다.
+        return gen(row.name, row.indicator_expr, row.buy_expr or None, row.sell_expr or None, row.params)
+    except fx.FormulaError as exc:
+        raise HTTPException(422, str(exc))

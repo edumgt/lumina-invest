@@ -6,3 +6,22 @@ fd.edumgt.co.kr {
 http://43.201.229.188 {
     redir https://fd.edumgt.co.kr{uri} 308
 }
+
+# pr.edumgt.co.kr(domain-rag-lab)도 같은 EC2에서 이 Caddy가 프런트합니다.
+# 이 파일은 deploy.yml 의 `rsync --delete` 로 서버에 통째로 덮어쓰이므로, 아래 블록이
+# 저장소에 없으면 fd 배포 때마다 pr 라우트가 사라집니다(2026-10-07 실제로 그렇게 끊겼습니다).
+# 업스트림 pr-api 는 domain-rag-lab 의 deploy/pr-edumgt/compose.yml 이 shared-net 에 붙이는 alias 입니다.
+pr.edumgt.co.kr {
+    encode zstd gzip
+    reverse_proxy pr-api:8000
+}
+
+pr.edumgt.co.kr {
+    encode zstd gzip
+    reverse_proxy pr-api:8000
+}
+
+pr.edumgt.co.kr {
+    encode zstd gzip
+    reverse_proxy pr-api:8000
+}

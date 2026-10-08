@@ -7,6 +7,8 @@
   <link rel="icon" href="/favicon.ico" />
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/apexcharts@3.49.2/dist/apexcharts.min.js"></script>
+  <script defer src="/js/vendor/ag-grid/ag-grid-community-36.2.0.min.js"></script>
+  <script defer src="/js/vendor/lightweight-charts/lightweight-charts-5.2.1.min.js"></script>
   <link rel="preconnect" href="https://cdn.jsdelivr.net" />
   <link rel="stylesheet" as="style" onload="this.rel='stylesheet'"
         href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
@@ -1133,8 +1135,10 @@
     <div class="view" data-view="company-compare">
       <div class="card">
         <h2 class="text-lg font-semibold mb-1">📋 투자 지표 비교 분석</h2>
-        <p class="text-xs mb-4" style="color:var(--text-mute);">주요 5개 종목의 핵심 투자 인디케이터를 나란히 비교합니다</p>
-        <div id="co-compare-table" class="overflow-x-auto"></div>
+        <p class="text-xs mb-4" style="color:var(--text-mute);">KIS 모의투자 분석 후보 30개 종목을 세로 행, 펀더멘털 지표 30개를 가로 열로 비교합니다. 열 제목으로 정렬·필터를 사용하고 가로로 스크롤하여 전체 지표를 확인하세요.</p>
+        <div class="flex items-center justify-between gap-2 mb-3"><p id="co-compare-status" class="text-xs" role="status" aria-live="polite"></p><button id="co-compare-refresh" class="btn-secondary text-xs">새로고침</button></div>
+        <p class="text-xs mb-3" style="color:var(--text-mute);">출처: Yahoo Finance · 서버 캐시 최대 6시간 · N/A는 미제공 또는 조회 실패입니다. 지표별 결산 기간은 다를 수 있습니다. D/E는 차입금 기준입니다.</p>
+        <div id="co-compare-table" style="height:70vh;min-height:400px;width:100%;" aria-label="종목별 펀더멘털 AG Grid 비교"></div>
       </div>
     </div>
 
@@ -1544,14 +1548,43 @@
             <button id="pt-run" class="btn-primary">분석 실행</button>
           </div>
         </div>
+        <section id="pt-sr-guide" class="card" aria-labelledby="pt-sr-guide-title">
+          <h3 id="pt-sr-guide-title" class="font-semibold text-sm mb-3">지지·저항, 이렇게 읽으세요</h3>
+          <div class="grid md:grid-cols-2 gap-3 text-sm" style="line-height:1.7;color:var(--text-dim);">
+            <div class="rounded-lg p-3" style="background:var(--surf2);border-left:3px solid #089981;">
+              <h4 class="font-semibold" style="color:#087f6b;">지지 (초록) · 하락할 때 살펴볼 가격대</h4>
+              <p>가격이 내려올 때 매수세가 유입되어 <strong>하락이 멈추거나 반등할 가능성이 있는 구간</strong>입니다. 이 화면에서는 분석 기준가보다 아래에 있는 과거 주요 가격대를 지지로 표시합니다.</p>
+            </div>
+            <div class="rounded-lg p-3" style="background:var(--surf2);border-left:3px solid #ef4444;">
+              <h4 class="font-semibold" style="color:#c53030;">저항 (빨강) · 상승할 때 살펴볼 가격대</h4>
+              <p>가격이 올라올 때 매도세가 유입되어 <strong>상승이 멈추거나 되밀릴 가능성이 있는 구간</strong>입니다. 이 화면에서는 분석 기준가 이상에 있는 과거 주요 가격대를 저항으로 표시합니다.</p>
+            </div>
+          </div>
+          <p class="text-xs mt-3" style="color:var(--text-dim);line-height:1.7;"><strong>예시:</strong> 기준가가 10,000일 때 지지 9,500(-5%)은 하락 시 가격 반응을 살펴볼 구간이고, 저항 10,500(+5%)은 상승 시 가격 반응을 살펴볼 구간입니다. 선은 해당 가격대의 대표값이며, 정확히 그 가격에서만 반응한다는 뜻은 아닙니다.</p>
+          <details class="mt-3 text-xs" style="color:var(--text-dim);line-height:1.8;">
+            <summary class="font-semibold" style="cursor:pointer;">돌파·이탈과 표의 수치 해석</summary>
+            <ul class="list-disc ml-5 mt-2 space-y-1">
+              <li><strong>지지 아래로 이탈:</strong> 하락을 받치던 가격대가 무너지는 상황입니다. 이후 되올라올 때 그 가격대가 저항으로 작용할 수 있습니다.</li>
+              <li><strong>저항 위로 돌파:</strong> 상승을 막던 가격대를 넘어서는 상황입니다. 이후 되내려올 때 그 가격대가 지지로 작용할 수 있습니다.</li>
+              <li><strong>기준가 대비:</strong> (가격대 ÷ 분석 기준가 − 1) × 100입니다. 음수는 기준가 아래, 양수는 기준가 위이며 예상 수익률이나 반등 확률이 아닙니다. 기준가는 마지막 일봉의 종가 값으로, 장중에는 변동할 수 있습니다.</li>
+              <li><strong>터치·강도:</strong> 이 서비스의 터치는 비슷한 가격대에 모인 과거 고점·저점의 수입니다. 1회는 약, 2회는 중, 3회 이상은 강으로 표시하며, 강도는 성공 확률을 뜻하지 않습니다.</li>
+              <li><strong>산출 기준:</strong> 최근 최대 120개 일봉에서 전후 5개 봉과 비교한 고점·저점을 찾고, 약 1% 이내의 가격대를 묶어 대표값을 계산합니다. 터치 수와 기준가와의 거리로 후보를 고른 뒤 최대 6개를 표시합니다. 가까운 지지·저항은 이 후보 안에서 선택합니다.</li>
+            </ul>
+          </details>
+          <p class="text-xs mt-3" style="color:var(--text-mute);line-height:1.7;">지지 도달이 자동 매수 신호이거나 저항 도달이 자동 매도 신호인 것은 아닙니다. 종가가 가격대를 유지하는지, 거래량과 추세가 뒷받침되는지 함께 확인하세요. 돌파 후 다시 되돌아올 수도 있습니다.</p>
+          <p class="text-xs mt-2" style="color:var(--text-mute);">개념 참고: <a href="https://www.fidelity.com/learning-center/trading-investing/technical-analysis/support-and-resistance" target="_blank" rel="noopener noreferrer" style="color:var(--accent);">Fidelity · 지지와 저항</a></p>
+        </section>
         <div id="pt-chart-card" class="card hidden">
           <h3 id="pt-chart-title" class="font-semibold text-sm mb-2"></h3>
           <div class="flex flex-wrap gap-3 text-xs mb-2">
             <label><input id="pt-show-sr" type="checkbox" checked /> 지지(초록) · 저항(빨강)</label>
             <label><input id="pt-show-patterns" type="checkbox" checked /> 패턴 · 돌파 표시</label>
-            <span style="color:var(--text-mute);">일봉 1년 · 드래그로 확대 · 도구 모음으로 초기화</span>
+            <span style="color:var(--text-mute);">일봉 1년 · 휠/핀치로 확대 · 드래그로 이동</span>
+            <button id="pt-chart-reset" class="btn-secondary text-xs" type="button">차트 초기화</button>
           </div>
-          <div id="pt-chart" style="min-height:420px;"></div>
+          <p id="pt-chart-ohlc" class="text-xs mb-2" style="color:var(--text-dim);min-height:20px;"></p>
+          <div id="pt-chart" role="img" aria-label="TradingView 일봉 캔들 차트와 지지·저항 및 패턴 표시" style="height:440px;width:100%;"></div>
+          <p class="text-xs mt-2" style="color:var(--text-mute);"><a href="https://www.tradingview.com/" target="_blank" rel="noopener noreferrer" style="color:var(--accent);">TradingView Lightweight Charts™</a> · Copyright (с) 2025 TradingView, Inc. · 시세/분석 데이터: 본 서비스 일봉 API</p>
           <p id="pt-chart-note" class="text-xs mt-2" style="color:var(--text-mute);"></p>
         </div>
         <div id="pt-mtf" class="card hidden"></div>
@@ -1595,12 +1628,13 @@
     </div>
 
     <div class="view" data-view="kis-monitor">
+      <style>.kism-data-grid{width:100%;min-width:0}.kism-data-grid .ag-paging-panel{flex-wrap:wrap;justify-content:flex-start;height:auto;min-height:46px;gap:8px;padding:8px}.kism-data-grid .ag-paging-row-summary-panel,.kism-data-grid .ag-paging-page-summary-panel{margin:0}.kism-data-grid .ag-cell{font-variant-numeric:tabular-nums}</style>
       <div class="space-y-4">
         <div class="card">
           <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
             <div>
               <h2 class="text-lg font-semibold">📈 KIS 모의투자결과</h2>
-              <p class="text-xs mt-1" style="color:var(--text-mute);">한국투자증권 Testbed 자동매매(백그라운드 배치)만 모니터링합니다. 계좌·실주문·사이클·정합성을 한 화면에서 봅니다.</p>
+              <p class="text-xs mt-1" style="color:var(--text-mute);">한국투자증권 Testbed 자동매매(백그라운드 배치)만 모니터링합니다. 계좌·실주문·사이클·정합성을 한 화면에서 봅니다. 각 데이터 그리드는 페이지당 10건을 표시합니다.</p>
             </div>
             <div class="flex items-center gap-2 text-xs">
               <label class="flex items-center gap-1" style="color:var(--text-dim);"><input type="checkbox" id="kism-auto" checked> 60초 자동 새로고침</label>
@@ -1626,31 +1660,30 @@
               <span class="flex items-center gap-1"><input type="date" id="kism-o-from" class="input text-xs" style="padding:4px 8px;"> ~ <input type="date" id="kism-o-to" class="input text-xs" style="padding:4px 8px;"></span></label>
             <label class="flex flex-col gap-1" style="min-width:220px;"><span style="color:var(--text-mute);">검색어</span>
               <input id="kism-o-q" class="input text-xs" style="padding:4px 8px;" placeholder="종목코드 · 종목명 · 주문번호 · 메모"></label>
-            <label class="flex flex-col gap-1"><span style="color:var(--text-mute);">건수</span>
-              <select id="kism-o-limit" class="input text-xs" style="padding:4px 8px;"><option value="50">50</option><option value="100">100</option><option value="200">200</option><option value="500">500</option></select></label>
             <button type="submit" id="kism-o-search" class="btn-secondary text-xs">검색</button>
             <button type="button" id="kism-o-reset" class="btn-secondary text-xs">초기화</button>
-            <button type="button" id="kism-o-csv" class="btn-secondary text-xs" title="현재 검색 결과를 CSV 로 내려받기">CSV</button>
-            <span class="flex items-center gap-1 ml-auto"><button type="button" id="kism-o-prev" class="btn-secondary text-xs">이전</button><span id="kism-o-page" style="color:var(--text-mute);"></span><button type="button" id="kism-o-next" class="btn-secondary text-xs">다음</button></span>
+            <button type="button" id="kism-o-csv" class="btn-secondary text-xs" title="그리드의 정렬·필터를 반영한 검색 결과 전체를 CSV로 내려받기">CSV</button>
+
           </form>
           <div id="kism-orders-result" class="text-xs mb-1" style="color:var(--text-mute);"></div>
-          <div id="kism-orders" class="overflow-x-auto text-xs"></div>
+          <div id="kism-orders" class="kism-data-grid" aria-label="KIS 주문 검색"></div>
         </div>
 
         <div class="grid lg:grid-cols-2 gap-4">
           <div class="card">
             <h3 class="font-semibold mb-2 text-sm">💼 KIS 계좌 보유 <span id="kism-holdings-note" class="text-xs" style="color:var(--text-mute);"></span></h3>
-            <div id="kism-holdings" class="overflow-x-auto text-xs"></div>
+            <div id="kism-holdings" class="kism-data-grid" aria-label="KIS 계좌 보유"></div>
           </div>
           <div class="card">
             <h3 class="font-semibold mb-2 text-sm">🔎 정합성 (로그 vs 실거래) <span id="kism-recon-note" class="text-xs" style="color:var(--text-mute);"></span></h3>
-            <div id="kism-recon" class="text-xs space-y-1"></div>
+            <p id="kism-recon-summary" class="text-xs mb-2" style="color:var(--text-dim);"></p>
+            <div id="kism-recon" class="kism-data-grid" aria-label="KIS 정합성 문제"></div>
           </div>
         </div>
 
         <div class="card">
           <h3 class="font-semibold mb-2 text-sm">🔁 3분 사이클 이력 (배치) <span id="kism-cycles-note" class="text-xs" style="color:var(--text-mute);"></span></h3>
-          <div id="kism-cycles" class="space-y-2 text-xs"></div>
+          <div id="kism-cycles" class="kism-data-grid" aria-label="KIS 배치 사이클"></div>
         </div>
       </div>
     </div>
@@ -1803,10 +1836,13 @@
         <!-- PineScript 코드 -->
         <div class="card">
           <div class="flex items-center justify-between mb-3">
-            <h3 class="font-semibold text-sm">📝 PineScript 코드 (TradingView)</h3>
-            <button id="ci-copy-pine" class="btn-secondary text-xs">복사</button>
+            <h3 class="font-semibold text-sm">📝 Pine Script v6 코드 (TradingView)</h3>
+            <div class="flex gap-2"><button id="ci-check-pine" class="btn-primary text-xs">문법 체크</button><button id="ci-copy-pine" class="btn-secondary text-xs">복사</button></div>
           </div>
-          <pre id="ci-pine-code" class="text-xs rounded-lg p-4 overflow-x-auto" style="background:var(--surf2);border:1px solid var(--border);color:var(--text-dim); min-height:160px;"></pre>
+          <label for="ci-pine-code" class="text-xs" style="color:var(--text-mute);">코드를 편집하거나 붙여넣은 뒤 문법 체크를 실행하세요.</label>
+          <textarea id="ci-pine-code" class="input text-xs rounded-lg p-4 mt-2" rows="20" spellcheck="false" autocapitalize="off" autocomplete="off" aria-label="Pine Script v6 코드 편집기" style="font-family:monospace;line-height:1.6;white-space:pre;overflow:auto;resize:vertical;background:var(--surf2);color:var(--text-dim);"></textarea>
+          <div id="ci-pine-check-result" class="text-xs mt-3" role="status" aria-live="polite"></div>
+          <p class="text-xs mt-3" style="color:var(--text-mute);">기본 검사 범위: 버전·선언문·괄호·문자열·일부 v6 호환 오류. 함수·변수의 전체 타입 검사 및 최종 컴파일은 <a href="https://www.tradingview.com/chart/" target="_blank" rel="noopener noreferrer" style="color:var(--accent);">TradingView Pine Editor</a>에서 확인하세요. 직접 편집한 코드는 복사에 반영되며, 저장·백테스트는 위 파라미터 기준으로 실행됩니다.</p>
         </div>
 
         <!-- Python 코드 -->

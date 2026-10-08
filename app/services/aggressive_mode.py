@@ -127,13 +127,16 @@ async def get_intraday_indicators(symbol: str) -> dict:
     """get_quant_indicators 와 호환되는 축약 지표. current_price 는 KIS 현재가(있으면) 또는 마지막 봉 종가."""
     candles, live_price, source = await _intraday_candles(symbol)
     if len(candles) < 2:
-        return {"symbol": symbol, "signal": {"action": "관망", "score": 0, "reasons": ["분봉 없음"], "momentum_pct": 0.0},
-                "current_price": None, "intraday": True, "source": source}
+        # 데이터가 없으면 판단하지 않는다 — 화면에서 '관망' 으로 보이지 않게 error 를 함께 싣는다.
+        return {"symbol": symbol, "signal": {"action": "판단 불가", "score": 0, "error": "분봉 없음",
+                                             "reasons": ["시장 데이터(분봉)를 받지 못해 판단하지 않았습니다"], "momentum_pct": 0.0},
+                "current_price": None, "intraday": True, "source": source, "bars": len(candles), "as_of": None}
     closes = [float(c["close"]) for c in candles]
     volumes = [c.get("volume") for c in candles]
     sig = score_intraday(closes, volumes)
     return {"symbol": symbol, "signal": sig, "current_price": float(live_price) if live_price else closes[-1], "intraday": True,
-            "interval": settings.QUANT_AGGRESSIVE_CANDLE_INTERVAL, "bars": len(closes), "source": source}
+            "interval": settings.QUANT_AGGRESSIVE_CANDLE_INTERVAL, "bars": len(closes), "source": source,
+            "as_of": candles[-1].get("time"), "price_source": "kis_live" if live_price else "last_close"}
 
 
 def plan(indicator_map: dict[str, dict], target_symbols: list[str], holdings: dict[str, tuple[int, float]],

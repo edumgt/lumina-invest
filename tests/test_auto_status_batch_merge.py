@@ -98,3 +98,26 @@ def test_live_orders_include_system_rows_when_batch_running(client):
     assert [o["owner"] for o in orders] == ["batch", "me"] and orders[0]["order_type"] == "MARKET"
     crit = str(db.last_stmt.whereclause)
     assert "IN" in crit.upper()
+
+
+def test_status_marks_data_failure_as_none_not_hold(client):
+    """시장 데이터를 못 받은 종목은 관망(HOLD)이 아니라 NONE — 화면에서 근거 없는 판단으로 보이면 안 된다."""
+    c, _ = client
+    cyc = {"time": "2026-10-08 10:05:00", "account": {"total_equity": 10_000_000, "pnl_pct": 0.0},
+           "signals": [
+               {"symbol": "005930.KS", "name": "삼성전자", "price": 266_250, "action": "매수", "score": 3,
+                "reasons": ["5분 MA5 > MA20", "30분 모멘텀 +0.42%"],
+                "basis": {"source": "yahoo", "interval": "5m", "bars": 298, "as_of": 1791420315, "price_source": "last_close"}},
+               {"symbol": "000660.KS", "name": "SK하이닉스", "error": "지표 계산 실패", "action": "판단 불가", "score": 0,
+                "reasons": ["시장 데이터를 받지 못해 판단하지 않았습니다"], "basis": {}},
+           ]}
+    async def st(db, uid): return {"running": True, "log": [cyc]}
+    with patch.object(auto_trade, "get_status", st), \
+         patch.object(kis_batch, "system_status", AsyncMock(return_value={"enabled": False, "running": False})):
+        r = c.get("/api/quant/auto/status")
+    by_symbol = {s["symbol"]: s for s in r.json()["signals"]}
+    ok, bad = by_symbol["005930.KS"], by_symbol["000660.KS"]
+    assert ok["signal"] == "BUY" and bad["signal"] == "NONE"
+    # 판단 근거의 데이터 출처와 사이클 시각이 화면까지 그대로 전달돼야 한다
+    assert ok["basis"] == {"source": "yahoo", "interval": "5m", "bars": 298, "as_of": 1791420315, "price_source": "last_close"}
+    assert ok["cycle_time"] == "2026-10-08 10:05:00" and bad["cycle_time"] == "2026-10-08 10:05:00"
