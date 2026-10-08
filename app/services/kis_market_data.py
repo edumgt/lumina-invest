@@ -62,17 +62,17 @@ def clamp_end_time(now: datetime | None = None) -> str:
     return hhmmss
 
 
-def _client() -> httpx.AsyncClient:
+def _client(timeout: float | None = None) -> httpx.AsyncClient:
     headers = {"Accept": "application/json"}
     if settings.STOCK_COIN_TRADE_API_KEY:
         headers["Authorization"] = f"Bearer {settings.STOCK_COIN_TRADE_API_KEY}"
     return httpx.AsyncClient(base_url=settings.STOCK_COIN_TRADE_BASE_URL.rstrip("/"), headers=headers,
-                             timeout=float(settings.KIS_CHART_TIMEOUT or 10), transport=_transport)
+                             timeout=timeout or float(settings.KIS_CHART_TIMEOUT or 10), transport=_transport)
 
 
-async def _get(path: str, params: dict[str, Any]) -> dict[str, Any]:
+async def _get(path: str, params: dict[str, Any], timeout: float | None = None) -> dict[str, Any]:
     try:
-        async with _client() as cli:
+        async with _client(timeout) as cli:
             resp = await cli.get(path, params=params)
     except httpx.HTTPError as exc:
         raise KisMarketDataError(f"KIS 차트 API 연결 실패: {exc}") from exc
@@ -110,7 +110,9 @@ async def fetch_minutes(symbol: str, count: int | None = None, end_time: str | N
 
 async def fetch_daily(symbol: str, count: int = 300) -> dict[str, Any]:
     n = max(20, min(300, int(count)))
-    body = await _get("/api/kis-chart/candles", {"symbol": code_of(symbol), "period": "D", "count": n})
+    # Long history is paginated by the gateway; allow it to finish before fallback.
+    body = await _get("/api/kis-chart/candles", {"symbol": code_of(symbol), "period": "D", "count": n},
+                      timeout=max(60.0, float(settings.KIS_CHART_TIMEOUT or 10)))
     candles = [x for x in (_norm(c) for c in body.get("candles") or []) if x]
     candles.sort(key=lambda c: c["time"])
     return {"candles": candles, "summary": body.get("summary") or {}}
@@ -151,8 +153,15 @@ def daily_count_for_period(period: str) -> int:
     return table.get(p, 300)
 
 
-async def get_daily_candles(symbol: str, period: str = "1y") -> dict[str, Any]:
+async def get_daily_candles(symbol: str, period: str = "1y", refresh: bool = False) -> dict[str, Any]:
     raw = await fetch_daily(symbol, daily_count_for_period(period))
+    if refresh:
+        # Refresh the latest page separately: a long paginated history can lag the quote.
+        latest = await fetch_daily(symbol, 20)
+        merged = {c["time"]: c for c in raw["candles"]}
+        merged.update({c["time"]: c for c in latest["candles"]})
+        raw["candles"] = sorted(merged.values(), key=lambda c: c["time"])[-daily_count_for_period(period):]
+        raw["summary"] = latest["summary"]
     return {"symbol": symbol, "interval": "1d", "period": period, "candles": raw["candles"], "source": "kis",
             "price": raw["summary"].get("price"), "name": raw["summary"].get("name")}
 

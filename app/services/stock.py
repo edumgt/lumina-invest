@@ -292,13 +292,13 @@ async def get_candles(symbol: str, period: str = "1y", interval: str = "1d", max
     from app.services import kis_market_data as kmd
     use_kis = kmd.is_enabled() and kmd.is_krx(symbol) and interval == "1d"
     cache_key = f"candles:{'kis:' if use_kis else ''}{symbol}:{period}:{interval}"
-    cached = await cache_get(cache_key, max_age_hours=max_age_hours)
+    cached = await cache_get(cache_key, max_age_hours=max_age_hours) if max_age_hours > 0 else None
     if cached is not None:
         return cached
 
     if use_kis:
         try:
-            result = await kmd.get_daily_candles(symbol, period)
+            result = await kmd.get_daily_candles(symbol, period, refresh=max_age_hours <= 0)
             if result.get("candles"):
                 result.setdefault("source", "kis")
                 await cache_set(cache_key, result)

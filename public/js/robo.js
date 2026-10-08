@@ -482,6 +482,19 @@ let patternMarkers = null;
 let patternPriceLines = [];
 let patternChartData = null;
 let patternRun = 0;
+let patternRequest = null;
+let patternRefreshTimer = null;
+
+function schedulePatternRefresh() {
+  clearTimeout(patternRefreshTimer);
+  patternRefreshTimer = setTimeout(() => {
+    if (location.hash === "#robo-patterns" && !document.hidden && patternChartData) {
+      loadPatternAnalysis({ automatic: true });
+    } else if (patternChartData) {
+      schedulePatternRefresh();
+    }
+  }, 30000);
+}
 
 function clearPatternResults() {
   patternMarkers?.detach();
@@ -566,7 +579,7 @@ async function renderPatternChart(pat, symbol) {
   patternChartData = { pat, candles };
   document.getElementById("pt-chart-card").classList.remove("hidden");
   document.getElementById("pt-chart-title").textContent = `${symbol} · TradingView · 지지·저항 및 캔들 패턴 (${pat.as_of} 기준)`;
-  document.getElementById("pt-chart-note").textContent = `패턴은 최근 5봉에 표시합니다. ${pat.patterns.length ? "표시된 패턴의 상세 해설은 아래 표에서 확인하세요." : "최근 5봉에서 뚜렷한 패턴이 없습니다."} 지지·저항은 과거 피벗 가격대이며 향후 반등·돌파를 보장하지 않습니다.`;
+  document.getElementById("pt-chart-note").textContent = `${pat.source === "kis" ? "KIS 최신 시세" : "Yahoo 시세 (지연 가능)"} · 조회 ${pat.fetched_at ? new Date(pat.fetched_at).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" }) : "시각 미제공"} · 30초마다 자동 갱신 · 장중 일봉은 미확정입니다. 패턴은 최근 5봉에 표시합니다. ${pat.patterns.length ? "표시된 패턴의 상세 해설은 아래 표에서 확인하세요." : "최근 5봉에서 뚜렷한 패턴이 없습니다."} 지지·저항은 과거 피벗 가격대이며 향후 반등·돌파를 보장하지 않습니다.`;
   const css = getComputedStyle(document.documentElement);
   const background = css.getPropertyValue("--surf").trim() || "#ffffff";
   const text = css.getPropertyValue("--text-dim").trim() || "#334155";
@@ -598,23 +611,32 @@ async function renderPatternChart(pat, symbol) {
   patternChart.timeScale().fitContent();
 }
 
-async function loadPatternAnalysis() {
+async function loadPatternAnalysis({ automatic = false } = {}) {
+  if (patternRequest) return;
+  clearTimeout(patternRefreshTimer);
+  const controller = new AbortController();
+  patternRequest = controller;
+  const deadline = setTimeout(() => controller.abort(), 45000);
+  let succeeded = false;
   const symbol = document.getElementById("pt-symbol").value.trim() || "005930.KS";
   const run = ++patternRun;
   const button = document.getElementById("pt-run");
-  clearPatternResults();
-  button.disabled = true;
-  button.textContent = "분석 중…";
+  if (!automatic) {
+    clearPatternResults();
+    button.disabled = true;
+    button.textContent = "분석 중…";
+  }
   const box = (id, html) => { const el = document.getElementById(id); el.innerHTML = html; el.classList.remove("hidden"); };
-  box("pt-mtf", `<div class="text-sm" style="color:var(--text-mute);">분봉·일봉·주봉 데이터 수집 및 계산 중…</div>`);
+  if (!automatic) box("pt-mtf", `<div class="text-sm" style="color:var(--text-mute);">분봉·일봉·주봉 데이터 수집 및 계산 중…</div>`);
   try {
     const [mtfResult, patResult] = await Promise.allSettled([
-      api(`/api/stocks/mtf-signal?symbol=${encodeURIComponent(symbol)}`),
-      api(`/api/stocks/patterns?symbol=${encodeURIComponent(symbol)}`),
+      api(`/api/stocks/mtf-signal?symbol=${encodeURIComponent(symbol)}`, { signal: controller.signal }),
+      api(`/api/stocks/patterns?symbol=${encodeURIComponent(symbol)}`, { signal: controller.signal }),
     ]);
     if (run !== patternRun) return;
     if (patResult.status === "rejected") throw patResult.reason;
     const pat = patResult.value;
+    if (automatic) clearPatternResults();
     await renderPatternChart(pat, symbol);
     if (run !== patternRun) return;
     if (mtfResult.status === "fulfilled") {
@@ -648,17 +670,27 @@ async function loadPatternAnalysis() {
     box("pt-breakouts", `<h3 class="font-semibold text-sm mb-2">🚀 돌파·크로스 이벤트 (${pat.as_of} 기준)</h3>${
       pat.breakouts.length ? `<div class="flex flex-wrap gap-2">${pat.breakouts.map(e => `<div class="rounded-lg p-2 text-xs" style="background:var(--surf2);border:1px solid var(--border);min-width:220px;">${dirBadge(e.direction)} <b>${escHtml(e.name)}</b>${e.confirmed ? ' <span style="color:var(--green)">✔ 확인</span>' : ''}<div style="color:var(--text-dim);margin-top:2px;">${escHtml(e.detail || "")}</div></div>`).join("")}</div>`
       : `<p class="text-sm" style="color:var(--text-mute)">현재 봉에서 돌파·크로스 이벤트가 없습니다.</p>`}`);
+    succeeded = true;
   } catch (e) {
     if (run !== patternRun) return;
-    clearPatternResults();
-    box("pt-mtf", `<span class="text-red-500 text-sm">${escHtml(e.message)}</span>`);
+    const message = e.name === "AbortError" ? "조회 시간이 초과되었습니다. 분석 실행을 눌러 다시 시도하세요." : e.message;
+    if (automatic) {
+      document.getElementById("pt-chart-note").textContent += ` 자동 갱신 중단: ${message}`;
+    } else {
+      clearPatternResults();
+      box("pt-mtf", `<span class="text-red-500 text-sm">${escHtml(message)}</span>`);
+    }
   } finally {
+    clearTimeout(deadline);
+    if (patternRequest === controller) patternRequest = null;
     if (run === patternRun) {
       button.disabled = false;
       button.textContent = "분석 실행";
+      if (succeeded) schedulePatternRefresh();
     }
   }
 }
+
 for (const id of ["pt-show-sr", "pt-show-patterns"]) {
   document.getElementById(id)?.addEventListener("change", () => {
     updatePatternOverlays();
@@ -669,6 +701,9 @@ document.getElementById("pt-chart-reset")?.addEventListener("click", () => {
   patternChart?.timeScale().fitContent();
 });
 function invalidatePatternAnalysis() {
+  clearTimeout(patternRefreshTimer);
+  patternRequest?.abort();
+  patternRequest = null;
   ++patternRun;
   clearPatternResults();
   document.getElementById("pt-mtf").innerHTML = "";

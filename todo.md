@@ -1030,3 +1030,26 @@ curl -sk --resolve pr.edumgt.co.kr:443:43.201.229.188 -o /dev/null -w '%{http_co
 | `public/app.html` | 화면 순서를 **① 제어(제목·상태·시작/중지·계정·프로세스 안내) → ② 📊 최근 AI 투자 판단 근거 → ③ 🧾 실행 로그** 로 바꿈. 로그를 상단 카드에서 떼어 맨 아래 독립 카드로 옮기고, 로그 내용 설명 한 줄 추가(계좌 평가·체결·위험관리 생략·공격 모드 메모·정합성 점검). 상단 제어 바의 「로그 새로고침」 버튼도 로그 카드 헤더로 이동(중복 없음) |
 
 id(`robo-decision-log`·`robo-decision-refresh`)는 그대로라 `robo.js` 의 바인딩·렌더 로직은 변경 없음. 전체 **272 passed**(백엔드 영향 없음), robo.js 문법 검사 통과.
+
+### 6-34. 2026-10-08 주식투자 4개 저장소 푸터 통일 — 검정 배경·높이 25px 고정·동일 문구 (사용자 요청)
+
+요구: 4개 저장소(pr `domain-rag-lab` / fd `lumina-invest` / st `stock-coin-trade` / iv `stock-kms-portal`)의 **모든 `<footer>`** 를 검정색·높이 25px 고정·동일 스타일·동일 문구로 통일. 적용 범위는 사용자가 "모든 `<footer>` 요소"로 지정했다(카드·모달·섹션 내부 푸터 포함).
+
+문구: `© 2026 (주)에듀엠지티 All rights reserved.`
+마크업: `<footer class="site-footer-unified">© 2026 (주)에듀엠지티 All rights reserved.</footer>`
+스타일: `height/min-height/max-height:25px` · `background:#000` · `color:#fff` · `font-size:11.5px` · 가운데 정렬 1줄 · `overflow:hidden` · `white-space:nowrap` · border/radius/shadow 제거. 기존 푸터 규칙과 테마 오버라이드를 덮어야 해서 전 속성 `!important`. 선택자는 `footer, .site-footer-unified` 로 동적 생성 푸터까지 걸리게 했다.
+
+| 변경 | 내용 |
+|------|------|
+| `public/css/app.css` | 맨 끝에 공통 푸터 블록 추가(종전 `#app-footer` 는 흰 배경·가변 높이였다) |
+| `public/app.html` | `#app-footer`(로고·기술스택·연락처·연도 3줄) → 통일 푸터 1줄 |
+| 남은 것 | `public/js/core.js:556` 의 `#footer-year` 세팅은 `if (footerYear)` 가드가 있어 그대로 두었다(이제 대상 없음, 동작 영향 없음) |
+| 캐시 버전 | `/css` 는 no-cache 라 버전 갱신 불필요 |
+
+**4개 저장소 합계**: `<footer>` 106곳 중 101곳을 통일 푸터로 교체, 5곳은 기능 요소라 `div` 로 바꿔 동작을 지켜냈다(위 "기능 복구" 항목). 통일 CSS 블록은 9곳(CSS 8개 + `hts.html` 인라인).
+
+**카드·모달 내부 푸터의 내용은 사라졌다**: 투자 판단 체크리스트 결론, 기업분석 모달 면책 문구, `day-offcanvas-footer` 의 Swagger·상태확인 링크, 공시/숫자 읽기 원칙, tr-pine 단계별 요약 코드(`guide.footer`) 등. "모든 `<footer>` 통일" 지시에 따른 결과이며, 되살리려면 해당 블록만 `div` 로 바꾸면 된다.
+
+검증: 남은 `<footer>` 101곳이 모두 동일 문자열, 변경 JS 전부 `node --check` 통과, 변경 CSS 중괄호 균형 일치, 푸터와 함께 사라진 id·class 중 JS가 참조하는 것 없음(`#footer-year` 만 남았고 null 가드 있음).
+
+**커밋 안 했다** — 변경만 남겨 두었다.

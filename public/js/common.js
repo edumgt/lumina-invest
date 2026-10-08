@@ -19,16 +19,18 @@ export function safeNextPath(fallback = "/app.html") {
   return fallback;
 }
 
-export async function api(path, { method = "GET", body, headers = {}, redirectOnUnauthorized = true } = {}) {
+export async function api(path, { method = "GET", body, headers = {}, signal, redirectOnUnauthorized = true } = {}) {
   let res;
   try {
     res = await fetch(path, {
       method,
+      signal,
       headers: { "Content-Type": "application/json", ...headers },
       credentials: "include",
       body: body ? JSON.stringify(body) : undefined,
     });
   } catch (networkErr) {
+    if (networkErr.name === "AbortError") throw networkErr;
     // 네트워크 자체 오류 (서버 다운, CORS 등)
     throw new Error("서버에 연결할 수 없습니다. 네트워크 상태를 확인해 주세요.");
   }

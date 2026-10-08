@@ -255,7 +255,7 @@ async def multi_timeframe_signal(symbol: str) -> dict:
     rows = []
     for label, interval, rng, weight in TIMEFRAMES:
         try:
-            candles = (await get_candles(symbol, period=rng, interval=interval)).get("candles", [])
+            candles = (await get_candles(symbol, period=rng, interval=interval, max_age_hours=0)).get("candles", [])
             r = timeframe_score(candles) if candles else {"error": "시세 없음"}
         except Exception as exc:
             r = {"error": str(exc)[:80]}
@@ -265,7 +265,7 @@ async def multi_timeframe_signal(symbol: str) -> dict:
     pattern = None
     try:
         daily = next((r for r in rows if r["interval"] == "1d"), None)
-        candles = (await get_candles(symbol, period="1y", interval="1d")).get("candles", [])
+        candles = (await get_candles(symbol, period="1y", interval="1d", max_age_hours=0)).get("candles", [])
         pattern = pattern_summary(candles) if candles else None
     except Exception:
         pattern = None

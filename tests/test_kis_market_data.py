@@ -150,3 +150,26 @@ def test_stock_get_quote_kis_then_fallback():
     with patch.object(stock, "_yahoo_chart", AsyncMock(return_value={"meta": {"regularMarketPrice": 1.0, "shortName": "S"}})):
         q2 = asyncio.run(stock.get_quote("005930.KS"))
     assert q2["price"] == 1.0 and "source" not in q2
+
+
+def test_fresh_candles_skip_persistent_cache():
+    seen = []; _server(seen)
+    with patch.object(stock, "cache_get", new_callable=AsyncMock) as read_cache, \
+         patch.object(stock, "cache_set", new_callable=AsyncMock):
+        result = asyncio.run(stock.get_candles("005930.KS", max_age_hours=0))
+    read_cache.assert_not_awaited()
+    assert result["source"] == "kis" and seen[0][0] == "/api/kis-chart/candles"
+
+
+def test_realtime_daily_merges_newer_recent_page():
+    def handler(request):
+        recent = request.url.params.get("count") == "20"
+        day = "2026-10-08" if recent else "2026-10-07"
+        return httpx.Response(200, json={"ok": True, "summary": {"price": 102 if recent else 100},
+            "candles": [{"time": day, "open": 100, "high": 103, "low": 99,
+                         "close": 102 if recent else 100, "volume": 1000}]})
+    kmd.set_transport(httpx.MockTransport(handler))
+    result = asyncio.run(kmd.get_daily_candles("005930.KS", refresh=True))
+    assert len(result["candles"]) == 2
+    assert result["candles"][-1]["time"] == kmd._ts_of("2026-10-08")
+    assert result["price"] == result["candles"][-1]["close"] == 102

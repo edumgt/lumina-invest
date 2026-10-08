@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime, timezone
 import uuid
 import httpx
 from fastapi import APIRouter, Depends, Query, HTTPException
@@ -867,13 +868,17 @@ async def broker_test(
 async def stock_patterns(symbol: str = Query("005930.KS"), period: str = Query("1y"), _user=Depends(get_current_user)):
     """캔들 패턴·지지/저항선·돌파 신호 (일봉)."""
     from app.services.patterns import pattern_summary
-    candles = (await get_candles(symbol, period=period, interval="1d")).get("candles", [])
+    data = await get_candles(symbol, period=period, interval="1d", max_age_hours=0)
+    candles = data.get("candles", [])
     if not candles:
         raise HTTPException(404, f"종목 데이터 없음: {symbol}")
     result = pattern_summary(candles)
     if "error" in result:
         raise HTTPException(422, result["error"])
-    return {"symbol": symbol, "candles": candles, **result}
+    return {"symbol": symbol, "candles": candles, **result,
+            "source": data.get("source", "unknown"),
+            "fetched_at": datetime.now(timezone.utc).isoformat(),
+            "refresh_seconds": 30}
 
 
 @router.get("/stocks/mtf-signal")
