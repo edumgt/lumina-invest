@@ -1627,19 +1627,27 @@
             <button id="robo-decision-start-kis" class="btn-green" title="내 계정을 KIS 모의투자(live·kis·AI 추천 종목)로 바꾸고 의사결정을 시작합니다. 매수·매도가 한국투자증권 Testbed 모의계좌에 실제 모의주문으로 전송됩니다.">▶ KIS 모의투자로 시작</button>
             <button id="robo-decision-start" class="btn-secondary" title="내 계정의 현재 설정(기본: 가상 계좌 1,000만 원)으로 의사결정을 시작합니다. KIS 주문은 나가지 않습니다.">▶ 가상 계좌로 시작</button>
             <button id="robo-decision-stop" class="btn-red">■ 중지</button>
-            <button id="robo-decision-refresh" class="btn-secondary text-xs">로그 새로고침</button>
           </div>
           <div id="robo-decision-account" class="text-xs mb-3" style="color:var(--text-dim);"></div>
-          <div class="rounded-lg p-3 mb-4 text-xs" style="background:rgba(41,98,255,0.08);color:var(--accent);border:1px solid rgba(41,98,255,0.2);">
+          <div class="rounded-lg p-3 text-xs" style="background:rgba(41,98,255,0.08);color:var(--accent);border:1px solid rgba(41,98,255,0.2);">
             <strong>AI 의사결정 프로세스:</strong> 지표·시그널 계산(공격 모드는 5분봉) → 대상 종목 선정 → 익절·손절·약세 매도 / 상위 매수 계획 → 위험관리 게이트(일손실·비중·쿨다운·일 주문 수) → 가상 체결 → <b>KIS 모의계좌 실주문(KIS 모드)</b> → 성과 기록
           </div>
-          <div id="robo-decision-log" class="space-y-2 text-xs max-h-[420px] overflow-y-auto"></div>
         </div>
 
         <!-- 의사결정 근거 요약 -->
         <div class="card">
           <h3 class="font-semibold mb-3 text-sm">📊 최근 AI 투자 판단 근거</h3>
           <div id="robo-rationale" class="grid md:grid-cols-3 gap-3"></div>
+        </div>
+
+        <!-- 로그성 정보는 화면 맨 아래에 모아 둔다 (판단 결과를 먼저 보고, 실행 기록은 필요할 때 내려 본다) -->
+        <div class="card">
+          <div class="flex items-center justify-between gap-2 mb-1 flex-wrap">
+            <h3 class="font-semibold text-sm">🧾 실행 로그</h3>
+            <button id="robo-decision-refresh" class="btn-secondary text-xs">로그 새로고침</button>
+          </div>
+          <p class="text-xs mb-3" style="color:var(--text-mute);">사이클별 계좌 평가·체결·위험관리 생략·공격 모드 메모·정합성 점검 기록입니다. 최근 것이 아래로 쌓입니다.</p>
+          <div id="robo-decision-log" class="space-y-2 text-xs max-h-[420px] overflow-y-auto"></div>
         </div>
       </div>
     </div>

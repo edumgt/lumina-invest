@@ -1,5 +1,6 @@
 /* 자유 산식 커스텀 지표 화면 (indicator-formula)
  * DSL 편집기 · 함수 레퍼런스 · 검증/계산 · 저장(버전) · 결과 이력 · Pine/Python 내보내기 */
+import { renderFormulaChartHelp } from "/js/formula-chart-help.js";
 import { api, setToast, escHtml, fmt } from "/js/common.js";
 
 const $ = (id) => document.getElementById(id);
@@ -55,6 +56,7 @@ function renderResult(r, meta = "") {
     ["손절/익절", `${bt.stop_loss_exits ?? 0}/${bt.take_profit_exits ?? 0}회`, "var(--text-mute)"],
   ] : [["지표 평균(1y)", stats.mean?.toFixed(4) ?? "-", "var(--text)"], ["표준편차", stats.std?.toFixed(4) ?? "-", "var(--text)"], ["최소", stats.min?.toFixed(4) ?? "-", "var(--text)"], ["최대", stats.max?.toFixed(4) ?? "-", "var(--text)"]];
   $("fx-cards").innerHTML = cards.map(([l, v, c]) => `<div class="card" style="padding:12px;text-align:center;"><div class="text-xs" style="color:var(--text-mute);">${l}</div><div style="font-size:17px;font-weight:700;color:${c};">${v}</div></div>`).join("");
+  renderFormulaChartHelp(r);
   if (window.ApexCharts && s) {
     const x = s.times.map(t => new Date(t).getTime());
     const buys = new Set(s.buy_dates), sells = new Set(s.sell_dates);
@@ -78,6 +80,9 @@ function renderResult(r, meta = "") {
 }
 
 async function computeNow() {
+  if (chart) { chart.destroy(); chart = null; }
+  $("fx-chart").innerHTML = ""; $("fx-cards").innerHTML = "";
+  if ($("fx-chart-help")) $("fx-chart-help").hidden = true;
   $("fx-result-meta").innerHTML = `<span style="color:var(--text-mute);">계산 중…</span>`; $("fx-result").classList.remove("hidden");
   try {
     const costs = readCosts();
