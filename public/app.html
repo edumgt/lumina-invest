@@ -1892,34 +1892,37 @@
     <div class="view" data-view="indicator-backtest">
       <div class="space-y-4">
         <div class="card">
-          <h2 class="text-lg font-semibold mb-1">🔬 성과 검증 · Python 백테스트</h2>
-          <p class="text-xs mb-4" style="color:var(--text-mute);">파이썬 프로그래밍으로 구현된 퀀트 전략의 10년 성과를 검증합니다</p>
-          <div class="flex gap-2 mb-4">
-            <select id="ibt-symbol" class="input w-44">
-              <option value="005930.KS">삼성전자</option>
-              <option value="000660.KS">SK하이닉스</option>
-              <option value="035420.KS">NAVER</option>
-              <option value="005380.KS">현대자동차</option>
-              <option value="051910.KS">LG화학</option>
-            </select>
-            <select id="ibt-strategy" class="input w-44">
-              <option value="rsi">RSI 역추세 전략</option>
-              <option value="ma">이동평균 교차 전략</option>
-              <option value="bollinger">볼린저밴드 전략</option>
-              <option value="composite">복합 인디케이터 전략</option>
-            </select>
-            <button id="ibt-run-btn" class="btn-primary">성과 검증 실행</button>
+          <h2 class="text-lg font-semibold mb-1">어떤 전략이 수익과 위험 측면에서 유리할까?</h2>
+          <p class="text-sm mb-4" style="color:var(--text-mute);">여러 전략을 같은 조건으로 한 번에 비교하세요. 수익과 위험을 확인한 뒤 각 전략의 판단근거를 살펴볼 수 있습니다.</p>
+          <div class="grid md:grid-cols-2 gap-3 mb-4">
+            <div><label for="ibt-symbol">① 비교할 종목</label><select id="ibt-symbol" class="input mt-1" style="width:100%">
+              <option value="005930.KS">삼성전자</option><option value="000660.KS">SK하이닉스</option><option value="035420.KS">NAVER</option><option value="005380.KS">현대자동차</option><option value="051910.KS">LG화학</option>
+            </select></div>
+            <div><label for="ibt-period">② 조회 기간</label><select id="ibt-period" class="input mt-1" style="width:100%"><option value="1y">최근 1년</option><option value="3y">최근 3년</option><option value="5y">최근 5년</option><option value="10y" selected>최근 10년</option></select></div>
           </div>
-          <div class="flex flex-wrap gap-2 mb-3 items-end text-xs">
-            <div><label style="color:var(--text-mute);">수수료 (bp)</label><input id="ibt-cost" type="number" min="0" step="1" class="input" style="width:90px" value="10" /></div>
-            <div><label style="color:var(--text-mute);">슬리피지 (bp)</label><input id="ibt-slip" type="number" min="0" step="1" class="input" style="width:90px" value="5" /></div>
-            <div><label style="color:var(--text-mute);">손절 (%)</label><input id="ibt-sl" type="number" min="0" step="0.5" class="input" style="width:90px" placeholder="예) 5" /></div>
-            <div><label style="color:var(--text-mute);">익절 (%)</label><input id="ibt-tp" type="number" min="0" step="0.5" class="input" style="width:90px" placeholder="예) 15" /></div>
-            <span style="color:var(--text-mute);">비용은 포지션 변동 시 회전금액에 비례해 차감 · 손절/익절은 진입가 대비 종가 기준 (비우면 미적용)</span>
-          </div>
-          <div class="rounded-lg p-3 text-xs mb-2" style="background:rgba(8,153,129,0.08);color:var(--green);border:1px solid rgba(8,153,129,0.2);">
-            Python: pandas · pandas-ta · scikit-learn · LightGBM 기반 백테스트 엔진
-          </div>
+          <fieldset class="mb-4">
+            <legend class="font-semibold text-sm mb-2">③ 함께 비교할 전략</legend>
+            <div class="flex justify-between flex-wrap gap-2 mb-3 text-xs"><span style="color:var(--text-mute);">전략을 하나 이상 선택하세요. 단순 보유는 항상 포함됩니다.</span><button id="ibt-select-all" type="button" class="btn-secondary text-xs">전체 선택</button></div>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <label class="card cursor-pointer" style="padding:12px;background:var(--surf2);"><span class="flex items-center gap-2 font-semibold text-sm"><input name="ibt-strategies" type="checkbox" value="rsi" checked /> RSI</span><span class="block text-xs mt-2" style="color:var(--text-dim);">많이 떨어졌을 때 매수<br />RSI 30 미만 매수 · 70 초과 매도</span></label>
+              <label class="card cursor-pointer" style="padding:12px;background:var(--surf2);"><span class="flex items-center gap-2 font-semibold text-sm"><input name="ibt-strategies" type="checkbox" value="ma" checked /> 이동평균</span><span class="block text-xs mt-2" style="color:var(--text-dim);">추세 전환에 매매<br />5일·20일 평균의 교차 확인</span></label>
+              <label class="card cursor-pointer" style="padding:12px;background:var(--surf2);"><span class="flex items-center gap-2 font-semibold text-sm"><input name="ibt-strategies" type="checkbox" value="bollinger" checked /> 볼린저밴드</span><span class="block text-xs mt-2" style="color:var(--text-dim);">가격 밴드 이탈에 매매<br />하단 아래 매수 · 상단 위 매도</span></label>
+              <label class="card cursor-pointer" style="padding:12px;background:var(--surf2);"><span class="flex items-center gap-2 font-semibold text-sm"><input name="ibt-strategies" type="checkbox" value="composite" checked /> 복합</span><span class="block text-xs mt-2" style="color:var(--text-dim);">추세·모멘텀 함께 확인<br />이동평균·RSI·MACD 활용</span></label>
+            </div>
+          </fieldset>
+          <div class="rounded-lg p-3 text-xs mb-3" style="background:var(--surf2);"><strong>기준 전략: 단순 보유</strong> · 처음 매수 후 계속 보유 · 동일한 진입 비용 반영 · 손절·익절 미적용</div>
+          <details class="mb-4"><summary class="cursor-pointer text-sm">거래 비용·손절·익절 설정</summary>
+            <div class="grid md:grid-cols-4 gap-3 mt-3 text-xs">
+              <div><label for="ibt-cost">수수료 (bp)</label><input id="ibt-cost" type="number" min="0" max="500" step="1" class="input" value="10" style="width:100%" /></div>
+              <div><label for="ibt-slip">체결 가격 차이 (bp)</label><input id="ibt-slip" type="number" min="0" max="500" step="1" class="input" value="5" style="width:100%" /></div>
+              <div><label for="ibt-sl">손절 (%)</label><input id="ibt-sl" type="number" min="0.1" max="90" step="0.1" class="input" placeholder="비우면 미적용" style="width:100%" /></div>
+              <div><label for="ibt-tp">익절 (%)</label><input id="ibt-tp" type="number" min="0.1" max="500" step="0.1" class="input" placeholder="비우면 미적용" style="width:100%" /></div>
+            </div>
+            <p class="text-xs mt-2" style="color:var(--text-mute);">10bp = 0.10%. 매수·매도 시 각각 비용을 차감합니다. 손절·익절은 진입가 대비 종가 기준입니다.</p>
+          </details>
+          <p id="ibt-setting-summary" class="text-xs mb-3" style="color:var(--text-dim);"></p>
+          <button id="ibt-run-btn" class="btn-primary" type="button">선택한 4개 전략 + 단순 보유 비교하기</button>
+          <p id="ibt-status" role="status" aria-live="polite" class="text-xs mt-2" style="color:var(--text-mute);"></p>
         </div>
         <div id="ibt-result" class="text-sm space-y-3"></div>
         <div id="ibt-compare-tray"></div>

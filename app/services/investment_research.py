@@ -31,6 +31,8 @@ def indicators(candles: list[dict]) -> pd.DataFrame:
 
 def _position(df: pd.DataFrame, strategy: str) -> pd.Series:
     strategy = strategy.lower()
+    if strategy == "buy_hold":
+        return pd.Series(1.0, index=df.index)
     if strategy == "rsi":
         enter, exit_ = df["rsi"] < 30, df["rsi"] > 70
     elif strategy == "ma":
@@ -47,15 +49,52 @@ def _position(df: pd.DataFrame, strategy: str) -> pd.Series:
     return state.ffill().fillna(0.0)
 
 
+def explain_strategy(df: pd.DataFrame, strategy: str, position: pd.Series) -> dict:
+    """Explain the exact rule evaluated on the last two available candles."""
+    x, prev = df.iloc[-1], df.iloc[-2]
+    def row(label, rule, values, passed):
+        return {"label": label, "rule": rule, "observed": values, "matched": bool(passed)}
+    if strategy == "buy_hold":
+        return {"kind": "buy_hold", "strategy": strategy, "as_of": df.index[-1].isoformat(),
+                "action": "HOLD", "position": "보유", "scope": "계산 시작 시 매수 후 계속 보유합니다. 진입 비용은 반영하고 손절·익절과 마지막 날 강제 청산은 적용하지 않습니다."}
+    if strategy == "rsi":
+        buy = [row("과매도", "RSI(14) < 30", f"RSI {x.rsi:.2f}", x.rsi < 30)]
+        sell = [row("과매수", "RSI(14) > 70", f"RSI {x.rsi:.2f}", x.rsi > 70)]
+    elif strategy == "ma":
+        values = f"전일 MA5/MA20 {prev.ma5:.2f}/{prev.ma20:.2f} → 당일 {x.ma5:.2f}/{x.ma20:.2f}"
+        buy = [row("상향 교차", "전일 MA5 ≤ MA20, 당일 MA5 > MA20", values, prev.ma5 <= prev.ma20 and x.ma5 > x.ma20)]
+        sell = [row("하향 교차", "전일 MA5 ≥ MA20, 당일 MA5 < MA20", values, prev.ma5 >= prev.ma20 and x.ma5 < x.ma20)]
+    elif strategy == "bollinger":
+        buy = [row("하단 이탈", "종가 < 볼린저 하단(20일·2σ)", f"종가 {x.close:.2f} / 하단 {x.bb_lower:.2f}", x.close < x.bb_lower)]
+        sell = [row("상단 이탈", "종가 > 볼린저 상단(20일·2σ)", f"종가 {x.close:.2f} / 상단 {x.bb_upper:.2f}", x.close > x.bb_upper)]
+    else:
+        buy = [row("상승 추세", "MA5 > MA20", f"{x.ma5:.2f} / {x.ma20:.2f}", x.ma5 > x.ma20),
+               row("모멘텀", "RSI(14) > 50", f"RSI {x.rsi:.2f}", x.rsi > 50),
+               row("MACD", "MACD > 신호선", f"{x.macd:.3f} / {x.macd_signal:.3f}", x.macd > x.macd_signal)]
+        sell = [row("추세 약화", "MA5 < MA20", f"{x.ma5:.2f} / {x.ma20:.2f}", x.ma5 < x.ma20),
+                row("과매수", "RSI(14) > 75", f"RSI {x.rsi:.2f}", x.rsi > 75)]
+    was, now = bool(position.iloc[-2]), bool(position.iloc[-1])
+    action = "BUY" if now and not was else "SELL" if was and not now else "HOLD"
+    return {"kind": "strategy_rules", "as_of": df.index[-1].isoformat(), "strategy": strategy,
+            "action": action, "position": "보유" if now else "현금 대기", "buy_conditions": buy,
+            "sell_conditions": sell, "buy_logic": "모두 충족", "sell_logic": "하나 이상 충족",
+            "scope": "마지막 일봉의 기본 전략 신호입니다. 손절·익절을 반영한 최종 포지션이나 주문 지시가 아닙니다."}
+
+
 def backtest_strategy(candles: list[dict], strategy: str = "composite", cost_bps: float = 10.0,
                       slippage_bps: float = 0.0, stop_loss_pct: float | None = None,
                       take_profit_pct: float | None = None) -> dict:
     """롱온리 일봉 백테스트. 수수료(cost_bps)·슬리피지(slippage_bps)는 포지션 변동 시 차감하고,
     손절·익절(%)은 진입가 대비 종가 기준으로 적용한다."""
-    from app.services.quant_pipeline import apply_stops
     df = indicators(candles).dropna()
     if len(df) < 60:
         return {"error": f"데이터 부족: {len(df)}행 (최소 60 필요)"}
+    return _backtest_frame(df, strategy, cost_bps, slippage_bps, stop_loss_pct, take_profit_pct)
+
+
+def _backtest_frame(df: pd.DataFrame, strategy: str, cost_bps: float, slippage_bps: float,
+                    stop_loss_pct: float | None, take_profit_pct: float | None) -> dict:
+    from app.services.quant_pipeline import apply_stops
     position = _position(df, strategy)
     returns = df["close"].pct_change().fillna(0.0)
     # t일 장 마감 신호는 t+1일 수익률에만 적용
@@ -74,6 +113,10 @@ def backtest_strategy(candles: list[dict], strategy: str = "composite", cost_bps
     action = "BUY" if bool(position.iloc[-1]) and not bool(position.iloc[-2]) else "SELL" if not bool(position.iloc[-1]) and bool(position.iloc[-2]) else "HOLD"
     return {
         "strategy": strategy,
+        "explanation": explain_strategy(df, strategy, position),
+        "data_start": df.index[0].isoformat(),
+        "data_end": df.index[-1].isoformat(),
+        "data_points": len(df),
         "cost_bps": float(cost_bps),
         "slippage_bps": float(slippage_bps),
         "stop_loss_pct": stop_loss_pct,
@@ -87,6 +130,8 @@ def backtest_strategy(candles: list[dict], strategy: str = "composite", cost_bps
         "sharpe_ratio": round(ta.sharpe_ratio(net), 3),
         "mdd_pct": round(ta.max_drawdown(equity) * 100, 2),
         "trade_count": trade_count,
+        "holding_days": int((held > 0).sum()),
+        "exposure_pct": round(float((held > 0).mean()) * 100, 2),
         "win_rate_pct": round(float((active > 0).mean() * 100) if len(active) else 0.0, 2),
         "latest_signal": action,
         "latest_indicators": {k: round(float(latest[k]), 3) for k in ("ma5", "ma20", "ma60", "rsi", "macd", "macd_signal", "bb_upper", "bb_lower") if pd.notna(latest[k])},
@@ -94,6 +139,32 @@ def backtest_strategy(candles: list[dict], strategy: str = "composite", cost_bps
         "cum_returns": [round(float(x - 1) * 100, 2) for x in equity.iloc[-252:]],
         "bh_returns": [round(float(x - 1) * 100, 2) for x in benchmark.iloc[-252:]],
     }
+
+
+COMPARISON_STRATEGIES = ("rsi", "ma", "bollinger", "composite")
+
+
+def compare_strategies(candles: list[dict], strategies: list[str], cost_bps: float = 10.0,
+                       slippage_bps: float = 5.0, stop_loss_pct: float | None = None,
+                       take_profit_pct: float | None = None) -> dict:
+    """One candle snapshot and one indicator warm-up window for all results."""
+    if not strategies or any(s not in COMPARISON_STRATEGIES for s in strategies):
+        return {"error": "비교할 전략은 rsi, ma, bollinger, composite 중 하나 이상 선택하세요."}
+    selected = list(dict.fromkeys(strategies))
+    df = indicators(candles).dropna()
+    if len(df) < 60:
+        return {"error": f"데이터 부족: {len(df)}행 (최소 60 필요)"}
+    results = [_backtest_frame(df, s, cost_bps, slippage_bps, stop_loss_pct, take_profit_pct) for s in selected]
+    # A hold benchmark remains a hold strategy even when active strategies use stops.
+    results.append(_backtest_frame(df, "buy_hold", cost_bps, slippage_bps, None, None))
+    benchmark = results[-1]["total_return_pct"]
+    for result in results:
+        result["excess_return_pct"] = round(result["total_return_pct"] - benchmark, 2)
+    return {"results": results, "data_start": df.index[0].isoformat(),
+            "data_end": df.index[-1].isoformat(), "data_points": len(df),
+            "settings": {"cost_bps": cost_bps, "slippage_bps": slippage_bps,
+                         "stop_loss_pct": stop_loss_pct, "take_profit_pct": take_profit_pct},
+            "benchmark_note": "단순 보유도 동일한 진입 비용을 반영합니다. 손절·익절은 선택한 매매 전략에만 적용하며, 마지막 날 강제 청산은 모든 전략에 적용하지 않습니다."}
 
 
 def screen_pattern(candles: list[dict], model: str) -> dict:

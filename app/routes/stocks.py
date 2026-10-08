@@ -22,7 +22,7 @@ from app.services.brokers import stock_coin_trade_gateway
 from app.services import kis_credentials
 from app.services import kis_quickstart
 from app.services.quant_pipeline import backtest_custom_indicator
-from app.services.investment_research import backtest_strategy, screen_pattern
+from app.services.investment_research import backtest_strategy, compare_strategies, screen_pattern
 from app.services.brokers.factory import get_broker_client
 from app.services.brokers.catalog import get_broker_catalog, get_broker_codes
 from app.services import notification
@@ -1083,9 +1083,32 @@ async def quant_pipeline_indicator_backtest(
         raise HTTPException(422, result["error"])
     result["symbol"] = symbol
     result["period"] = period
-    # XAI: 같은 종목의 LightGBM 판단 근거(SHAP)가 캐시에 있으면 함께 내려준다 (없으면 /api/ml/explain으로 생성)
-    cached_ai = await cache_get(f"ai_predict:v3:{symbol}", max_age_hours=3)
-    result["explanation"] = cached_ai.get("explanation") if cached_ai else None
+    return result
+
+
+@router.get("/quant/compare")
+async def quant_compare_strategies(
+    symbol: str = Query("005930.KS"),
+    period: str = Query("10y", pattern="^(1y|3y|5y|10y)$"),
+    strategies: str = Query("rsi,ma,bollinger,composite"),
+    cost_bps: float = Query(10.0, ge=0.0, le=500.0),
+    slippage_bps: float = Query(5.0, ge=0.0, le=500.0),
+    stop_loss_pct: float | None = Query(None, ge=0.1, le=90.0),
+    take_profit_pct: float | None = Query(None, ge=0.1, le=500.0),
+    _user=Depends(get_current_user),
+):
+    selected = list(dict.fromkeys(s.strip() for s in strategies.split(",") if s.strip()))
+    if not selected or any(s not in ("rsi", "ma", "bollinger", "composite") for s in selected):
+        raise HTTPException(422, "비교할 전략을 하나 이상 선택하세요: rsi, ma, bollinger, composite")
+    # Fetch once so parallel strategy requests cannot observe different prices.
+    candle_data = await get_candles(symbol, period=period, interval="1d")
+    candles = candle_data.get("candles", [])
+    if not candles:
+        raise HTTPException(404, f"종목 데이터 없음: {symbol}")
+    result = compare_strategies(candles, selected, cost_bps, slippage_bps, stop_loss_pct, take_profit_pct)
+    if "error" in result:
+        raise HTTPException(422, result["error"])
+    result.update(symbol=symbol, period=period, source=candle_data.get("source"))
     return result
 
 

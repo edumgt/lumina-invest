@@ -3,7 +3,6 @@
 import { checkPineV6 } from "/js/pine-lint.js";
 import { api, getMe, setToast, escHtml, fmt, fmtPct, colorPct } from "/js/common.js";
 import { compareTrayAdd, renderCompareTrayAll, tt } from "/js/core.js";
-import { renderXaiBlock } from "/js/robo.js";
 
 // ── 데이터 대기 모달 (모래시계 + 경과 시간) ────────────────────────
 // 조회가 몇 초 걸리는지 사용자가 알 수 있어야 "멈춘 화면"으로 오해하지 않는다.
@@ -433,48 +432,172 @@ async function loadSavedIndicators() {
 }
 
 // ── 투자 인디케이터: 성과 검증 (Python 백테스트) ───────────────────
-async function loadIndicatorBacktest() {
-  const sym = document.getElementById("ibt-symbol")?.value;
-  const strategy = document.getElementById("ibt-strategy")?.value;
-  if (!sym) return;
+const IBT_LABELS = { rsi:'RSI', ma:'이동평균', bollinger:'볼린저밴드', composite:'복합', buy_hold:'단순 보유' };
+const IBT_RULES = {
+  rsi:'RSI(14)가 30 미만이면 매수, 70 초과이면 매도합니다. 그 사이에서는 이전 보유 상태를 유지합니다.',
+  ma:'5일 평균이 20일 평균을 상향 교차하면 매수, 하향 교차하면 매도합니다.',
+  bollinger:'종가가 20일·2표준편차 밴드 하단보다 낮으면 매수, 상단보다 높으면 매도합니다.',
+  composite:'MA5 > MA20, RSI > 50, MACD > 신호선을 모두 만족하면 매수합니다. MA5 < MA20 또는 RSI > 75이면 매도합니다.',
+  buy_hold:'계산 시작 시 매수 후 계속 보유합니다. 진입 비용을 반영하고 손절·익절은 적용하지 않습니다.',
+};
+const ibtNum = value => value !== null && value !== undefined && Number.isFinite(Number(value)) ? Number(value) : null;
+const ibtPct = value => ibtNum(value) === null ? '데이터 없음' : `${Number(value) > 0 ? '+' : ''}${Number(value).toFixed(1)}%`;
+const ibtPoint = value => ibtNum(value) === null ? '데이터 없음' : `${Number(value) > 0 ? '+' : ''}${Number(value).toFixed(1)}%p`;
+const ibtDate = value => {
+  const date = value ? new Date(value) : null;
+  return date && Number.isFinite(date.getTime()) ? new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit'}).format(date) : '확인 불가';
+};
+let ibtChart = null;
+let ibtBusy = false;
+let ibtComparison = null;
+function selectedIbtStrategies() {
+  return [...document.querySelectorAll('input[name="ibt-strategies"]:checked')].map(el => el.value);
+}
+function loadIndicatorBacktest() {
+  const count = selectedIbtStrategies().length;
+  const button = document.getElementById('ibt-run-btn');
+  if (button && !ibtBusy) button.textContent = `선택한 ${count}개 전략 + 단순 보유 비교하기`;
+  const summary = document.getElementById('ibt-setting-summary');
+  if (summary) summary.textContent = `공통 비용: 수수료 ${document.getElementById('ibt-cost').value || '10'}bp + 체결 가격 차이 ${document.getElementById('ibt-slip').value || '0'}bp · 손절 ${document.getElementById('ibt-sl').value ? document.getElementById('ibt-sl').value + '%' : '미적용'} · 익절 ${document.getElementById('ibt-tp').value ? document.getElementById('ibt-tp').value + '%' : '미적용'} (선택한 매매 전략에 적용)`;
+  const el = document.getElementById('ibt-result');
+  if (el && !el.innerHTML) el.innerHTML = '<div class="card text-sm" style="color:var(--text-mute);">비교하기를 누르면 전략별 성과표, 수익 흐름 차트, XAI 판단근거를 함께 보여드립니다.</div>';
+}
+async function runIndicatorBacktest() {
+  if (ibtBusy) return;
+  const status = document.getElementById('ibt-status');
+  const selected = selectedIbtStrategies();
+  if (!selected.length) { status.textContent = '비교할 전략을 하나 이상 선택하세요.'; document.querySelector('input[name="ibt-strategies"]')?.focus(); return; }
+  for (const id of ['ibt-cost','ibt-slip','ibt-sl','ibt-tp']) {
+    const field = document.getElementById(id);
+    if (!field.checkValidity()) { field.closest('details').open = true; field.reportValidity(); return; }
+  }
+  const symbol = document.getElementById('ibt-symbol');
+  const period = document.getElementById('ibt-period');
+  const context = {symbol: symbol.options[symbol.selectedIndex].text, period:period.options[period.selectedIndex].text};
+  const q = new URLSearchParams({symbol:symbol.value,period:period.value,strategies:selected.join(','),
+    cost_bps:document.getElementById('ibt-cost').value || '10',slippage_bps:document.getElementById('ibt-slip').value || '0'});
+  for (const [id,key] of [['ibt-sl','stop_loss_pct'],['ibt-tp','take_profit_pct']]) {
+    const value = document.getElementById(id).value; if (value) q.set(key,value);
+  }
+  const controls = document.querySelectorAll('[data-view="indicator-backtest"] input, #ibt-symbol, #ibt-period, #ibt-select-all, #ibt-run-btn');
+  ibtBusy = true; controls.forEach(el => el.disabled = true);
+  document.getElementById('ibt-run-btn').textContent = '같은 데이터로 비교 계산 중…';
+  status.textContent = '가격 데이터를 한 번 조회하고 선택한 전략과 단순 보유를 계산하고 있습니다.';
+  ibtChart?.destroy(); ibtChart = null; ibtComparison = null;
+  document.getElementById('ibt-result').innerHTML = '';
   try {
-    const q = new URLSearchParams({ symbol: sym, period: "10y", strategy, cost_bps: document.getElementById("ibt-cost")?.value || "10", slippage_bps: document.getElementById("ibt-slip")?.value || "0" });
-    const sl = document.getElementById("ibt-sl")?.value, tp = document.getElementById("ibt-tp")?.value;
-    if (sl) q.set("stop_loss_pct", sl); if (tp) q.set("take_profit_pct", tp);
-    const data = await api(`/api/quant/pipeline?${q}`);
-    renderIndicatorBacktest(data);
-  } catch {}
+    const data = await api(`/api/quant/compare?${q}`);
+    if (data.error) throw new Error(data.error);
+    if (!Array.isArray(data.results) || data.results.length !== selected.length + 1 || !data.results.some(r => r.strategy === 'buy_hold')) throw new Error('비교 결과가 완전하지 않습니다. 다시 실행하세요.');
+    ibtComparison = {data,context};
+    renderIndicatorBacktest(data,context);
+    status.textContent = `${data.results.length}개 전략 비교 완료. 결과는 실행 당시의 설정 기준입니다.`;
+  } catch (error) {
+    ibtChart?.destroy(); ibtChart = null; ibtComparison = null;
+    status.textContent = '비교하지 못했습니다. 설정을 확인하고 다시 실행하세요.';
+    document.getElementById('ibt-result').innerHTML = `<div class="card" role="alert" style="color:var(--red);">${escHtml(error.message)}</div>`;
+  } finally { ibtBusy = false; controls.forEach(el => el.disabled = false); loadIndicatorBacktest(); }
 }
-
-function renderIndicatorBacktest(data) {
-  const el = document.getElementById("ibt-result");
-  if (!el || !data) return;
-  const strategy = document.getElementById("ibt-strategy")?.value || "rsi";
-  const strategyLabel = { rsi:"RSI 역추세", ma:"이동평균 교차", bollinger:"볼린저밴드", composite:"복합 인디케이터" }[strategy] || "";
-  el.innerHTML = `
-    <div class="grid md:grid-cols-4 gap-3">
-      ${[
-        { l:"전략",       v: strategyLabel, c:"var(--accent)" },
-        { l:"누적 수익률", v: `${data?.total_return_pct >= 0 ? "+" : ""}${Number(data?.total_return_pct || 0).toFixed(1)}%`, c:"var(--green)" },
-        { l:tt("샤프 비율","위험 대비 수익 지표. 높을수록 좋음","sharpe"),  v: Number(data?.sharpe_ratio || 0).toFixed(2), c:"var(--text)" },
-        { l:tt("최대 낙폭","전략 보유 기간 중 최악의 손실 구간(MDD)","mdd"),  v: `${Number(data?.mdd_pct || 0).toFixed(1)}%`, c:"var(--red)" },
-      ].map(c=>`<div class="card" style="padding:14px;text-align:center;"><div class="text-xs mb-1" style="color:var(--text-mute);">${c.l}</div><div style="font-size:18px;font-weight:700;color:${c.c};">${c.v}</div></div>`).join("")}
-    </div>
+function ibtLeaders(results,key,lowest = false) {
+  const valid = results.filter(r => ibtNum(r[key]) !== null);
+  if (!valid.length) return [];
+  const score = r => lowest ? Math.abs(Number(r[key])) : Number(r[key]);
+  const top = lowest ? Math.min(...valid.map(score)) : Math.max(...valid.map(score));
+  return valid.filter(r => score(r) === top);
+}
+function renderIndicatorBacktest(data,context) {
+  const leaders = [
+    {title:'누적 수익률 최고', rows:ibtLeaders(data.results,'total_return_pct'),key:'total_return_pct',format:ibtPct,help:'비용 반영 후 수익률 기준'},
+    {title:'최대 하락폭 최소', rows:ibtLeaders(data.results,'mdd_pct',true),key:'mdd_pct',format:ibtPct,help:'직전 최고 자산 대비 하락폭 기준'},
+    {title:'위험 대비 수익 최고', rows:ibtLeaders(data.results,'sharpe_ratio'),key:'sharpe_ratio',format:v=>Number(v).toFixed(2),help:'샤프 비율 기준 · 높을수록 우수'},
+  ];
+  const settings = data.settings || {};
+  const bestActive = ibtLeaders(data.results.filter(r=>r.strategy !== 'buy_hold'),'total_return_pct')[0] || data.results[0];
+  document.getElementById('ibt-result').innerHTML = `
     <div class="card">
-      <h3 class="font-semibold mb-2 text-sm">📊 Python 백테스트 상세</h3>
-      <table><thead><tr><th>비교 대상</th><th style="text-align:right;">누적 수익률</th><th style="text-align:right;">거래 횟수</th><th style="text-align:right;">${tt("승률","수익이 난 거래의 비율","win_rate")}</th></tr></thead>
-      <tbody><tr><td>${strategyLabel}</td><td style="text-align:right;color:${Number(data.total_return_pct)>=0?"var(--green)":"var(--red)"};">${Number(data.total_return_pct)>=0?"+":""}${Number(data.total_return_pct).toFixed(2)}%</td><td style="text-align:right;">${data.trade_count}회</td><td style="text-align:right;">${Number(data.win_rate_pct).toFixed(1)}%</td></tr><tr><td>매수 후 보유</td><td style="text-align:right;">${Number(data.buy_hold_return_pct).toFixed(2)}%</td><td style="text-align:right;">-</td><td style="text-align:right;">-</td></tr></tbody></table>
-      <p class="text-xs mt-2" style="color:var(--text-mute);">비용 차감 전 수익률 ${Number(data.gross_return_pct ?? data.total_return_pct).toFixed(1)}% → 수수료 ${data.cost_bps ?? 0}bp + 슬리피지 ${data.slippage_bps ?? 0}bp 로 누적 ${Number(data.cost_pct || 0).toFixed(2)}%p 차감 · 손절 ${data.stop_loss_pct ? data.stop_loss_pct + "% (" + data.stop_loss_exits + "회 발동)" : "미적용"} · 익절 ${data.take_profit_pct ? data.take_profit_pct + "% (" + data.take_profit_exits + "회 발동)" : "미적용"} · 신호는 다음 거래일 수익률에 적용됩니다.</p>
-      ${data.explanation ? renderXaiBlock(data.explanation) : ""}
-      <button type="button" class="btn-secondary text-xs mt-2" onclick='compareTrayAdd(${JSON.stringify({
-        source: "성과 검증 (Python)", label: `${strategyLabel}`,
-        summary: `수익률 ${Number(data.total_return_pct)>=0?"+":""}${Number(data.total_return_pct).toFixed(1)}% · 샤프 ${Number(data.sharpe_ratio||0).toFixed(2)} · MDD ${Number(data.mdd_pct||0).toFixed(1)}% · 승률 ${Number(data.win_rate_pct||0).toFixed(1)}%`,
-      }).replace(/'/g, "&#39;")}')">⚖️ 비교에 추가</button>
+      <h3 class="font-semibold">${escHtml(context.symbol)} · ${data.results.length}개 전략 비교 결과</h3>
+      <p class="text-xs mt-2" style="color:var(--text-mute);">${escHtml(context.period)} 요청 · 실제 계산 구간 ${ibtDate(data.data_start)} ~ ${ibtDate(data.data_end)} · ${data.data_points}개 일봉 · 모든 전략의 지표 준비 구간 동일</p>
+      <p class="text-xs mt-2">수수료 ${settings.cost_bps}bp + 체결 가격 차이 ${settings.slippage_bps}bp · 매매 전략의 손절 ${settings.stop_loss_pct ? settings.stop_loss_pct + '%' : '미적용'} / 익절 ${settings.take_profit_pct ? settings.take_profit_pct + '%' : '미적용'}</p>
+      <p class="text-xs mt-2" style="color:var(--text-mute);">${escHtml(data.benchmark_note || '')}</p>
+      <p class="text-xs mt-2" style="color:var(--text-mute);">아래 ‘최고·최소’는 이 종목·기간의 선택한 전략 내 비교입니다. 거래가 없거나 모두 손실이어도 순위는 표시됩니다.</p>
+    </div>
+    <div class="grid md:grid-cols-3 gap-3">${leaders.map(l=>`<div class="card"><p class="text-xs" style="color:var(--text-dim);">${l.title}</p><strong class="block mt-1" style="font-size:18px;color:var(--accent);">${l.rows.map(r=>IBT_LABELS[r.strategy]).join(' · ') || '데이터 없음'}${l.rows.length > 1 ? ' (공동)' : ''}</strong><p class="font-semibold mt-1">${l.rows.length ? l.format(l.rows[0][l.key]) : '—'}</p><p class="text-xs mt-1" style="color:var(--text-mute);">${l.help}</p></div>`).join('')}</div>
+    <div class="card">
+      <div class="flex flex-wrap justify-between items-center gap-2 mb-3"><h3 class="font-semibold">전략별 수익·위험 비교</h3><div><label for="ibt-sort" class="text-xs">정렬 </label><select id="ibt-sort" class="input text-xs" style="width:auto;max-width:100%;"><option value="return">수익률 높은 순</option><option value="drawdown">하락폭 작은 순</option><option value="sharpe">샤프 높은 순</option></select></div></div>
+      <p class="text-xs mb-2" style="color:var(--text-mute);">모바일에서는 표를 좌우로 밀어 확인하세요. ‘근거 보기’를 누르면 아래 설명이 바뀝니다.</p>
+      <div style="overflow-x:auto;max-width:100%;" tabindex="0" role="region" aria-label="전략 성과 비교표"><table style="min-width:780px;width:100%;"><caption class="text-xs mb-2" style="text-align:left;">수익률은 비용 반영 후 · 100만원 기준 금액은 계산 예시</caption><thead><tr><th scope="col">전략</th><th scope="col">누적 수익률</th><th scope="col">단순 보유 대비</th><th scope="col">최대 하락폭</th><th scope="col">샤프 비율</th><th scope="col">매수·매도 변경</th><th scope="col">100만원 →</th><th scope="col">설명</th></tr></thead><tbody id="ibt-comparison-rows"></tbody></table></div>
+    </div>
+    <div class="card"><h3 class="font-semibold mb-2">같은 시간축에서 수익 흐름 비교</h3><p class="text-xs mb-2" style="color:var(--text-mute);">최근 최대 252거래일 표시 · 누적 수익률은 전체 계산 시작일부터의 값입니다. 범례를 누르면 해당 전략을 숨기거나 다시 표시할 수 있습니다.</p><div id="ibt-chart" style="min-width:0;"></div></div>
+    <div class="card" id="ibt-xai-card">
+      <div class="flex flex-wrap items-center gap-3 mb-3"><h3 class="font-semibold">전략별 성과 해석 · XAI 판단근거</h3><div><label for="ibt-detail-strategy" class="text-xs">살펴볼 전략 </label><select id="ibt-detail-strategy" class="input text-xs" style="width:auto;">${data.results.map(r=>`<option value="${r.strategy}">${IBT_LABELS[r.strategy]}</option>`).join('')}</select></div></div>
+      <div id="ibt-strategy-detail" aria-live="polite"></div>
     </div>`;
+  document.getElementById('ibt-sort').addEventListener('change',renderIbtComparisonRows);
+  document.getElementById('ibt-detail-strategy').value = bestActive.strategy;
+  document.getElementById('ibt-detail-strategy').addEventListener('change', () => {renderIbtComparisonRows();renderIbtDetail();});
+  renderIbtComparisonRows();renderIbtDetail();
   renderCompareTrayAll();
+  if (typeof ApexCharts !== 'undefined' && data.results.every(r=>r.times?.length)) {
+    const colors = {rsi:'#2563eb',ma:'#059669',bollinger:'#d97706',composite:'#9333ea',buy_hold:'#64748b'};
+    ibtChart = new ApexCharts(document.getElementById('ibt-chart'),{
+      chart:{type:'line',height:310,toolbar:{show:false},background:'transparent',fontFamily:"'Pretendard Variable', 'Pretendard', sans-serif"},theme:{mode:'light'},
+      series:data.results.map(r=>({name:IBT_LABELS[r.strategy],data:r.times.map((t,i)=>[new Date(t).getTime(),r.cum_returns[i]])})),
+      colors:data.results.map(r=>colors[r.strategy]),stroke:{width:2,dashArray:data.results.map(r=>r.strategy === 'buy_hold' ? 5 : 0)},
+      xaxis:{type:'datetime'},yaxis:{labels:{formatter:v=>`${v.toFixed(1)}%`}},tooltip:{shared:true,x:{formatter:v=>ibtDate(v)},y:{formatter:v=>`${v.toFixed(2)}%`}},legend:{position:'bottom'},
+    });
+    ibtChart.render().catch(()=>{document.getElementById('ibt-chart').textContent='차트를 표시하지 못했습니다. 위 비교표에서 수치를 확인하세요.';});
+  } else document.getElementById('ibt-chart').textContent = '차트를 표시할 수 없습니다. 위 비교표에서 수치를 확인하세요.';
 }
-
-document.getElementById("ibt-run-btn")?.addEventListener("click", loadIndicatorBacktest);
+function renderIbtComparisonRows() {
+  if (!ibtComparison) return;
+  const sort = document.getElementById('ibt-sort').value;
+  const selected = document.getElementById('ibt-detail-strategy').value;
+  const score = r => sort === 'drawdown' ? Math.abs(ibtNum(r.mdd_pct) ?? Infinity) : -(ibtNum(r[sort === 'sharpe' ? 'sharpe_ratio' : 'total_return_pct']) ?? -Infinity);
+  const rows = [...ibtComparison.data.results].sort((a,b)=>score(a)-score(b));
+  document.getElementById('ibt-comparison-rows').innerHTML = rows.map(r=>`<tr data-strategy="${r.strategy}" style="${r.strategy === selected ? 'background:var(--surf2);' : ''}"><th scope="row">${IBT_LABELS[r.strategy]}${r.strategy === 'buy_hold' ? '<span class="block text-xs" style="color:var(--text-mute);">기준</span>' : ''}</th><td style="color:${Number(r.total_return_pct) < 0 ? 'var(--red)' : 'var(--green)'};font-weight:700;">${ibtPct(r.total_return_pct)}</td><td>${ibtPoint(r.excess_return_pct)}</td><td>${ibtPct(r.mdd_pct)}</td><td>${ibtNum(r.sharpe_ratio) === null ? '—' : Number(r.sharpe_ratio).toFixed(2)}</td><td>${r.trade_count}회</td><td>${ibtNum(r.total_return_pct) === null ? '—' : Math.round(1000000 * (1 + r.total_return_pct / 100)).toLocaleString('ko-KR') + '원'}</td><td><button type="button" class="btn-secondary text-xs ibt-detail-button" data-strategy="${r.strategy}" aria-pressed="${r.strategy === selected}" aria-label="${IBT_LABELS[r.strategy]} 근거 보기">근거 보기</button></td></tr>`).join('');
+  document.querySelectorAll('.ibt-detail-button').forEach(button=>button.addEventListener('click',()=>{
+    document.getElementById('ibt-detail-strategy').value=button.dataset.strategy;
+    renderIbtComparisonRows();renderIbtDetail();
+    document.getElementById('ibt-detail-strategy').focus({preventScroll:true});
+    document.getElementById('ibt-xai-card').scrollIntoView({behavior:'smooth',block:'start'});
+  }));
+}
+function renderIbtDetail() {
+  if (!ibtComparison) return;
+  const {data,context} = ibtComparison;
+  const selected = document.getElementById('ibt-detail-strategy').value;
+  const result = data.results.find(r=>r.strategy === selected);
+  const benchmark = data.results.find(r=>r.strategy === 'buy_hold');
+  if (!result) return;
+  const xai = result.explanation;
+  const conditions = (rows = []) => rows.map(r=>`<li class="rounded-lg p-3 mb-2" style="background:var(--surf2);overflow-wrap:anywhere;"><strong style="color:${r.matched ? 'var(--green)' : 'var(--text-mute)'};">${r.matched ? '✓ 충족' : '○ 미충족'} · ${escHtml(r.label)}</strong><div class="mt-1">조건: ${escHtml(r.rule)}</div><div style="color:var(--text-dim);">관측값: ${escHtml(r.observed)}</div></li>`).join('');
+  const gap = ibtNum(result.excess_return_pct);
+  const relation = gap === null ? '비교 데이터 없음' : gap > 0 ? `단순 보유보다 ${gap.toFixed(1)}%p 높은 수익률` : gap < 0 ? `단순 보유보다 ${Math.abs(gap).toFixed(1)}%p 낮은 수익률` : '단순 보유와 같은 수익률';
+  document.getElementById('ibt-strategy-detail').innerHTML = `
+    <h4 class="font-semibold mb-2">${IBT_LABELS[selected]} · ${relation}</h4>
+    <p class="text-sm mb-3">${escHtml(IBT_RULES[selected])}</p>
+    <div class="rounded-lg p-3 text-sm mb-4" style="background:var(--surf2);">
+      <p>① 수익: 비용 반영 후 <strong>${ibtPct(result.total_return_pct)}</strong> · 단순 보유 ${ibtPct(benchmark.total_return_pct)}</p>
+      <p>② 위험: 최대 하락폭 <strong>${ibtPct(result.mdd_pct)}</strong> · 단순 보유 ${ibtPct(benchmark.mdd_pct)}</p>
+      <p>③ 보유와 매매: ${result.holding_days}일 보유 (${Number(result.exposure_pct).toFixed(1)}%) · 포지션 변경 ${result.trade_count}회</p>
+      <p>④ 비용 영향: 비용 전 ${ibtPct(result.gross_return_pct)} → 비용 후 ${ibtPct(result.total_return_pct)} · 누적 수익률 차이 ${ibtNum(result.gross_return_pct) !== null && ibtNum(result.total_return_pct) !== null ? (result.gross_return_pct - result.total_return_pct).toFixed(2) : '—'}%p</p>
+      <p class="text-xs mt-2" style="color:var(--text-dim);">성과 차이는 보유 구간·매매 타이밍·비용을 합친 결과입니다. 아래 마지막 일봉의 신호는 전체 기간 성과와 구분해서 확인하세요.</p>
+    </div>
+    <h4 class="font-semibold mb-2">마지막 일봉의 매매 조건</h4>
+    ${xai?.kind === 'strategy_rules' ? `<p class="text-sm mb-3">${ibtDate(xai.as_of)} 기준: <strong>${{BUY:'매수 전환',SELL:'매도 전환',HOLD:'보유 상태 유지'}[xai.action] || '확인 불가'}</strong> · 기본 전략 상태: ${escHtml(xai.position)}</p><p class="text-xs mb-3" style="color:var(--text-mute);">이미 같은 상태라면 조건이 충족되어도 새 전환 신호는 발생하지 않습니다.</p><div class="grid md:grid-cols-2 gap-3"><div><h5 class="font-semibold mb-2">매수 · ${escHtml(xai.buy_logic)}</h5><ul>${conditions(xai.buy_conditions)}</ul></div><div><h5 class="font-semibold mb-2">매도 · ${escHtml(xai.sell_logic)}</h5><ul>${conditions(xai.sell_conditions)}</ul></div></div><p class="text-xs mt-3" style="color:var(--text-mute);">${escHtml(xai.scope)}</p>` : xai?.kind === 'buy_hold' ? `<p class="text-sm">${escHtml(xai.scope)}</p>` : '<p class="text-sm">이 전략의 조건별 설명이 제공되지 않았습니다.</p>'}
+    <details class="mt-4"><summary class="cursor-pointer text-sm">추가 계산 정보</summary><div class="text-xs space-y-2 mt-2"><p>수익이 난 보유일 비율 ${ibtPct(result.win_rate_pct)} · 거래별 승률이 아닙니다. 포지션 변경 횟수도 왕복 거래 횟수와 다릅니다.</p><p>손절 ${result.stop_loss_pct ? result.stop_loss_pct + '% · ' + result.stop_loss_exits + '회' : '미적용'} / 익절 ${result.take_profit_pct ? result.take_profit_pct + '% · ' + result.take_profit_exits + '회' : '미적용'} · 진입가 대비 종가 기준</p><p>당일 일봉 신호는 다음 거래일 수익률에 적용됩니다. 마지막 일봉은 장중에 값이 바뀔 수 있습니다. 과거 성과는 미래 수익을 보장하지 않습니다.</p></div></details>
+    <button id="ibt-add-compare" type="button" class="btn-secondary text-xs mt-3">이 전략 결과를 비교 목록에 저장</button>`;
+  document.getElementById('ibt-add-compare').addEventListener('click',()=>compareTrayAdd({source:'멀티 전략 비교',label:`${context.symbol} · ${IBT_LABELS[selected]} · ${context.period}`,summary:`수익률 ${ibtPct(result.total_return_pct)} · 단순 보유 대비 ${ibtPoint(result.excess_return_pct)} · 최대 하락 ${ibtPct(result.mdd_pct)} · 샤프 ${Number(result.sharpe_ratio).toFixed(2)} · 비용 ${data.settings.cost_bps}+${data.settings.slippage_bps}bp · 손절 ${result.stop_loss_pct ?? '없음'} / 익절 ${result.take_profit_pct ?? '없음'}`}));
+}
+document.getElementById('ibt-run-btn')?.addEventListener('click',runIndicatorBacktest);
+function ibtSettingsChanged() {
+  loadIndicatorBacktest();
+  const status = document.getElementById('ibt-status');
+  if (status) status.textContent = ibtComparison ? '설정이 변경되었습니다. 아래는 이전 설정의 결과입니다. 비교하기를 눌러 다시 계산하세요.' : '선택한 전략과 설정으로 비교하기를 누르세요.';
+}
+for (const id of ['ibt-symbol','ibt-period','ibt-cost','ibt-slip','ibt-sl','ibt-tp']) document.getElementById(id)?.addEventListener('change',ibtSettingsChanged);
+document.querySelectorAll('input[name="ibt-strategies"]').forEach(el=>el.addEventListener('change',ibtSettingsChanged));
+document.getElementById('ibt-select-all')?.addEventListener('click',()=>{document.querySelectorAll('input[name="ibt-strategies"]').forEach(el=>el.checked=true);ibtSettingsChanged();});
 
 // ── 투자 인디케이터: 증권사 API 자동화 ──────────────────────────────
 async function loadIndicatorApiSettings() {
