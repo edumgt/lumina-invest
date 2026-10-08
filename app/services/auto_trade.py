@@ -458,6 +458,87 @@ async def _place_live_order_via_gateway(
             "order_no": order.get("orderNo"), "client_order_id": client_order_id, "duplicate": result["duplicate"], "response": order}
 
 
+MANUAL_ORDER_MAX_QTY = 10_000
+
+
+class ManualOrderBlocked(Exception):
+    """화면에서 낸 주문을 막은 이유. message 는 사용자에게 그대로 보여 준다."""
+
+    def __init__(self, reason: str, message: str):
+        super().__init__(message)
+        self.reason = reason
+        self.message = message
+
+
+async def place_manual_kis_order(db: AsyncSession, user_id: str, symbol: str, name: str,
+                                 side: str, quantity: int, price: float | None = None) -> dict:
+    """사용자가 화면에서 직접 낸 KIS 모의투자 주문.
+
+    자동매매 사이클과 **같은 경로**(stock-coin-trade 게이트웨이 → live_orders 추적행 → 알림)를 쓴다.
+    다만 가상계좌 체결은 만들지 않는다 — 사이클이 만든 포지션과 섞이면 성과 집계가 어긋난다.
+    실전(real) 환경과 비상 정지 상태에서는 내지 않는다. 가격을 안 주면 현재가를 서버에서 조회한다
+    (클라이언트가 보낸 가격을 그대로 믿지 않는다).
+    """
+    from app.services import kis_quickstart   # 지연 import (순환 방지)
+    from app.services.stock import get_quote
+
+    side = str(side or "").strip().lower()
+    if side not in ("buy", "sell"):
+        raise ManualOrderBlocked("bad_side", "매수 또는 매도만 가능합니다.")
+    try:
+        quantity = int(quantity)
+    except (TypeError, ValueError):
+        raise ManualOrderBlocked("bad_quantity", "수량은 정수여야 합니다.")
+    if not 1 <= quantity <= MANUAL_ORDER_MAX_QTY:
+        raise ManualOrderBlocked("bad_quantity", f"수량은 1~{MANUAL_ORDER_MAX_QTY:,}주 사이여야 합니다.")
+
+    route = await kis_quickstart.resolve_route()
+    if not route.configured:
+        raise ManualOrderBlocked("not_connected", f"KIS 연동이 되어 있지 않습니다 — {route.detail}")
+    if route.environment != "paper":
+        raise ManualOrderBlocked("real_environment", "KIS 경로가 실전(real)이라 화면에서 내는 주문을 막습니다. 모의(Testbed)에서만 가능합니다.")
+
+    uid = _resolve_user_id(user_id)
+    broker_row = (await db.execute(select(BrokerSettings).where(BrokerSettings.user_id == uid))).scalar_one_or_none()
+    if broker_row and broker_row.risk_kill_switch:
+        raise ManualOrderBlocked("kill_switch",
+                                 f"비상 정지 상태입니다. 자동매매 현황에서 해제하세요. (사유: {broker_row.risk_halt_reason or '수동 정지'})")
+
+    if price is None:
+        quote = await get_quote(symbol)
+        price = quote.get("price")
+    if not price or float(price) <= 0:
+        raise ManualOrderBlocked("no_price", "현재가를 가져오지 못해 주문하지 않았습니다. 잠시 후 다시 시도하세요.")
+    price = float(price)
+
+    if gateway.is_configured():
+        result = await _place_live_order_via_gateway(db, broker_row, symbol, name or symbol, side, quantity, price, str(uid))
+    else:
+        creds = await kis_credentials.get_credentials()
+        if creds is None:
+            raise ManualOrderBlocked("not_connected", "KIS 자격증명을 가져오지 못했습니다.")
+        client = get_broker_client("kis", creds.app_key, creds.app_secret, paper=creds.paper)
+        try:
+            response = await client.place_order(creds.account_no, symbol, side, quantity, price)
+        except Exception as exc:
+            logger.warning("수동 KIS 주문 실패 (%s %s x%d): %s", side, symbol, quantity, exc)
+            await notification.notify_order_error(symbol=symbol, side=side, quantity=quantity, price=price,
+                                                  error=str(exc), user_id=str(uid))
+            result = {"status": "error", "broker": "kis", "via": "kis-direct", "environment": route.environment, "error": str(exc)}
+        else:
+            await notification.notify_order_placed(symbol=symbol, side=side, quantity=quantity, price=price,
+                                                   broker=f"KIS({route.environment})", user_id=str(uid))
+            result = {"status": "submitted", "broker": "kis", "via": "kis-direct",
+                      "environment": route.environment, "response": response}
+
+    await audit(str(uid), "", "order.manual_kis", {
+        "symbol": symbol, "side": side, "quantity": quantity, "price": price,
+        "via": result.get("via"), "status": result.get("status"), "environment": result.get("environment"),
+    })
+    return {**result, "symbol": symbol, "name": name or symbol, "side": side,
+            "quantity": quantity, "price": price, "amount": round(price * quantity)}
+
+
 def _live_order_type() -> str:
     """게이트웨이 주문 유형: 공격 모드면 QUANT_AGGRESSIVE_ORDER_TYPE(기본 MARKET), 아니면 env 기본값."""
     if aggressive_mode.is_enabled():

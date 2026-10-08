@@ -1,5 +1,6 @@
 """주가 데이터 서비스: Yahoo Finance API 기반."""
 import time
+import asyncio
 import httpx
 
 from app.config import settings
@@ -8,7 +9,7 @@ logger = logging.getLogger(__name__)
 from datetime import datetime, timezone
 from typing import Any
 
-from app.services.data_cache import cache_get, cache_set
+from app.services.data_cache import cache_get, cache_set, cache_info
 
 YAHOO_CHART = "https://query2.finance.yahoo.com/v8/finance/chart"
 HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; FinAgent/1.0)"}
@@ -107,29 +108,48 @@ async def get_quote(symbol: str) -> dict:
 
 _yahoo_session: dict = {"cookies": None, "crumb": None, "ts": 0.0}
 _CRUMB_TTL_SEC = 1800
+_yahoo_session_lock = asyncio.Lock()
 
 
-async def _get_yahoo_crumb() -> tuple[dict, str] | None:
-    """quoteSummary(v10)는 crumb+쿠키가 있어야 401을 피할 수 있다.
-    fc.yahoo.com에서 쿠키를 받고 getcrumb으로 crumb을 발급받는 흐름을 30분 캐싱한다.
-    """
-    now = time.time()
-    if _yahoo_session["crumb"] and now - _yahoo_session["ts"] < _CRUMB_TTL_SEC:
-        return _yahoo_session["cookies"], _yahoo_session["crumb"]
-    try:
-        async with httpx.AsyncClient(timeout=10.0, headers=HEADERS) as client:
-            await client.get("https://fc.yahoo.com")
-            resp = await client.get(
-                "https://query2.finance.yahoo.com/v1/test/getcrumb", cookies=client.cookies,
-            )
-            crumb = resp.text.strip()
-            cookies = dict(client.cookies)
-        if not crumb or "Invalid" in crumb or "<html" in crumb.lower():
+async def _get_yahoo_crumb(rejected_crumb: str | None = None) -> tuple[dict, str] | None:
+    """Share a validated cookie/crumb pair. Refresh a rejected pair only once."""
+    async with _yahoo_session_lock:
+        now = time.time()
+        if (_yahoo_session["crumb"] and now - _yahoo_session["ts"] < _CRUMB_TTL_SEC
+                and _yahoo_session["crumb"] != rejected_crumb):
+            return _yahoo_session["cookies"], _yahoo_session["crumb"]
+        try:
+            async with httpx.AsyncClient(timeout=10.0, headers=HEADERS) as client:
+                # fc.yahoo.com can return 404 while still issuing the needed cookie.
+                await client.get("https://fc.yahoo.com")
+                resp = await client.get("https://query2.finance.yahoo.com/v1/test/getcrumb", cookies=client.cookies)
+                resp.raise_for_status()
+                crumb = resp.text.strip()
+                cookies = dict(client.cookies)
+            if not crumb or any(c.isspace() for c in crumb) or "<" in crumb or not cookies:
+                return None
+            _yahoo_session.update({"cookies": cookies, "crumb": crumb, "ts": now})
+            return cookies, crumb
+        except (httpx.HTTPError, ValueError):
             return None
-        _yahoo_session.update({"cookies": cookies, "crumb": crumb, "ts": now})
-        return cookies, crumb
-    except Exception:
-        return None
+
+
+async def _fundamentals_fallback(symbol: str, cache_key: str, reason: str) -> dict:
+    """Clearly label older real data or quote-only results; never invent financials."""
+    old = await cache_get(cache_key, max_age_hours=168)
+    if old and not old.get("error"):
+        info = await cache_info(cache_key)
+        return {**old, "data_status": "stale", "cached_at": (info or {}).get("updated_at"),
+                "warning": f"재무 데이터 갱신 실패 ({reason}). 최대 7일 이내의 이전 조회 자료입니다."}
+    quote = await _yahoo_chart(symbol, "1d", "1d")
+    meta = (quote or {}).get("meta", {})
+    price = meta.get("regularMarketPrice")
+    name = next((c["name"] for c in QUANT_STOCKS if c["symbol"] == symbol), symbol)
+    return {"symbol": symbol, "name": name, "price": price,
+            "quarters": [], "revenue": [], "op": [], "net": [],
+            "source": "Yahoo Finance chart" if price is not None else None,
+            "data_status": "partial" if price is not None else "unavailable",
+            "warning": f"재무 데이터 조회 실패 ({reason}). " + ("가격만 제공하며 재무 지표는 N/A입니다." if price is not None else "현재 제공할 자료가 없습니다. 다시 조회하세요.")}
 
 
 def _raw(mod: dict | None, key: str) -> Any:
@@ -156,25 +176,40 @@ async def get_fundamentals(symbol: str) -> dict:
 
     session = await _get_yahoo_crumb()
     modules = "price,summaryDetail,defaultKeyStatistics,financialData,incomeStatementHistoryQuarterly,balanceSheetHistory"
-    params: dict[str, Any] = {"modules": modules}
-    cookies = None
-    if session:
+    reason = "인증 세션 발급 실패"
+    if not session:
+        return await _fundamentals_fallback(symbol, cache_key, reason)
+    r = None
+    for attempt in range(2):
         cookies, crumb = session
-        params["crumb"] = crumb
-
-    try:
-        async with httpx.AsyncClient(timeout=12.0, headers=HEADERS, cookies=cookies) as client:
-            resp = await client.get(
-                f"https://query1.finance.yahoo.com/v10/finance/quoteSummary/{symbol}", params=params,
-            )
-            resp.raise_for_status()
-            data = resp.json()
-        result = data.get("quoteSummary", {}).get("result")
-        if not result:
-            return {"symbol": symbol, "error": "데이터 없음"}
-        r = result[0]
-    except Exception as e:
-        return {"symbol": symbol, "error": f"조회 실패: {e}"}
+        try:
+            async with httpx.AsyncClient(timeout=12.0, headers=HEADERS, cookies=cookies) as client:
+                resp = await client.get(
+                    f"https://query{1 if attempt == 0 else 2}.finance.yahoo.com/v10/finance/quoteSummary/{symbol}",
+                    params={"modules": modules, "crumb": crumb},
+                )
+                resp.raise_for_status()
+                data = resp.json()
+            result = data.get("quoteSummary", {}).get("result")
+            if not result:
+                reason = "외부 제공 자료 없음"
+                break
+            r = result[0]
+            break
+        except httpx.HTTPStatusError as exc:
+            status = exc.response.status_code
+            reason = f"외부 HTTP {status}"
+            if status in (401, 403) and attempt == 0:
+                session = await _get_yahoo_crumb(rejected_crumb=crumb)
+                if not session:
+                    break
+            elif status not in (429, 500, 502, 503, 504):
+                break
+        except (httpx.RequestError, ValueError):
+            reason = "외부 연결 지연 또는 응답 오류"
+    if r is None:
+        # Do not forward upstream URLs or cookies/crumbs in client errors.
+        return await _fundamentals_fallback(symbol, cache_key, reason)
 
     price_mod = r.get("price", {})
     summary = r.get("summaryDetail", {})
@@ -203,11 +238,17 @@ async def get_fundamentals(symbol: str) -> dict:
 
     fundamentals = {
         "symbol": symbol,
+        "data_status": "complete",
+        "source": "Yahoo Finance quoteSummary",
         "name": price_mod.get("longName") or price_mod.get("shortName") or symbol,
         "price": _raw(price_mod, "regularMarketPrice"),
         "chg": _pct(price_mod, "regularMarketChangePercent"),
         "cap": _eok(_raw(price_mod, "marketCap") or _raw(summary, "marketCap")),
+        # PER 은 실적(trailing) 우선, 없으면 전망(forward). 어느 쪽인지 perBasis 로 알려 준다 —
+        # 둘을 같은 'PER' 로 섞어 보여 주면 투자 판단에서 의미가 달라진다.
         "per": _raw(summary, "trailingPE") or _raw(stats, "forwardPE"),
+        "perBasis": ("trailing" if _raw(summary, "trailingPE") is not None
+                     else "forward" if _raw(stats, "forwardPE") is not None else None),
         "pbr": _raw(stats, "priceToBook"),
         "eps": _raw(stats, "trailingEps"),
         "bps": _raw(stats, "bookValue"),

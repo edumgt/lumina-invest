@@ -982,3 +982,41 @@ curl -sk --resolve pr.edumgt.co.kr:443:43.201.229.188 -o /dev/null -w '%{http_co
 **검증(서버 실측, 2026-10-08 10:05~10:17 KST)**: `QUANT_AGGRESSIVE_MODE=true` 로 5분봉 사용. `data_cache` 의 `candles:005930.KS:5d:5m` 에 삼성전자 5분봉이 실제로 적재돼 있고(267,500 → 266,500원, 봉별 거래량 8만~25만주), 마지막 봉 시각이 조회 시점과 1~4분 차이. 근거 문구는 `score_intraday()`·`_generate_signal()` 이 그 종가 배열로 계산한 RSI·MA5/MA20·모멘텀 수치 그대로다. 신호 경로에 난수·더미·하드코딩 데이터는 없다(`mock` 은 체결 브로커 이름일 뿐 시세와 무관).
 
 **남은 데이터 품질 이슈(미수정, 거래 로직이 바뀌므로 판단 필요)**: Yahoo 분봉 응답의 **마지막 봉은 미완성 의사(擬似) 봉**이다 — 5분 경계가 아닌 현재 시각(`time: 1791421035`), `volume: 0`, 시·고·저·종가가 모두 현재가. 현재가 자체는 실제값이라 `current_price` 로는 맞지만, 이 봉이 RSI·MA·모멘텀 계산에 한 점으로 들어가 지표를 약간 둔화시킨다. 완성봉만으로 지표를 계산하고 현재가는 따로 쓰려면 `_intraday_candles` 에서 마지막 봉을 분리해야 한다.
+
+### 6-31. 2026-10-08 섹터 인디케이터(#company-sector) — 정적 목업을 실측 집계로 교체 + 투자 판단 지표·근거 보강 (사용자 요청)
+
+종전 `loadCompanySector()` 는 **API 호출이 전혀 없는 하드코딩 배열**이었다(6개 섹터, PER·PBR·「전망」이 모두 가짜. `completion.js` 에도 "정적 목업 42%" 로 기재돼 있었다). 실제 데이터 기반으로 새로 만들고 지표를 대폭 늘렸다.
+
+| 변경 | 내용 |
+|------|------|
+| `app/services/sector_indicators.py` (신설) | QUANT_STOCKS 31종목·3섹터를 펀더멘털(Yahoo quoteSummary)+2년 일봉에서 집계. 배수(PER·PBR·PSR·EV/EBITDA)는 **시총가중 조화평균 + 중위값** 동시 표기, 비율(ROE·ROA·마진·성장·D/E·유동비율)은 시총가중 산술평균, 가격은 **시총 비중 고정 섹터 인덱스**를 만들어 1/3/6/12개월 수익률·20일 변동성(연율)·52주 위치·RSI(14)·MA20/60 이격을 계산. 시장폭(20일선 위·60일선 위·1개월 상승 종목 비중), KOSPI(`^KS11`) 대비 초과수익, 섹터 간 상대점수(모멘텀30·수익성25·성장20·밸류15·안정성10, 백분위 가중합)와 판정(≥60 비중확대 / ≤40 비중축소), 수치를 인용한 근거 문장, 구성종목별 상세 지표 |
+| `app/routes/stocks.py` | `GET /api/stocks/sectors?force=` 신설(1시간 캐시, 실패 시 502). 모듈 `logger` 추가 |
+| `app/services/stock.py` | `get_candles` 응답에 `source` 기록(6-30과 공유). `get_fundamentals` 에 **`perBasis`**(trailing/forward) 추가 — 국내 종목은 Yahoo 가 trailingPE 를 거의 안 줘서 전부 forwardPE 로 채워지는데, 둘을 같은 'PER' 로 섞으면 판단이 달라진다 |
+| `public/app.html`·`public/js/company.js` | 뷰 재구성: 헤더(유니버스·계산시각·캐시 여부·새로고침/재계산) → 벤치마크 수익률 → **섹터 비교 표**(상대점수·판정·시총·PER·ROE·매출성장·3개월·vs KOSPI·20일선 위·RSI) → 섹터별 상세 카드(팩터 점수 막대 + 밸류/수익성/성장·안정성/가격·시장폭 4그룹 22개 지표 + 「📌 판단 근거」 + 「📡 데이터 출처」 + 구성종목 접이식 표 13열). 결측은 **N/A + 커버리지 표기**(지어내지 않음) |
+| `public/js/core.js`·`completion.js` | 화면 설명을 실제 내용으로 교체, 평가를 42% "정적 목업" → 86% "재무·가격 API 연결" |
+| 테스트 | `tests/test_sector_indicators.py` 신설 4개(가중 집계의 결측·적자 제외, 백분위 방향, 섹터 인덱스 공통일자·비중, 일봉 결측 종목의 errors·점수·근거·구성종목 정렬). 전체 **261 passed** |
+
+**실측 검증(2026-10-08, 라이브 Yahoo)**: 라우트 200. 반도체 상대점수 65.0(비중확대)·3개월 -21.96%·12개월 +305.28%·KOSPI 대비 12개월 +209.55%p·20일선 위 92%, K뷰티 50.0(중립)·3개월 초과 +19.11%p, IT 35.0(비중축소)·52주 위치 1.3%. KOSPI 1/3/6/12개월 +2.49/-16.63/+23.09/+95.73%.
+
+**남은 제약(화면에 그대로 표기됨)**:
+- **PBR 커버리지 0** — Yahoo 가 국내 상장사 `priceToBook` 을 주지 않는다. 그래서 밸류 팩터에 PSR·EV/EBITDA 를 함께 넣었고 PBR 은 N/A 로 표시한다.
+- **PER 은 전량 forward** (`per_basis: {trailing: 0, forward: 11}`) — 카드의 📡 줄에 "PER 근거: 실적 n종목 / 전망 m종목" 으로 적는다.
+- **더존비즈온(012510.KQ) 일봉 없음** — Yahoo 가 `.KQ` 로는 빈 배열, `.KS` 는 404 를 준다(상장시장 변경 추정). 섹터 인덱스에서 제외하고 `basis.errors` 에 표기. 유니버스 수정은 사용자 판단 필요.
+- 섹터 인덱스 비중은 과거 시총 시계열이 없어 **현재 시총으로 고정**한 근사다(카드 집계 설명에 명시).
+- 섹터가 3개뿐이라 상대점수의 백분위가 거칠다(33/50/83 등). 자동차·금융·2차전지 등 섹터를 늘리려면 QUANT_STOCKS 유니버스 확장이 필요 — 이는 자동매매 대상 종목도 같이 바뀌므로 사용자 결정 사항.
+
+### 6-32. 2026-10-08 기본 인디케이터 전략(#indicator-strategy) — 조회 대기 모달 + KIS 모의투자 수동 거래 (사용자 요청)
+
+요구: ① 전략 분석 클릭 후 데이터가 나올 때까지 모래시계 모달로 지연시간 표기, ② 거래 버튼을 활성화해 클릭 시 몇 주 거래할지 모달로 받고 KIS 모의투자 거래로 연결.
+
+| 변경 | 내용 |
+|------|------|
+| `app/services/auto_trade.py` | `place_manual_kis_order()`·`ManualOrderBlocked`·`MANUAL_ORDER_MAX_QTY(10,000)` 신설. **자동매매와 같은 경로**(stock-coin-trade 게이트웨이 → `live_orders` 추적행 → 알림 → 감사로그 `order.manual_kis`)를 재사용하고, 게이트웨이 미설정 시 `kis_credentials` 직접 호출로 폴백. 가상계좌 체결은 만들지 않는다(사이클 포지션과 섞이면 성과 집계가 어긋남) |
+| 〃 가드 | 매수/매도 외 거부 · 수량 1~10,000 · `resolve_route()` 미연동 거부 · **실전(real) 환경 거부**(모의 Testbed 에서만) · 비상정지 거부 · 현재가 조회 실패 시 주문 안 함. **가격은 서버가 `stock.get_quote` 로 정한다**(클라이언트 값 불신) |
+| `app/routes/stocks.py` | `POST /api/stocks/quant/manual-order`(차단 사유는 422 + 사용자 문구), `GET /api/stocks/quant/order-readiness`(연동·환경·비상정지·장 운영시간·최대수량) |
+| `public/app.html` | 「전략 분석」 옆에 `💰 KIS 모의투자 거래` 버튼(분석 전 `disabled`). 공통 대기 모달 `#app-loading-modal`(모래시계+경과초), 주문 모달 `#kis-trade-modal`(종목·현재가·신호 / 매수·매도 / 수량 입력 + 1·5·10·50주 / 예상금액 / 주문가능 안내) |
+| `public/css/app.css` | `.app-modal`·`.app-modal-box` 공통 모달, `.app-hourglass` 회전(`prefers-reduced-motion` 존중), 대기 모달 z-index 10010(주문 모달 위), `button:disabled` 스타일 |
+| `public/js/indicator.js` | `showLoadingModal/hideLoadingModal`(100ms 간격 경과시간 갱신), 분석 핸들러를 try/finally 로 감싸 버튼 잠금·모달 해제. 성공 시 `_tradeCtx`(종목·현재가·신호) 저장하고 거래 버튼 활성화(현재가 없으면 비활성). 주문 모달: 열 때 readiness 조회해 불가 사유 표시·전송 버튼 잠금, 장외시간 경고, confirm 후 전송, Escape·배경 클릭으로 닫기 |
+| 테스트 | `tests/test_manual_kis_order.py` 신설 **11개**(side·수량 경계, 실전/미연동/비상정지/현재가없음 차단, 서버측 가격 사용과 게이트웨이 인자, 매도, 라우트 422 문구·바디 검증·결과 전달·readiness 사유). 전체 **272 passed** |
+
+주의: 장 운영시간 밖에서는 게이트웨이가 `status: "skipped", reason: "market_closed"` 를 돌려주므로 주문이 나가지 않는다 — 모달에서 미리 경고하고, 전송 결과도 토스트로 구분해 보여 준다.

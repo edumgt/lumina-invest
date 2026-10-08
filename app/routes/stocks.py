@@ -31,6 +31,7 @@ from app.services import paper_trading
 from app.services.data_cache import cache_get, cache_set
 from app.services.sync_scheduler import KEY_MARKET_INDICES
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
 DEFAULT_BROKER = "mock"
 
@@ -147,6 +148,20 @@ async def stock_fundamentals(symbol: str = Query(..., description="예: 005930.K
     if data.get("error"):
         raise HTTPException(502, data["error"])
     return data
+
+
+@router.get("/stocks/sectors")
+async def stock_sectors(force: bool = Query(False, description="캐시 무시하고 재계산")):
+    """섹터별 투자 인디케이터 — 밸류에이션·수익성·성장·안정성·가격모멘텀·시장폭 + 판단 근거.
+
+    QUANT_STOCKS 유니버스를 섹터로 묶어 실제 펀더멘털·일봉에서 계산한다(1시간 캐시).
+    """
+    from app.services import sector_indicators
+    try:
+        return await sector_indicators.sector_overview(force=force)
+    except Exception as exc:
+        logger.exception("섹터 인디케이터 계산 실패")
+        raise HTTPException(502, f"섹터 지표 계산 실패: {exc}") from exc
 
 
 @router.get("/stocks/signals")
@@ -718,6 +733,45 @@ async def broker_ohlcv(
         return {"candles": rows}
     except Exception as e:
         raise HTTPException(502, f"증권사 API 오류: {e}")
+
+
+class ManualKisOrderBody(BaseModel):
+    """「기본 인디케이터 전략」 화면의 수동 KIS 모의투자 주문."""
+    symbol:   str
+    name:     str | None = None
+    side:     str = Field(pattern="^(buy|sell)$")
+    quantity: int = Field(ge=1, le=10_000)
+
+
+@router.post("/stocks/quant/manual-order")
+async def quant_manual_order(body: ManualKisOrderBody, user=Depends(get_current_user),
+                             db: AsyncSession = Depends(get_pg_session)):
+    """화면에서 직접 내는 KIS 모의투자 주문 — 자동매매와 같은 게이트웨이·추적 경로를 쓴다.
+
+    가격은 서버가 현재가로 정한다(클라이언트 값 불신). 실전 환경·비상정지는 422 로 막는다.
+    """
+    try:
+        return await auto_trade.place_manual_kis_order(
+            db, user["id"], body.symbol, body.name or body.symbol, body.side, body.quantity)
+    except auto_trade.ManualOrderBlocked as exc:
+        raise HTTPException(422, exc.message)
+
+
+@router.get("/stocks/quant/order-readiness")
+async def quant_order_readiness(user=Depends(get_current_user), db: AsyncSession = Depends(get_pg_session)):
+    """거래 버튼을 켜도 되는지 — KIS 연동·환경(모의/실전)·비상정지·장 운영시간."""
+    from app.services import kis_quickstart
+    from app.services.brokers import stock_coin_trade_gateway as gw
+    r = await kis_quickstart.readiness(db, uuid.UUID(user["id"]))
+    market_open = gw.is_krx_market_open()
+    blocked = (not r["connected"] and "not_connected") or \
+              (r["environment"] != "paper" and "real_environment") or \
+              (r["kill_switch"] and "kill_switch") or ""
+    return {"can_order": not blocked, "reason": blocked, "environment": r["environment"],
+            "route": r["route"], "route_detail": r["route_detail"], "connected": r["connected"],
+            "kill_switch": r["kill_switch"], "market_open": market_open,
+            "enforce_market_hours": gw.enforce_market_hours(),
+            "max_quantity": auto_trade.MANUAL_ORDER_MAX_QTY}
 
 
 class BrokerOrderBody(BaseModel):

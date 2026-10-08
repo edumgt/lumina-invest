@@ -445,6 +445,40 @@
     /* ── Sub-panel ──────────────────────────────────── */
     .panel { background: var(--surf2); border: 1px solid var(--border); border-radius: 8px; padding: 14px; }
 
+    /* ── 공통 모달(데이터 대기 · KIS 주문) ───────────────── */
+    .app-modal {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 10000;
+      background: rgba(15,23,42,0.45);
+      backdrop-filter: blur(2px);
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+    }
+    .app-modal.open { display: flex; }
+    /* 대기 모달은 주문 모달 위에 떠야 한다(주문 전송 중에도 경과 시간이 보이도록) */
+    #app-loading-modal { z-index: 10010; }
+    button:disabled { opacity: .5; cursor: not-allowed; }
+    .app-modal-box {
+      background: var(--surf);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      width: 100%;
+      max-width: 420px;
+      padding: 18px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.18);
+    }
+    /* 모래시계: 데이터가 오는 동안 돌려 '멈춘 화면'이 아님을 보여 준다 */
+    .app-hourglass { font-size: 34px; display: inline-block; animation: app-hourglass-turn 1.2s ease-in-out infinite; }
+    @keyframes app-hourglass-turn {
+      0%, 55%  { transform: rotate(0deg); }
+      70%, 100% { transform: rotate(180deg); }
+    }
+    @media (prefers-reduced-motion: reduce) { .app-hourglass { animation: none; } }
+    .kis-side-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
     /* ── 종목 검색 모달 ─────────────────────────────── */
     #stock-search-modal {
       display: none;

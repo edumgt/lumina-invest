@@ -1137,7 +1137,7 @@
         <h2 class="text-lg font-semibold mb-1">📋 투자 지표 비교 분석</h2>
         <p class="text-xs mb-4" style="color:var(--text-mute);">KIS 모의투자 분석 후보 30개 종목을 세로 행, 펀더멘털 지표 30개를 가로 열로 비교합니다. 열 제목으로 정렬·필터를 사용하고 가로로 스크롤하여 전체 지표를 확인하세요.</p>
         <div class="flex items-center justify-between gap-2 mb-3"><p id="co-compare-status" class="text-xs" role="status" aria-live="polite"></p><button id="co-compare-refresh" class="btn-secondary text-xs">새로고침</button></div>
-        <p class="text-xs mb-3" style="color:var(--text-mute);">출처: Yahoo Finance · 서버 캐시 최대 6시간 · N/A는 미제공 또는 조회 실패입니다. 지표별 결산 기간은 다를 수 있습니다. D/E는 차입금 기준입니다.</p>
+        <p class="text-xs mb-3" style="color:var(--text-mute);">출처: Yahoo Finance · 정상 캐시 최대 6시간 · 갱신 실패 시 최대 7일 이내의 이전 자료를 표시합니다. 조회 상태가 ‘가격만 조회’ 또는 ‘조회 불가’이면 재무 지표는 N/A입니다. 지표별 결산 기간은 다를 수 있습니다. D/E는 차입금 기준입니다.</p>
         <div id="co-compare-table" style="height:70vh;min-height:400px;width:100%;" aria-label="종목별 펀더멘털 AG Grid 비교"></div>
       </div>
     </div>
@@ -1270,10 +1270,27 @@
     </div>
 
     <div class="view" data-view="company-sector">
-      <div class="card">
-        <h2 class="text-lg font-semibold mb-1">🗂️ 섹터별 투자 인디케이터</h2>
-        <p class="text-xs mb-4" style="color:var(--text-mute);">산업·섹터별 밸류에이션 및 수익성 지표를 비교 분석합니다</p>
-        <div id="co-sector-cards" class="grid md:grid-cols-3 gap-4"></div>
+      <div class="space-y-4">
+        <div class="card">
+          <div class="flex items-start justify-between gap-3 flex-wrap mb-1">
+            <div>
+              <h2 class="text-lg font-semibold">🗂️ 섹터별 투자 인디케이터</h2>
+              <p class="text-xs mt-1" style="color:var(--text-mute);">자동매매 유니버스를 섹터로 묶어 밸류에이션·수익성·성장·재무안정성·가격모멘텀·시장폭을 실제 펀더멘털·일봉에서 계산합니다</p>
+            </div>
+            <div class="flex items-center gap-2">
+              <button id="co-sector-refresh" class="btn-secondary text-xs">새로고침</button>
+              <button id="co-sector-recalc" class="btn-secondary text-xs" title="캐시를 버리고 Yahoo 에서 다시 받아 재계산합니다(수십 초)">재계산</button>
+            </div>
+          </div>
+          <div id="co-sector-meta" class="text-xs" style="color:var(--text-mute);"></div>
+          <div id="co-sector-bench" class="mt-3"></div>
+        </div>
+        <div class="card">
+          <h3 class="font-semibold mb-3 text-sm">📋 섹터 비교</h3>
+          <div class="overflow-x-auto"><table id="co-sector-table" class="w-full text-xs"></table></div>
+          <div id="co-sector-rule" class="text-xs mt-2" style="color:var(--text-mute);"></div>
+        </div>
+        <div id="co-sector-cards" class="space-y-4"></div>
       </div>
     </div>
 
@@ -1716,8 +1733,9 @@
                 <option value="2y">2년</option>
               </select>
             </div>
-            <div class="col-span-2 flex items-end">
+            <div class="col-span-2 flex items-end gap-2">
               <button id="ind-load-btn" class="btn-primary">전략 분석</button>
+              <button id="ind-trade-btn" class="btn-green" disabled title="전략 분석을 먼저 실행하세요">💰 KIS 모의투자 거래</button>
             </div>
           </div>
 
@@ -2516,6 +2534,51 @@ RC_i = wi × (Σw)_i / √(w'Σw)
 <script type="module" src="/js/main.js"></script>
 
 <!-- 종목 검색 모달 -->
+<!-- 데이터 조회 대기 모달: 모래시계 + 경과 시간 -->
+<div id="app-loading-modal" class="app-modal" role="dialog" aria-modal="true" aria-live="polite" aria-label="불러오는 중">
+  <div class="app-modal-box" style="max-width:340px;text-align:center;">
+    <div class="app-hourglass" aria-hidden="true">⏳</div>
+    <div id="app-loading-title" class="font-semibold" style="margin-top:10px;">불러오는 중…</div>
+    <div id="app-loading-desc" class="text-xs" style="color:var(--text-mute);margin-top:6px;"></div>
+    <div id="app-loading-elapsed" style="font-size:24px;font-weight:700;margin-top:12px;font-variant-numeric:tabular-nums;">0.0초</div>
+    <div class="text-xs" style="color:var(--text-mute);margin-top:4px;">데이터가 표시될 때까지 기다려 주세요</div>
+  </div>
+</div>
+
+<!-- KIS 모의투자 주문 모달 -->
+<div id="kis-trade-modal" class="app-modal" role="dialog" aria-modal="true" aria-label="KIS 모의투자 주문">
+  <div class="app-modal-box">
+    <div class="flex items-center justify-between mb-3">
+      <h3 class="font-semibold text-sm">💰 KIS 모의투자 주문</h3>
+      <button id="kis-trade-close" style="background:none;border:none;cursor:pointer;color:var(--text-mute);font-size:18px;">✕</button>
+    </div>
+    <div id="kis-trade-stock" class="rounded-lg p-3 mb-3 text-sm" style="background:var(--surf2);border:1px solid var(--border);"></div>
+    <div class="mb-3">
+      <label class="text-xs font-semibold" style="color:var(--text-dim);">주문 구분</label>
+      <div class="flex gap-2 mt-1">
+        <button type="button" class="btn-secondary text-xs kis-side-btn" data-side="buy">매수</button>
+        <button type="button" class="btn-secondary text-xs kis-side-btn" data-side="sell">매도</button>
+      </div>
+    </div>
+    <div class="mb-3">
+      <label class="text-xs font-semibold" for="kis-trade-qty" style="color:var(--text-dim);">수량 (주)</label>
+      <input id="kis-trade-qty" class="input mt-1" type="number" min="1" step="1" value="1" inputmode="numeric" />
+      <div class="flex gap-2 mt-2">
+        <button type="button" class="btn-secondary text-xs kis-qty-btn" data-qty="1">1주</button>
+        <button type="button" class="btn-secondary text-xs kis-qty-btn" data-qty="5">5주</button>
+        <button type="button" class="btn-secondary text-xs kis-qty-btn" data-qty="10">10주</button>
+        <button type="button" class="btn-secondary text-xs kis-qty-btn" data-qty="50">50주</button>
+      </div>
+    </div>
+    <div id="kis-trade-amount" class="text-sm mb-3"></div>
+    <div id="kis-trade-note" class="text-xs mb-3" style="color:var(--text-mute);"></div>
+    <div class="flex gap-2 justify-end">
+      <button id="kis-trade-cancel" class="btn-secondary text-xs">취소</button>
+      <button id="kis-trade-submit" class="btn-green text-xs">주문 전송</button>
+    </div>
+  </div>
+</div>
+
 <div id="stock-search-modal" role="dialog" aria-modal="true" aria-label="종목 검색">
   <div class="ssm-box">
     <div class="ssm-header">

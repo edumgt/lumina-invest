@@ -5,14 +5,147 @@ import { api, getMe, setToast, escHtml, fmt, fmtPct, colorPct } from "/js/common
 import { compareTrayAdd, renderCompareTrayAll, tt } from "/js/core.js";
 import { renderXaiBlock } from "/js/robo.js";
 
+// ── 데이터 대기 모달 (모래시계 + 경과 시간) ────────────────────────
+// 조회가 몇 초 걸리는지 사용자가 알 수 있어야 "멈춘 화면"으로 오해하지 않는다.
+let _loadingTimer = null;
+function showLoadingModal(title, desc = "") {
+  const modal = document.getElementById("app-loading-modal");
+  if (!modal) return;
+  document.getElementById("app-loading-title").textContent = title;
+  document.getElementById("app-loading-desc").textContent = desc;
+  const elapsedEl = document.getElementById("app-loading-elapsed");
+  const started = performance.now();
+  elapsedEl.textContent = "0.0초";
+  modal.classList.add("open");
+  clearInterval(_loadingTimer);
+  _loadingTimer = setInterval(() => {
+    elapsedEl.textContent = `${((performance.now() - started) / 1000).toFixed(1)}초`;
+  }, 100);
+}
+function hideLoadingModal() {
+  clearInterval(_loadingTimer);
+  _loadingTimer = null;
+  document.getElementById("app-loading-modal")?.classList.remove("open");
+}
+
+// ── KIS 모의투자 주문 모달 ─────────────────────────────────────────
+// 전략 분석 결과(종목·현재가·신호)를 그대로 받아 몇 주 거래할지 입력받고,
+// 자동매매와 같은 경로(/api/stocks/quant/manual-order)로 KIS 모의계좌에 주문을 보낸다.
+let _tradeCtx = null;   // { symbol, name, price, signal }
+let _tradeSide = "buy";
+
+function tradeModalEl(id) { return document.getElementById(id); }
+
+function renderTradeAmount() {
+  const qty = Math.max(0, parseInt(tradeModalEl("kis-trade-qty").value, 10) || 0);
+  const amount = (_tradeCtx?.price || 0) * qty;
+  tradeModalEl("kis-trade-amount").innerHTML = qty
+    ? `예상 ${_tradeSide === "buy" ? "매수" : "매도"} 금액 <strong>${fmt(Math.round(amount))}원</strong> <span class="text-xs" style="color:var(--text-mute);">(${fmt(Math.round(_tradeCtx?.price || 0))}원 × ${qty}주)</span>`
+    : `<span class="text-xs" style="color:var(--red);">수량을 1주 이상 입력하세요</span>`;
+}
+
+function setTradeSide(side) {
+  _tradeSide = side;
+  document.querySelectorAll(".kis-side-btn").forEach(b => b.classList.toggle("active", b.dataset.side === side));
+  renderTradeAmount();
+}
+
+async function openTradeModal() {
+  if (!_tradeCtx) { setToast("전략 분석을 먼저 실행하세요", "error"); return; }
+  const modal = tradeModalEl("kis-trade-modal");
+  const note = tradeModalEl("kis-trade-note");
+  const submit = tradeModalEl("kis-trade-submit");
+  tradeModalEl("kis-trade-stock").innerHTML = `
+    <div class="font-semibold">${escHtml(_tradeCtx.name)} <span class="text-xs" style="color:var(--text-mute);">${escHtml(_tradeCtx.symbol)}</span></div>
+    <div class="text-xs mt-1" style="color:var(--text-mute);">현재가 ${fmt(Math.round(_tradeCtx.price))}원 · 전략 신호 ${escHtml(_tradeCtx.signal || "HOLD")}</div>`;
+  tradeModalEl("kis-trade-qty").value = 1;
+  setTradeSide(_tradeCtx.signal === "SELL" ? "sell" : "buy");
+  submit.disabled = true;
+  note.innerHTML = "주문 가능 여부를 확인하는 중…";
+  modal.classList.add("open");
+
+  try {
+    const r = await api("/api/stocks/quant/order-readiness");
+    const lines = [`경로: ${escHtml(r.route_detail || r.route || "미연동")}`];
+    if (!r.can_order) {
+      lines.push(`<span style="color:var(--red);">주문 불가 — ${escHtml({
+        not_connected: "KIS 연동이 되어 있지 않습니다.",
+        real_environment: "KIS 경로가 실전(real)이라 화면 주문을 막습니다.",
+        kill_switch: "비상 정지 상태입니다. 자동매매 현황에서 해제하세요.",
+      }[r.reason] || r.reason)}</span>`);
+    } else if (r.enforce_market_hours && !r.market_open) {
+      lines.push(`<span style="color:var(--red);">지금은 장 운영시간이 아닙니다 — 주문이 전송되지 않고 건너뜁니다.</span>`);
+    } else {
+      lines.push(`KIS 모의(Testbed) 계좌로 실제 모의주문이 전송됩니다. 실전계좌가 아닙니다.`);
+    }
+    note.innerHTML = lines.join("<br>");
+    submit.disabled = !r.can_order;
+  } catch (e) {
+    note.innerHTML = `<span style="color:var(--red);">주문 가능 여부 확인 실패: ${escHtml(e.message)}</span>`;
+    submit.disabled = true;
+  }
+}
+
+function closeTradeModal() { tradeModalEl("kis-trade-modal")?.classList.remove("open"); }
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape" && tradeModalEl("kis-trade-modal")?.classList.contains("open")) closeTradeModal();
+});
+
+document.getElementById("ind-trade-btn")?.addEventListener("click", openTradeModal);
+document.getElementById("kis-trade-close")?.addEventListener("click", closeTradeModal);
+document.getElementById("kis-trade-cancel")?.addEventListener("click", closeTradeModal);
+document.getElementById("kis-trade-modal")?.addEventListener("click", e => { if (e.target.id === "kis-trade-modal") closeTradeModal(); });
+document.getElementById("kis-trade-qty")?.addEventListener("input", renderTradeAmount);
+document.querySelectorAll(".kis-qty-btn").forEach(b => b.addEventListener("click", () => {
+  tradeModalEl("kis-trade-qty").value = b.dataset.qty;
+  renderTradeAmount();
+}));
+document.querySelectorAll(".kis-side-btn").forEach(b => b.addEventListener("click", () => setTradeSide(b.dataset.side)));
+
+document.getElementById("kis-trade-submit")?.addEventListener("click", async () => {
+  const qty = parseInt(tradeModalEl("kis-trade-qty").value, 10);
+  if (!Number.isInteger(qty) || qty < 1) { setToast("수량을 1주 이상 입력하세요", "error"); return; }
+  const sideLabel = _tradeSide === "buy" ? "매수" : "매도";
+  if (!confirm(`${_tradeCtx.name} ${qty}주를 KIS 모의투자로 ${sideLabel} 주문합니다.\n예상 금액 ${fmt(Math.round(_tradeCtx.price * qty))}원\n\n계속하시겠습니까?`)) return;
+  const submit = tradeModalEl("kis-trade-submit");
+  submit.disabled = true;
+  showLoadingModal("주문 전송 중…", `${_tradeCtx.name} ${qty}주 ${sideLabel}`);
+  try {
+    const r = await api("/api/stocks/quant/manual-order", {
+      method: "POST",
+      body: { symbol: _tradeCtx.symbol, name: _tradeCtx.name, side: _tradeSide, quantity: qty },
+    });
+    if (r.status === "submitted") {
+      setToast(`${sideLabel} 주문 전송됨 — ${r.quantity}주 · ${fmt(r.amount)}원${r.order_no ? ` (주문번호 ${r.order_no})` : ""}`, "ok");
+      closeTradeModal();
+    } else if (r.status === "skipped") {
+      setToast(`주문이 전송되지 않았습니다: ${r.reason === "market_closed" ? "장 운영시간이 아닙니다" : r.reason}`, "error");
+    } else {
+      setToast(`주문 실패: ${r.error || r.status}`, "error");
+    }
+  } catch (e) {
+    setToast(e.message, "error");
+  } finally {
+    hideLoadingModal();
+    submit.disabled = false;
+  }
+});
+
 // ── 투자 인디케이터: 기본 인디케이터 전략 ──────────────────────────
 document.getElementById("ind-load-btn").addEventListener("click", async () => {
   const symbol = document.getElementById("ind-symbol").value;
   const period = document.getElementById("ind-period").value;
+  const symbolLabel = document.getElementById("ind-symbol").selectedOptions[0]?.textContent?.trim() || symbol;
   const useMA5  = document.getElementById("ind-ma5").checked;
   const useMA20 = document.getElementById("ind-ma20").checked;
   const useRsi  = document.getElementById("ind-rsi").checked;
+  const loadBtn = document.getElementById("ind-load-btn");
+  const tradeBtn = document.getElementById("ind-trade-btn");
 
+  // 결과가 뜨기 전까지는 대기 모달로 경과 시간을 보여 주고, 거래 버튼은 잠가 둔다.
+  loadBtn.disabled = true;
+  if (tradeBtn) { tradeBtn.disabled = true; tradeBtn.title = "전략 분석을 먼저 실행하세요"; }
+  showLoadingModal("전략 분석 중…", `${symbolLabel} · ${period} 지표 계산`);
   try {
     const ind = await api(`/api/stocks/quant/indicators?symbol=${encodeURIComponent(symbol)}&period=${encodeURIComponent(period)}`);
     if (ind.error) throw new Error(ind.error);
@@ -54,7 +187,20 @@ document.getElementById("ind-load-btn").addEventListener("click", async () => {
       <p class="text-xs mt-2" style="color:var(--text-dim);">종합: ${buyCount > sellCount ? "📈 매수 우위 — 진입 고려" : sellCount > buyCount ? "📉 매도 우위 — 익절 고려" : "⏸ 중립 — 관망 권장"}</p>`;
 
     document.getElementById("ind-strategy-result").classList.remove("hidden");
-  } catch(e) { setToast(e.message, "error"); }
+
+    // 분석이 끝나야 거래할 수 있다 — 결과(종목·현재가·신호)를 주문 모달이 그대로 쓴다.
+    _tradeCtx = { symbol, name: symbolLabel, price, signal: sig.signal || "HOLD" };
+    if (tradeBtn) {
+      tradeBtn.disabled = !price;
+      tradeBtn.title = price ? `${symbolLabel} KIS 모의투자 주문` : "현재가를 가져오지 못해 주문할 수 없습니다";
+    }
+  } catch(e) {
+    _tradeCtx = null;
+    setToast(e.message, "error");
+  } finally {
+    hideLoadingModal();
+    loadBtn.disabled = false;
+  }
 });
 
 // ── 투자 인디케이터: 커스텀 인디케이터 개발 ──────────────────────────

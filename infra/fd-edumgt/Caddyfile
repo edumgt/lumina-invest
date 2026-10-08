@@ -1,6 +1,15 @@
 fd.edumgt.co.kr {
     encode zstd gzip
-    reverse_proxy app:8000
+    @read_requests method GET HEAD
+    handle @read_requests {
+        reverse_proxy app:8000 {
+            lb_try_duration 60s
+            lb_try_interval 1s
+        }
+    }
+    handle {
+        reverse_proxy app:8000
+    }
 }
 
 http://43.201.229.188 {
@@ -11,16 +20,6 @@ http://43.201.229.188 {
 # 이 파일은 deploy.yml 의 `rsync --delete` 로 서버에 통째로 덮어쓰이므로, 아래 블록이
 # 저장소에 없으면 fd 배포 때마다 pr 라우트가 사라집니다(2026-10-07 실제로 그렇게 끊겼습니다).
 # 업스트림 pr-api 는 domain-rag-lab 의 deploy/pr-edumgt/compose.yml 이 shared-net 에 붙이는 alias 입니다.
-pr.edumgt.co.kr {
-    encode zstd gzip
-    reverse_proxy pr-api:8000
-}
-
-pr.edumgt.co.kr {
-    encode zstd gzip
-    reverse_proxy pr-api:8000
-}
-
 pr.edumgt.co.kr {
     encode zstd gzip
     reverse_proxy pr-api:8000

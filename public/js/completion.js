@@ -40,7 +40,7 @@ const ASSESSMENTS = {
 
   "company-dashboard": A(75, "부분 검증", "Yahoo 재무 데이터 연결 · 데이터 누락/검색 E2E 미검증"),
   "company-compare": A(90, "재무 API 연결", "KIS 분석 후보 30개 기업 · 펀더멘털 30개 지표 · Yahoo 미제공값 N/A"),
-  "company-sector": A(42, "정적 목업", "섹터 카드가 고정 배열 사용 · 그래프 API 미연결"),
+  "company-sector": A(86, "재무·가격 API 연결", "31종목 3섹터 실측 집계(밸류·수익성·성장·안정성·모멘텀·시장폭) · 상대점수·근거·커버리지 표기 · PBR 은 Yahoo 미제공"),
   "indicator-formula": A(93, "검증 우수", "DSL 안전성·인과성·계산·코드생성 테스트 통과 · DB API만 미검증"),
   "indicator-tradingview": A(84, "핵심 검증", "알림 파싱·CSV 지표·비교 판정 테스트 통과 · 웹훅/DB E2E 미검증"),
 
