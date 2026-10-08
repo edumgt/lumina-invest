@@ -15,8 +15,8 @@ from app.services.stock import (
     get_quote, get_candles, get_market_summary,
     get_quant_indicators, get_fundamentals, QUANT_STOCKS,
 )
-from app.services.krx_companies import search_companies
 from app.services import auto_trade
+from app.services import ohlcv_catalog
 from app.services import risk_guard
 from app.services import strategy_loader
 from app.services.brokers import stock_coin_trade_gateway
@@ -100,16 +100,21 @@ async def quant_stock_list():
 
 @router.get("/stocks/search")
 async def stock_search(q: str = Query(..., min_length=1)):
-    """종목 검색: 국내 상장사는 KRX 상장법인목록(로컬 엔진)을 우선 쓰고,
-    결과가 없으면 Yahoo Finance 자동완성으로 보완한다(해외 종목 등).
+    """종목 검색: docker OHLCV 저장소(pg-stock)를 먼저 찾고, 없으면 Yahoo 자동완성으로 넘어간다.
 
-    Yahoo 자동완성 API가 일부 한글 검색어("카카오" 등)에서 "Invalid Search Query"
-    400을 반환하는 문제가 있어, 한글 종목명/코드 검색은 KRX 목록에서 직접
-    부분일치로 찾는 로컬 엔진이 더 안정적이다.
+    순서 (2026-10-08 개편)
+      ① stock-coin-trade OHLCV 저장소 — 국내 상장 2,700여 종목의 코드·한글명·시장이
+         일봉과 함께 있다. 한글 검색에 안전하고 빠르다.
+      ② Yahoo 자동완성 — 저장소에 없는 종목(해외·신규 상장 등)을 찾는다.
+      ③ ②에서 찾은 국내 종목은 OHLCV 저장소에 적재해 둔다. 다음 검색부터 ①에서 바로 나온다.
+
+    Yahoo 자동완성은 일부 한글 검색어("카카오" 등)에 "Invalid Search Query" 400을
+    돌려준다. 예전에는 그 400이 502로 바뀌어 한글 검색이 전부 실패했는데, 이제 ①이
+    국내 종목을 받아내고 ②가 실패해도 빈 결과로 처리한다(검색창에 오류를 띄우지 않는다).
     """
-    krx_results = await search_companies(q)
-    if krx_results:
-        return {"results": krx_results}
+    stored = await ohlcv_catalog.search(q)
+    if stored:
+        return {"results": stored, "source": "ohlcv"}
 
     url = "https://query1.finance.yahoo.com/v1/finance/search"
     params = {
@@ -127,19 +132,32 @@ async def stock_search(q: str = Query(..., min_length=1)):
             resp.raise_for_status()
             data = resp.json()
         quotes = data.get("quotes", [])
-        results = [
-            {
-                "symbol": item.get("symbol", ""),
-                "name": item.get("longname") or item.get("shortname") or item.get("symbol", ""),
-                "exchange": item.get("exchDisp", ""),
-                "type": item.get("typeDisp", ""),
-            }
-            for item in quotes
-            if item.get("symbol")
-        ]
-        return {"results": results}
+    except httpx.HTTPStatusError as exc:
+        # 한글 검색어 400 등 — 저장소에도 없고 야후도 못 찾은 것이니 "결과 없음"으로 둔다.
+        logger.info("Yahoo 종목 검색 실패 q=%r: %s", q, exc)
+        return {"results": [], "source": "none"}
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"종목 검색 실패: {exc}") from exc
+
+    results = [
+        {
+            "symbol": item.get("symbol", ""),
+            "name": item.get("longname") or item.get("shortname") or item.get("symbol", ""),
+            "exchange": item.get("exchDisp", ""),
+            "type": item.get("typeDisp", ""),
+        }
+        for item in quotes
+        if item.get("symbol")
+    ]
+
+    # 국내 상장 종목은 저장소를 채워 둔다(해외 티커는 저장소가 skipped 로 돌려준다).
+    ingested = []
+    for item in results:
+        outcome = await ohlcv_catalog.ingest(item["symbol"], item["name"])
+        if outcome and outcome.get("status") == "ingested":
+            ingested.append(outcome["tickerCode"])
+
+    return {"results": results, "source": "yahoo", "ingested": ingested}
 
 
 @router.get("/stocks/fundamentals")
