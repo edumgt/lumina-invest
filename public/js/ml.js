@@ -46,8 +46,9 @@ document.getElementById("mlc-compare-add")?.addEventListener("click", () => {
   const best = data.models[0];
   compareTrayAdd({
     source: "ML 모델 비교",
-    label: `${symbol} · ${best.name}`,
+    label: `${symbol} · ${best.name}`, kind: "ml", symbol, period,
     summary: `CV 평균 ${(best.cv_mean * 100).toFixed(1)}% (±${(best.cv_std * 100).toFixed(1)}%) · 검증 정확도 ${(best.val_acc * 100).toFixed(1)}% · 기간 ${period}`,
+    metrics: { cv_mean: best.cv_mean * 100, cv_std: best.cv_std * 100, val_acc: best.val_acc * 100, model: best.name, period },
   });
 });
 

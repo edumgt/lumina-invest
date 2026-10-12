@@ -323,6 +323,146 @@ window.compareTrayAdd = compareTrayAdd;
 window.compareTrayRemove = compareTrayRemove;
 window.compareTrayClear = compareTrayClear;
 
+// ── 비교 트레이 분석 자료 ─────────────────────────────────────────────
+// 각 항목은 추가 시 `kind`(backtest|ml)·`symbol`·`period`·`metrics` 를 함께 넣는다. 예전 항목(요약 문자열만 있음)은 문자열에서 숫자를 뽑아 쓴다.
+function compareTrayMetrics(x) {
+  if (x.metrics && typeof x.metrics === "object") return { kind: x.kind || "backtest", ...x.metrics };
+  const s = String(x.summary || "");
+  const pick = re => { const m = s.match(re); return m ? parseFloat(m[1].replace(/,/g, "")) : null; };
+  if (/CV 평균|정확도/.test(s)) {
+    return { kind: "ml", cv_mean: pick(/CV 평균 ([+-]?[\d.]+)%/), cv_std: pick(/±([+-]?[\d.]+)%/), val_acc: pick(/정확도 ([+-]?[\d.]+)%/) };
+  }
+  return { kind: "backtest", return_pct: pick(/수익률 ([+-]?[\d.,]+)%/), bh_pct: pick(/보유 ([+-]?[\d.,]+)%/),
+           excess_pct: pick(/보유 대비 ([+-]?[\d.,]+)/), mdd_pct: pick(/(?:MDD|최대 하락|최대 낙폭) ([+-]?[\d.,]+)%/), sharpe: pick(/샤프 ([+-]?[\d.,]+)/) };
+}
+const _num = v => (v == null || Number.isNaN(Number(v))) ? null : Number(v);
+const _pct = v => v == null ? "-" : `${v > 0 ? "+" : ""}${v.toFixed(2)}%`;
+const _fix = (v, d = 2) => v == null ? "-" : v.toFixed(d);
+const _col = v => v == null ? "var(--text-mute)" : v > 0 ? "var(--green)" : v < 0 ? "var(--red)" : "var(--text-dim)";
+function _bar(v, maxAbs, color) {
+  if (v == null || !maxAbs) return "";
+  const w = Math.max(2, Math.min(100, Math.abs(v) / maxAbs * 100));
+  return `<div style="height:6px;border-radius:3px;background:${color};width:${w}%;margin-top:3px;opacity:.75;"></div>`;
+}
+
+function compareTrayAnalysis(list) {
+  const rows = list.map(x => ({ ...x, m: compareTrayMetrics(x) }));
+  const bt = rows.filter(r => r.m.kind === "backtest" && _num(r.m.return_pct) != null)
+    .map(r => { const m = r.m; const ret = _num(m.return_pct), bh = _num(m.bh_pct), mdd = _num(m.mdd_pct), sharpe = _num(m.sharpe);
+      const excess = _num(m.excess_pct) ?? (ret != null && bh != null ? ret - bh : null);
+      const calmar = ret != null && mdd != null && Math.abs(mdd) > 0.01 ? ret / Math.abs(mdd) : null;
+      return { ...r, ret, bh, mdd, sharpe, excess, calmar, win: _num(m.win_rate_pct), trades: _num(m.trade_count), period: r.period || m.period || "", symbol: r.symbol || String(r.label).split(" · ")[0] }; });
+  const ml = rows.filter(r => r.m.kind === "ml").map(r => ({ ...r, cv: _num(r.m.cv_mean), cvStd: _num(r.m.cv_std), val: _num(r.m.val_acc), period: r.period || r.m.period || "" }));
+  if (!bt.length && !ml.length) return "";
+  const insights = [], cautions = [];
+  let btTable = "", mlTable = "";
+
+  if (bt.length) {
+    const best = (arr, key, desc = true) => arr.filter(a => a[key] != null).sort((a, b) => desc ? b[key] - a[key] : a[key] - b[key])[0] || null;
+    const topRet = best(bt, "ret"), topSharpe = best(bt, "sharpe"), lowMdd = best(bt, "mdd", false), worstMdd = best(bt, "mdd", true), topCalmar = best(bt, "calmar");
+    // 참고: mdd 는 음수(또는 양수 절대값)로 들어올 수 있어 절대값으로 비교한다
+    const absMdd = r => r.mdd == null ? null : Math.abs(r.mdd);
+    const lowMddAbs = bt.filter(r => r.mdd != null).sort((a, b) => absMdd(a) - absMdd(b))[0] || null;
+    const worstMddAbs = bt.filter(r => r.mdd != null).sort((a, b) => absMdd(b) - absMdd(a))[0] || null;
+    const maxRet = Math.max(...bt.map(r => Math.abs(r.ret ?? 0)), 0.01), maxMdd = Math.max(...bt.map(r => absMdd(r) ?? 0), 0.01);
+    const sorted = [...bt].sort((a, b) => (b.sharpe ?? -1e9) - (a.sharpe ?? -1e9));
+    const star = (r, pick) => pick && r.id === pick.id ? ' <span title="이 지표 1위">★</span>' : "";
+    btTable = `
+      <h4 class="font-semibold text-sm mt-3 mb-1">백테스트 항목 순위 (샤프 비율 순 · ★ = 지표별 1위)</h4>
+      <div class="overflow-x-auto"><table><thead><tr><th>#</th><th>이름</th><th style="text-align:right">누적 수익률</th><th style="text-align:right">단순 보유</th><th style="text-align:right">초과</th><th style="text-align:right">샤프</th><th style="text-align:right">MDD</th><th style="text-align:right">수익/MDD</th><th style="text-align:right">승률</th><th style="text-align:right">매매</th><th>기간</th></tr></thead>
+      <tbody>${sorted.map((r, i) => `<tr>
+        <td style="color:var(--text-mute)">${i + 1}</td>
+        <td><div style="font-weight:600">${escHtml(r.label)}</div><div class="text-xs" style="color:var(--text-mute)">${escHtml(r.source)}</div></td>
+        <td style="text-align:right;color:${_col(r.ret)};font-weight:600">${_pct(r.ret)}${star(r, topRet)}${_bar(r.ret, maxRet, _col(r.ret))}</td>
+        <td style="text-align:right;color:${_col(r.bh)}">${_pct(r.bh)}</td>
+        <td style="text-align:right;color:${_col(r.excess)}">${_pct(r.excess)}</td>
+        <td style="text-align:right;font-weight:600">${_fix(r.sharpe)}${star(r, topSharpe)}</td>
+        <td style="text-align:right;color:var(--red)">${r.mdd == null ? "-" : `-${absMdd(r).toFixed(2)}%`}${star(r, lowMddAbs)}${_bar(absMdd(r), maxMdd, "var(--red)")}</td>
+        <td style="text-align:right">${_fix(r.calmar)}${star(r, topCalmar)}</td>
+        <td style="text-align:right">${r.win == null ? "-" : r.win.toFixed(1) + "%"}</td>
+        <td style="text-align:right">${r.trades == null ? "-" : r.trades + "회"}</td>
+        <td class="text-xs" style="color:var(--text-mute);white-space:nowrap">${escHtml(r.period || "-")}</td></tr>`).join("")}</tbody></table></div>`;
+
+    if (topRet) insights.push(`<b>수익률 1위</b>: ${escHtml(topRet.label)} ${_pct(topRet.ret)}${topRet.mdd != null ? ` (MDD -${absMdd(topRet).toFixed(1)}%)` : ""}.${worstMddAbs && topRet.id === worstMddAbs.id && bt.length > 1 ? " 다만 낙폭도 가장 커서 <b>수익은 높지만 버티기 힘든 전략</b>입니다." : ""}`);
+    if (topSharpe && topSharpe.sharpe != null) insights.push(`<b>위험 조정 수익(샤프) 1위</b>: ${escHtml(topSharpe.label)} ${_fix(topSharpe.sharpe)}.${topRet && topSharpe.id !== topRet.id ? " 수익률 1위와 다릅니다 — 변동성 대비로는 이 쪽이 효율적입니다." : topRet ? " 수익률 1위와 같아 <b>수익·위험 모두 우수</b>합니다." : ""}`);
+    if (lowMddAbs && bt.length > 1) insights.push(`<b>낙폭 최소</b>: ${escHtml(lowMddAbs.label)} -${absMdd(lowMddAbs).toFixed(1)}%${topCalmar && topCalmar.id !== lowMddAbs.id ? ` · 수익/MDD 비율 최고는 ${escHtml(topCalmar.label)} (${_fix(topCalmar.calmar)})` : ""}.`);
+    const withBh = bt.filter(r => r.excess != null);
+    if (withBh.length) {
+      const beat = withBh.filter(r => r.excess > 0);
+      insights.push(`<b>단순 보유 대비</b>: ${withBh.length}개 중 ${beat.length}개가 보유를 이겼습니다${beat.length ? ` (${beat.map(r => `${escHtml(r.label)} ${_pct(r.excess)}`).join(", ")})` : ""}.${beat.length === 0 ? " <b>규칙 매매가 보유보다 나은 구간이 없었습니다</b> — 비용·신호 지연이 수익을 깎았을 가능성이 큽니다." : ""}`);
+    }
+    const allLowSharpe = bt.every(r => r.sharpe == null || r.sharpe < 0.5);
+    if (allLowSharpe && bt.some(r => r.sharpe != null)) insights.push(`모든 항목의 샤프 비율이 0.5 미만입니다 — <b>변동성 대비 보상이 작아</b> 단독 운용보다 분산·비중 축소가 맞습니다.`);
+    const highTurn = bt.filter(r => r.trades != null && r.trades >= 60);
+    if (highTurn.length) cautions.push(`${highTurn.map(r => escHtml(r.label)).join(", ")}: 매매 ${highTurn.map(r => r.trades).join("/")}회로 회전이 많아 <b>수수료·슬리피지 가정에 민감</b>합니다. bp 를 올려 다시 돌려 보세요.`);
+    // 같은 종목끼리 / 다른 종목·기간 섞임
+    const bySymbol = {};
+    bt.forEach(r => { (bySymbol[r.symbol] ||= []).push(r); });
+    Object.entries(bySymbol).filter(([, arr]) => arr.length > 1).forEach(([sym, arr]) => {
+      const b = [...arr].sort((a, c) => (c.sharpe ?? -1e9) - (a.sharpe ?? -1e9))[0];
+      insights.push(`<b>${escHtml(sym)} 전략 간 비교</b> (${arr.length}개): 샤프 기준 최선은 ${escHtml(b.label)} (${_fix(b.sharpe)}, 수익률 ${_pct(b.ret)}).`);
+    });
+    const symbols = Object.keys(bySymbol), periods = new Set(bt.map(r => r.period).filter(Boolean)), sources = new Set(bt.map(r => r.source));
+    if (symbols.length > 1) cautions.push(`서로 다른 종목(${symbols.map(escHtml).join(", ")})의 결과가 섞여 있습니다 — 종목 자체의 추세 차이가 전략 차이보다 클 수 있어 <b>전략 우열로 읽지 마세요</b>.`);
+    if (periods.size > 1) cautions.push(`검증 기간이 다릅니다(${[...periods].map(escHtml).join(" / ")}). 기간이 다르면 수익률·MDD 는 직접 비교할 수 없고, 샤프·수익/MDD 같은 비율 지표만 참고하세요.`);
+    if (sources.size > 1) cautions.push(`엔진·데이터 기준이 다른 화면(${[...sources].map(escHtml).join(", ")})의 결과입니다. 비용 가정·신호 반영 시점·종가 기준(원시/수정)이 달라 <b>소수점 차이는 의미가 없습니다</b>.`);
+  }
+
+  if (ml.length) {
+    const sorted = [...ml].sort((a, b) => (b.val ?? -1) - (a.val ?? -1));
+    mlTable = `
+      <h4 class="font-semibold text-sm mt-3 mb-1">ML 모델 항목 (검증 정확도 순)</h4>
+      <div class="overflow-x-auto"><table><thead><tr><th>#</th><th>이름</th><th style="text-align:right">CV 평균</th><th style="text-align:right">CV 편차</th><th style="text-align:right">검증 정확도</th><th style="text-align:right">CV−검증</th><th>기간</th></tr></thead>
+      <tbody>${sorted.map((r, i) => { const gap = r.cv != null && r.val != null ? r.cv - r.val : null; return `<tr><td style="color:var(--text-mute)">${i + 1}</td><td style="font-weight:600">${escHtml(r.label)}</td><td style="text-align:right">${r.cv == null ? "-" : r.cv.toFixed(1) + "%"}</td><td style="text-align:right">${r.cvStd == null ? "-" : "±" + r.cvStd.toFixed(1) + "%"}</td><td style="text-align:right;font-weight:600">${r.val == null ? "-" : r.val.toFixed(1) + "%"}</td><td style="text-align:right;color:${gap != null && gap > 5 ? "var(--red)" : "var(--text-dim)"}">${gap == null ? "-" : (gap > 0 ? "+" : "") + gap.toFixed(1) + "%p"}</td><td class="text-xs" style="color:var(--text-mute)">${escHtml(r.period || "-")}</td></tr>`; }).join("")}</tbody></table></div>`;
+    sorted.forEach(r => {
+      const gap = r.cv != null && r.val != null ? r.cv - r.val : null;
+      if (gap != null && gap > 5) cautions.push(`${escHtml(r.label)}: 교차검증 평균이 검증 정확도보다 ${gap.toFixed(1)}%p 높습니다 — <b>과적합 또는 최근 구간의 분포 변화</b>를 의심하세요.`);
+      if (r.val != null && r.val < 55) cautions.push(`${escHtml(r.label)}: 검증 정확도 ${r.val.toFixed(1)}% 는 방향 예측에서 <b>동전 던지기(50%)와 큰 차이가 없습니다</b>. 매매 근거로 쓰기엔 약합니다.`);
+      if (r.cvStd != null && r.cvStd > 5) cautions.push(`${escHtml(r.label)}: 폴드 간 편차 ±${r.cvStd.toFixed(1)}% 로 결과가 <b>구간에 따라 크게 흔들립니다</b>.`);
+    });
+    if (sorted[0]?.val != null) insights.push(`<b>ML 검증 정확도 1위</b>: ${escHtml(sorted[0].label)} ${sorted[0].val.toFixed(1)}%${sorted[0].cv != null ? ` (CV 평균 ${sorted[0].cv.toFixed(1)}%)` : ""}.`);
+    if (bt.length) cautions.push(`ML 정확도(방향 맞힌 비율)와 백테스트 수익률은 단위가 달라 한 줄로 비교할 수 없습니다. 정확도가 높아도 큰 손실 하루가 수익을 지울 수 있습니다.`);
+  }
+
+  return `
+    <div class="mt-3 pt-3" style="border-top:1px solid var(--border);">
+      <div class="flex items-center justify-between flex-wrap gap-2">
+        <h3 class="font-semibold text-sm">📊 비교 분석</h3>
+        <button type="button" class="btn-secondary text-xs" onclick="compareTrayCopy()">분석 메모 복사 (Markdown)</button>
+      </div>
+      ${btTable}${mlTable}
+      ${insights.length ? `<h4 class="font-semibold text-sm mt-3 mb-1">읽는 법</h4><ul class="text-xs space-y-1" style="color:var(--text-dim);line-height:1.7;">${insights.map(t => `<li>· ${t}</li>`).join("")}</ul>` : ""}
+      ${cautions.length ? `<h4 class="font-semibold text-sm mt-3 mb-1">주의</h4><ul class="text-xs space-y-1" style="color:var(--text-dim);line-height:1.7;">${cautions.map(t => `<li>⚠ ${t}</li>`).join("")}</ul>` : ""}
+      <p class="text-xs mt-3" style="color:var(--text-mute);">지표 뜻 — 샤프: 변동성 1단위당 초과수익(높을수록 좋음, 1 이상이면 양호) · MDD: 고점 대비 최대 하락(작을수록 좋음) · 수익/MDD: 누적수익률을 최대 낙폭으로 나눈 값(높을수록 낙폭 대비 보상이 큼) · 승률: 수익이 난 보유일 비율(거래별 승률 아님). 모두 과거 검증이며 미래 성과를 보장하지 않습니다.</p>
+    </div>`;
+}
+
+function compareTrayCopy() {
+  const list = compareTrayGet();
+  const rows = list.map(x => ({ ...x, m: compareTrayMetrics(x) }));
+  const lines = [`# 비교 트레이 분석 (${new Date().toLocaleString("ko-KR")})`, ""];
+  const bt = rows.filter(r => r.m.kind === "backtest");
+  if (bt.length) {
+    lines.push("## 백테스트", "", "| 이름 | 출처 | 수익률 | 단순 보유 | 샤프 | MDD | 승률 | 매매 | 기간 |", "|---|---|---:|---:|---:|---:|---:|---:|---|");
+    bt.forEach(r => lines.push(`| ${r.label} | ${r.source} | ${_pct(_num(r.m.return_pct))} | ${_pct(_num(r.m.bh_pct))} | ${_fix(_num(r.m.sharpe))} | ${_num(r.m.mdd_pct) == null ? "-" : "-" + Math.abs(_num(r.m.mdd_pct)).toFixed(2) + "%"} | ${_num(r.m.win_rate_pct) == null ? "-" : _num(r.m.win_rate_pct).toFixed(1) + "%"} | ${_num(r.m.trade_count) ?? "-"} | ${r.period || r.m.period || "-"} |`));
+    lines.push("");
+  }
+  const ml = rows.filter(r => r.m.kind === "ml");
+  if (ml.length) {
+    lines.push("## ML 모델", "", "| 이름 | CV 평균 | CV 편차 | 검증 정확도 | 기간 |", "|---|---:|---:|---:|---|");
+    ml.forEach(r => lines.push(`| ${r.label} | ${_num(r.m.cv_mean) == null ? "-" : _num(r.m.cv_mean).toFixed(1) + "%"} | ${_num(r.m.cv_std) == null ? "-" : "±" + _num(r.m.cv_std).toFixed(1) + "%"} | ${_num(r.m.val_acc) == null ? "-" : _num(r.m.val_acc).toFixed(1) + "%"} | ${r.period || r.m.period || "-"} |`));
+    lines.push("");
+  }
+  const tmp = document.createElement("div"); tmp.innerHTML = compareTrayAnalysis(list);
+  const notes = [...tmp.querySelectorAll("li")].map(li => `- ${li.textContent.replace(/^[·⚠]\s*/, "").trim()}`);
+  if (notes.length) lines.push("## 읽는 법 · 주의", "", ...notes, "");
+  lines.push("_과거 검증 결과이며 투자 권유가 아닙니다._");
+  const text = lines.join("\n");
+  (navigator.clipboard?.writeText(text) || Promise.reject()).then(() => setToast("분석 메모를 복사했습니다", "ok"))
+    .catch(() => { window.prompt("복사해 쓰세요:", text); });
+}
+window.compareTrayCopy = compareTrayCopy;
+
 function renderCompareTray(containerId) {
   const el = document.getElementById(containerId);
   if (!el) return;
@@ -347,6 +487,7 @@ function renderCompareTray(containerId) {
           </tr>`).join("")}</tbody>
         </table>
       </div>
+      ${compareTrayAnalysis(list)}
     </div>`;
 }
 function renderCompareTrayAll() {

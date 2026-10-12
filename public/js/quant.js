@@ -220,8 +220,10 @@ document.getElementById("bt-load").addEventListener("click", async () => {
         ${explanation ? `<div class="mt-3 text-xs text-slate-400">${escHtml(explanation)}</div>` : ""}
         <p class="text-xs mt-2" style="color:var(--text-mute)">t일 종가 신호를 t+1일부터 반영(룩어헤드 없음) · 수수료·슬리피지는 포지션 변동 시 차감 · 교육용 과거 검증이며 투자 권유가 아닙니다.</p>
         <button type="button" class="btn-secondary text-xs mt-3" onclick='compareTrayAdd(${JSON.stringify({
-          source: "퀀트 전략 백테스트", label: `${symbol} · ${strategy}`,
+          source: "퀀트 전략 백테스트", label: `${symbol} · ${strategy}`, kind: "backtest", symbol, period: "10y",
           summary: `수익률 ${pct(data.total_return_pct)} · 보유 ${pct(data.buy_hold_return_pct)} · 샤프 ${data.sharpe_ratio ?? "-"} · MDD ${data.mdd_pct}%`,
+          metrics: { return_pct: data.total_return_pct, bh_pct: data.buy_hold_return_pct, excess_pct: excess, sharpe: data.sharpe_ratio, mdd_pct: data.mdd_pct,
+                     win_rate_pct: data.win_rate_pct, trade_count: data.trade_count, exposure_pct: data.exposure_pct, cost_bps: data.cost_bps, period: "10y" },
         }).replace(/'/g, "&#39;")}')">⚖️ 비교에 추가</button>
       </div>
     `;

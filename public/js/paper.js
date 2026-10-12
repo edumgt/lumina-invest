@@ -515,8 +515,11 @@ function renderLeanResult(d) {
     <details class="mt-2"><summary class="text-sm cursor-pointer">LEAN 실행 로그</summary><pre class="text-xs p-3 rounded-lg overflow-x-auto" style="background:var(--surf2);border:1px solid var(--border);max-height:320px;">${escHtml(d.lean_log || "로그 없음")}</pre></details>
     <details class="mt-2"><summary class="text-sm cursor-pointer">생성된 LEAN 알고리즘 (main.py)</summary><pre class="text-xs p-3 rounded-lg overflow-x-auto" style="background:var(--surf2);border:1px solid var(--border);max-height:360px;">${escHtml(d.algorithm_source || "")}</pre></details>`;
   $("ql-add-compare").addEventListener("click", () => window.compareTrayAdd?.({
-    source: "LEAN 백테스트", label: `${d.ticker} · ${d.strategy_label}`,
-    summary: `수익률 ${fmtPct(d.strategy_return_pct)} · MDD ${d.max_drawdown_pct}% · 샤프 ${d.sharpe_ratio}`,
+    source: "LEAN 백테스트", label: `${d.ticker} · ${d.strategy_label}`, kind: "backtest", symbol: d.ticker, period: `${d.start_date}~${d.end_date}`,
+    summary: `수익률 ${fmtPct(d.strategy_return_pct)} · 보유 ${fmtPct(d.benchmark_return_pct)} · MDD ${d.max_drawdown_pct}% · 샤프 ${d.sharpe_ratio}`,
+    metrics: { return_pct: d.strategy_return_pct, bh_pct: d.benchmark_return_pct, excess_pct: d.strategy_return_pct - d.benchmark_return_pct, sharpe: d.sharpe_ratio,
+               mdd_pct: d.max_drawdown_pct, trade_count: d.trade_count, exposure_pct: d.invested_days_pct, annualized_return_pct: d.annualized_return_pct,
+               volatility_pct: d.annualized_volatility_pct, period: `${d.start_date}~${d.end_date}`, engine: d.engine },
   }));
   if (leanChart) { leanChart.destroy(); leanChart = null; }
   if (window.ApexCharts) {
