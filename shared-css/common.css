@@ -107,7 +107,7 @@
 /* ══ 1. 한글 글자 스케일 — 라틴 문자는 원래 크기, 한글 글리프만 10% 크게 ══ */
 @font-face {
   font-family: "Pretendard Hangul 110";
-  src: url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/woff2/PretendardVariable.woff2") format("woff2-variations");
+  src: url("https://cdn.jsdelivr.net/npm/pretendard@1.3.9/dist/web/variable/woff2/PretendardVariable.woff2") format("woff2-variations");
   font-style: normal;
   font-weight: 45 920;
   font-display: swap;

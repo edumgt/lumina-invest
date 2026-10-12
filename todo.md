@@ -1556,3 +1556,15 @@ st 공개 조회 계약(`rows[].trade_date`, `nextOffset`)은 라이브 응답�
 
 **조치**: `})'>` 로 순서 수정(괄호 닫고 속성 닫기). 다른 JS 의 인라인 `onclick` 은 모두 큰따옴표 속성 + 작은따옴표 인자라 영향 없음.
 재현 스크립트가 `called with keys: [source,label,kind,symbol,period,summary,metrics]` 로 통과.
+
+### 6-45. 2026-10-12 Pretendard 가변 폰트 404 (사용자 보고 `PretendardVariable.woff2 net::ERR_ABORTED 404`)
+
+**원인**: 공통 CSS `shared-css/common.css` 의 한글 110% 스케일용 `@font-face`("Pretendard Hangul 110")가
+`cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/woff2/PretendardVariable.woff2` 를 직접 가리켰는데, jsdelivr `gh` 경로에는
+그 파일이 없다(404). 같은 태그의 CSS(`…/dist/web/variable/pretendardvariable*.css`)는 200 이라 각 페이지의 `<link>` 는 멀쩡했고,
+한글 확대용 폰트만 실패해 한글이 기본 Pretendard(100%)로 떨어지던 상태. 실측: `gh/…/packages/pretendard/dist/web/variable/woff2/…` 200,
+`npm/pretendard@1.3.9/dist/web/variable/woff2/PretendardVariable.woff2` 200.
+
+**조치**: URL 을 npm 경로(`https://cdn.jsdelivr.net/npm/pretendard@1.3.9/dist/web/variable/woff2/PretendardVariable.woff2`)로 교체 →
+`shared-css/deploy.sh`(사전 감사 오류 0건·경고 6건, 기존과 동일) → S3 `www.edumgt.co.kr/css/common.css` 업로드(200, max-age=300).
+네 사이트가 같은 파일을 쓰므로 한 번에 반영된다(최대 5분 전파). HTML 의 `?v=` 는 공통 CSS 에는 불필요(deploy.sh 주석).
