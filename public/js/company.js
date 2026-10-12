@@ -462,6 +462,9 @@ async function loadCompanySector(force = false) {
     document.getElementById("co-sector-table").innerHTML = secComparisonTable(d.sectors || []);
     document.getElementById("co-sector-rule").textContent = d.verdict_rule || "";
     cards.innerHTML = (d.sectors || []).map(secCard).join("");
+    // 지표 이름을 클릭하면 집계 방식·계산식까지 모달로 설명한다(섹터 화면 전용 사전).
+    // 카드가 매번 새로 그려지므로 렌더 직후에 다시 붙인다.
+    attachIndicatorHelp("company-sector");
   } catch (e) {
     cards.innerHTML = `<div class="card text-xs" style="color:var(--red);">섹터 지표 조회 실패: ${escHtml(e.message)}</div>`;
   }
