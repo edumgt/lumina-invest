@@ -77,6 +77,29 @@ function capBig(d) {
 
 
 
+/* DART 분기 영업이익 — Yahoo 가 비워 보내는 영업이익을 전자공시 원문으로 채운다.
+   Yahoo 의 분기 라벨과 기간이 어긋날 수 있으므로 **DART 자체 라벨로 따로** 그린다.
+   4분기 금액은 DART 가 3개월 값을 따로 주지 않아 '연간 − 3분기누적' 으로 계산된 값이며,
+   그 사실을 기준 칸에 그대로 적는다. */
+function dartOpTable(d) {
+  const series = d?.dartOpSeries;
+  if (!Array.isArray(series) || !series.length) return "";
+  const bases = [...new Set(series.map(r => r.basis).filter(Boolean))];
+  return `<div class="mt-3" style="border-top:1px solid var(--border);padding-top:10px;">
+    <div class="text-xs mb-1" style="color:var(--text-dim);font-weight:600;">영업이익 (DART 전자공시 · 분기 3개월 기준)</div>
+    <table>
+      <thead><tr><th>구분</th>${series.map(r=>`<th style="text-align:right;">${escHtml(r.label)}</th>`).join("")}</tr></thead>
+      <tbody>
+        <tr><td style="color:var(--text-dim);font-size:12px;">영업이익 (${amountUnit(d)})</td>${series.map(r=>`<td style="text-align:right;color:var(--green);font-weight:600;">${nfmt(r.operatingIncome)}</td>`).join("")}</tr>
+        <tr><td style="color:var(--text-mute);font-size:11px;">기준</td>${series.map(r=>`<td style="text-align:right;color:var(--text-mute);font-size:11px;">${escHtml(r.basis || "-")}</td>`).join("")}</tr>
+      </tbody>
+    </table>
+    <div class="text-xs mt-1" style="color:var(--text-mute);">
+      출처: 금융감독원 전자공시(DART) ${escHtml(series[0].fsDiv || "")} 재무제표${bases.includes("연간−3분기누적") ? " · 4분기는 연간에서 3분기 누적을 뺀 값입니다" : ""}
+    </div>
+  </div>`;
+}
+
 function renderCompanyData(d) {
   const pctColor = (d.chg ?? 0) >= 0 ? "var(--green)" : "var(--red)";
   const sign = (d.chg ?? 0) >= 0 ? "+" : "";
@@ -139,7 +162,8 @@ function renderCompanyData(d) {
         <tr><td style="color:var(--text-dim);font-size:12px;">순이익 (${amountUnit(d)})</td>${d.net.map(v=>`<td style="text-align:right;color:var(--accent);font-weight:600;">${nfmt(v)}</td>`).join("")}</tr>
       </tbody>
     </table>
-    <div class="text-xs mt-2" style="color:var(--text-mute);">출처: ${escHtml(d.balanceSource || d.source || "출처 미기록")}</div>` : `<div class="text-xs" style="color:var(--text-mute);">분기 실적 데이터 없음</div>`;
+    <div class="text-xs mt-2" style="color:var(--text-mute);">출처: ${escHtml(d.source || "출처 미기록")}</div>
+    ${dartOpTable(d)}` : `<div class="text-xs" style="color:var(--text-mute);">분기 실적 데이터 없음</div>`;
 
   // 재무상태표
   const hasBalance = d.assets != null;
@@ -152,7 +176,8 @@ function renderCompanyData(d) {
         <tr><td style="color:var(--text-dim);font-size:12px;">부채총계</td><td style="text-align:right;font-weight:600;color:var(--red);">${nfmt(d.liabilities)}</td><td style="text-align:right;">${d.liabilities!=null?(d.liabilities/d.assets*100).toFixed(1)+"%":"N/A"}</td></tr>
         ${d.cash!=null ? `<tr><td style="color:var(--text-dim);font-size:12px;">현금및현금성자산</td><td style="text-align:right;">${fmt(d.cash)}</td><td style="text-align:right;">-</td></tr>` : ""}
       </tbody>
-    </table>` : `<div class="text-xs" style="color:var(--text-mute);">
+    </table>
+    <div class="text-xs mt-2" style="color:var(--text-mute);">출처: ${escHtml(d.balanceSource || d.source || "출처 미기록")}</div>` : `<div class="text-xs" style="color:var(--text-mute);">
       Yahoo Finance quoteSummary 의 <code>balanceSheetHistory</code> 가 결산일만 돌려주고 총자산·자기자본·부채 항목을 비워 보냅니다
       (2026-10-12 확인: 국내·해외 종목 모두 동일). 값을 추정해 채우지 않습니다 —
       대신 아래 「현금흐름」의 현금 및 단기투자·총차입금은 <code>financialData</code> 에서 받아 표시합니다.

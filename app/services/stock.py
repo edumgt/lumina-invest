@@ -180,7 +180,9 @@ async def get_fundamentals(symbol: str) -> dict:
     제공하지 않는 경우가 있어 해당 값은 null로 반환한다 — 프론트엔드가 '데이터 없음'
     으로 표시하며, 값을 지어내지 않는다.
     """
-    cache_key = f"fundamentals:v3:{symbol}"
+    # v4: 통화 필드(currency/priceUnit/...)와 DART 블록(assets/dartOpSeries/...)이 추가돼
+    # 예전 캐시는 그 값이 없다. 키를 올려 구버전 캐시가 그대로 표시되는 일을 막는다.
+    cache_key = f"fundamentals:v4:{symbol}"
     cached = await cache_get(cache_key, max_age_hours=6)
     if cached is not None:
         return cached
@@ -352,6 +354,16 @@ async def _overlay_dart(fundamentals: dict, symbol: str, eok, fin_cur: str | Non
             "opSource": f"DART {d['fsDiv']} · {period}"
                        + (f" · {d['opBasis']}" if d.get("opBasis") else ""),
         })
+    # 분기 영업이익 시계열 — Yahoo 가 비워 보내는 op 행을 DART 3개월 금액으로 채운다.
+    try:
+        series = await dart.quarterly_operating_income(symbol)
+    except Exception as exc:
+        logger.warning("DART 분기 영업이익 실패 %s: %s", symbol, exc)
+        series = None
+    if series:
+        fundamentals["dartOpSeries"] = [
+            {**row, "operatingIncome": eok(row.get("operatingIncome"))} for row in series
+        ]
     fundamentals["dart"] = {
         "period": period, "fsDiv": d["fsDiv"], "corpCode": d["corpCode"],
         "source": d["source"], "opBasis": d.get("opBasis"),

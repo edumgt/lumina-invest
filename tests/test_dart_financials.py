@@ -74,9 +74,39 @@ def test_parse_statements_maps_all_targets():
     assert out["netIncome"] == 9_800_000_000_000
 
 
+def test_annual_report_marks_basis_as_yearly():
+    """사업보고서(11011)의 thstrm_amount 는 **연간** 금액이다(2026-10-12 실측).
+    이걸 '3개월' 로 표시하면 분기 추이가 2배 이상 부풀려진다."""
+    rows = [{"sj_div": "IS", "account_nm": "영업이익",
+             "thstrm_amount": "43,601,100,000,000", "thstrm_add_amount": "", "thstrm_nm": "제 57 기"}]
+    out = dart._parse_statements(rows, "11011")
+    assert out["operatingIncome"] == 43_601_100_000_000
+    assert out["opBasis"] == "연간"
+    assert out["periodName"] == "제 57 기"
+
+
+def test_quarterly_report_keeps_three_month_basis():
+    rows = [{"sj_div": "IS", "account_nm": "영업이익", "thstrm_amount": "12,166,100,000,000",
+             "thstrm_add_amount": "23,527,400,000,000", "thstrm_nm": "제 57 기 3분기"}]
+    out = dart._parse_statements(rows, "11014")
+    assert out["operatingIncome"] == 12_166_100_000_000   # 3개월
+    assert out["opCumulative"] == 23_527_400_000_000      # 누적도 함께 담아 4분기 계산에 쓴다
+    assert out["opBasis"] == "3개월"
+
+
+def test_equity_total_only_from_balance_sheet():
+    """자본총계는 자본변동표(SCE)에도 여러 번 나오고 금액이 다르다 — BS 만 써야 한다."""
+    rows = [
+        {"sj_div": "SCE", "account_nm": "자본총계", "thstrm_amount": "897,514,000,000"},
+        {"sj_div": "BS", "account_nm": "자본총계", "thstrm_amount": "406,614,300,000,000"},
+    ]
+    out = dart._parse_statements(rows, "11013")
+    assert out["equity"] == 406_614_300_000_000
+
+
 def test_operating_income_prefers_three_month_amount():
     """분기 금액(3개월)을 누적보다 우선한다 — 누적을 쓰면 분기 추이가 부풀려진다."""
-    out = dart._parse_statements(_rows())
+    out = dart._parse_statements(_rows(), "11012")
     assert out["operatingIncome"] == 10_440_000_000_000
     assert out["opBasis"] == "3개월"
 
@@ -84,7 +114,7 @@ def test_operating_income_prefers_three_month_amount():
 def test_operating_income_falls_back_to_cumulative_and_says_so():
     rows = [{"sj_div": "IS", "account_nm": "영업이익", "thstrm_amount": "",
              "thstrm_add_amount": "17,100,000,000,000"}]
-    out = dart._parse_statements(rows)
+    out = dart._parse_statements(rows, "11012")
     assert out["operatingIncome"] == 17_100_000_000_000
     assert out["opBasis"] == "누적"      # 어느 기준인지 화면에 알려 줘야 한다
 

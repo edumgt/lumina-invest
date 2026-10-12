@@ -17,9 +17,15 @@ API 규약(실측)
     `000` 정상 · `010` 등록되지 않은 인증키 · `011` 사용할 수 없는 키 · `013` 조회된 데이터 없음 ·
     `020` 요청 제한 초과 · `100` 필드 부적절 · `800` 시스템 점검.
   - 고유번호(`corp_code`)는 `corpCode.xml` 이 **ZIP** 으로 내려준다 → 압축을 풀어 종목코드 매핑을 만든다.
-  - 재무제표는 `fnlttSinglAcntAll.json` 의 계정 단위 행. `sj_div` 가 `BS`(재무상태표)·`IS`/`CIS`(손익계산서).
-    분기보고서의 손익 행은 `thstrm_amount`(당기 3개월)와 `thstrm_add_amount`(당기 누적)를 함께 준다.
-    영업이익은 **3개월 금액을 우선** 쓰고, 없으면 누적을 쓰되 어느 쪽인지 `opBasis` 로 알려 준다.
+  - 재무제표는 `fnlttSinglAcntAll.json` 의 계정 단위 행. `sj_div` 는 `BS`·`IS`·`CIS`·`CF`·`SCE`.
+    `자본총계` 는 자본변동표(`SCE`)에도 7번 나오고 금액이 전부 다르므로 **반드시 `BS` 로 한정**해야 한다.
+
+  금액 기준(2026-10-12 삼성전자 2025년 보고서로 실측 — 추정 아님)
+  - 1분기·반기·3분기 보고서: `thstrm_amount` = **당기 3개월**, `thstrm_add_amount` = **당기 누적**.
+    검산: 1Q 66,853억 + 2Q 46,761억 = 반기 누적 113,613억, + 3Q 121,661억 = 3분기 누적 235,274억.
+  - **사업보고서(11011): `thstrm_amount` 가 연간**이고 `thstrm_add_amount` 는 빈 값이다.
+    그래서 4분기 3개월 금액은 **연간 − 3분기 누적**으로 계산한다(436,011 − 235,274 = 200,737억).
+    이 차감 외의 금액은 만들어내지 않는다.
 """
 from __future__ import annotations
 
@@ -165,30 +171,36 @@ async def corp_code_map() -> dict[str, str]:
         return mapping
 
 
-def _parse_statements(rows: list[dict]) -> dict:
-    """계정 행 → 재무상태표·손익 항목. 같은 계정이 여러 번 나오면 첫 값을 쓴다."""
+def _parse_statements(rows: list[dict], reprt_code: str = "") -> dict:
+    """계정 행 → 재무상태표·손익 항목. 같은 계정이 여러 번 나오면 첫 값을 쓴다.
+
+    `reprt_code` 가 사업보고서(11011)면 손익 `thstrm_amount` 는 **연간** 금액이다(실측).
+    그 경우 3개월 금액으로 오해하지 않도록 기준을 `연간` 으로 표시하고 누적도 함께 담는다.
+    """
+    annual = reprt_code == "11011"
     out: dict[str, int | None] = {k: None for k in (*_BS_TARGETS, *_IS_TARGETS)}
-    op_basis = None
+    extra: dict[str, object] = {"opBasis": None, "opCumulative": None, "periodName": None}
     for row in rows:
         div = str(row.get("sj_div") or "").upper()
         name = _norm(row.get("account_nm"))
-        if div == "BS":
+        if div == "BS":          # 자본총계는 SCE 에도 있으므로 BS 로 한정한다
             for key, names in _BS_TARGETS.items():
                 if out[key] is None and name in {_norm(n) for n in names}:
                     out[key] = _amount(row, "thstrm_amount")
         elif div in ("IS", "CIS"):
             for key, names in _IS_TARGETS.items():
                 if out[key] is None and name in {_norm(n) for n in names}:
-                    # 분기 3개월 금액 우선, 없으면 누적
                     value = _amount(row, "thstrm_amount")
-                    basis = "3개월"
-                    if value is None:
+                    basis = "연간" if annual else "3개월"
+                    if value is None:                       # 드물게 당기 칸이 비는 경우
                         value = _amount(row, "thstrm_add_amount")
                         basis = "누적"
                     out[key] = value
                     if key == "operatingIncome" and value is not None:
-                        op_basis = basis
-    return {**out, "opBasis": op_basis}
+                        extra["opBasis"] = basis
+                        extra["opCumulative"] = _amount(row, "thstrm_add_amount")
+                        extra["periodName"] = str(row.get("thstrm_nm") or "").strip() or None
+    return {**out, **extra}
 
 
 async def fetch_financials(symbol: str, year: int, quarter: int) -> dict | None:
@@ -209,7 +221,7 @@ async def fetch_financials(symbol: str, year: int, quarter: int) -> dict | None:
             if exc.status == "013":      # 이 보고서·구분에는 자료가 없다 → 다음 구분
                 continue
             raise
-        parsed = _parse_statements(body.get("list") or [])
+        parsed = _parse_statements(body.get("list") or [], reprt)
         if parsed.get("assets") is None and parsed.get("operatingIncome") is None:
             continue
         return {
@@ -264,3 +276,71 @@ async def latest_financials(symbol: str, lookback: int = 5) -> dict | None:
             return found
     await cache_set(cache_key, {})      # 없음도 캐시해 반복 조회를 막는다
     return None
+
+
+async def quarterly_operating_income(symbol: str, periods: int = 4) -> list[dict] | None:
+    """분기 영업이익 시계열(최근 → 과거 순서를 뒤집어 과거 → 최근).
+
+    각 분기의 **3개월 금액**을 쓴다. 1~3분기는 보고서의 `thstrm_amount` 가 바로 3개월 금액이고,
+    4분기는 DART 가 따로 주지 않으므로 **사업보고서 연간 − 3분기 누적**으로 계산한다(실측 근거는 모듈 docstring).
+    계산에 필요한 값이 없으면 그 분기는 건너뛴다 — 추정치로 채우지 않는다.
+    """
+    if not is_enabled() or not is_krx(symbol):
+        return None
+    code = stock_code_of(symbol)
+    if not code:
+        return None
+    cache_key = f"dart:opseries:v1:{code}:{periods}"
+    cached = await cache_get(cache_key, max_age_hours=FIN_TTL_HOURS)
+    if cached is not None:
+        return (cached.get("series") or None) if isinstance(cached, dict) else None
+
+    from datetime import datetime, timedelta, timezone
+    now = datetime.now(timezone(timedelta(hours=9)))
+    year, quarter = now.year, (now.month - 1) // 3 + 1
+    wanted: list[tuple[int, int]] = []
+    for _ in range(periods + 1):            # 공시 지연을 감안해 한 분기 더 뒤에서 시작
+        quarter -= 1
+        if quarter == 0:
+            year, quarter = year - 1, 4
+        wanted.append((year, quarter))
+
+    series: list[dict] = []
+    for cand_year, cand_quarter in wanted:
+        try:
+            report = await fetch_financials(symbol, cand_year, cand_quarter)
+        except DartError as exc:
+            if exc.status in ("010", "011", "020", "800"):
+                return None
+            continue
+        except Exception as exc:
+            logger.warning("DART 분기 영업이익 조회 실패 %s %dY%dQ: %s", symbol, cand_year, cand_quarter, exc)
+            return None
+        if not report or report.get("operatingIncome") is None:
+            continue
+        amount, basis = report["operatingIncome"], report.get("opBasis")
+        if cand_quarter == 4 and basis == "연간":
+            # 4분기 3개월 = 연간 − 3분기 누적. 3분기 보고서에서 누적을 받아 와야 한다.
+            try:
+                third = await fetch_financials(symbol, cand_year, 3)
+            except Exception:
+                third = None
+            cumulative = (third or {}).get("opCumulative")
+            if cumulative is None:
+                continue                     # 누적을 못 받으면 4분기 금액을 만들지 않는다
+            amount, basis = amount - cumulative, "연간−3분기누적"
+        elif basis not in ("3개월", "연간−3분기누적"):
+            continue                         # 누적만 있는 값을 분기로 섞지 않는다
+        series.append({
+            "label": f"{str(cand_year)[2:]}Q{cand_quarter}",
+            "periodName": report.get("periodName"),
+            "operatingIncome": amount,
+            "basis": basis,
+            "fsDiv": report.get("fsDiv"),
+        })
+        if len(series) >= periods:
+            break
+
+    series.reverse()                         # 과거 → 최근
+    await cache_set(cache_key, {"series": series})
+    return series or None
