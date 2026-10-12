@@ -13,8 +13,96 @@
    3) 새 규칙을 추가할 때 font-size 는 18px 이하만 쓴다. 18px 초과가 꼭 필요하면 todo.md 7절에 결정 항목으로 올린 뒤 적용한다.
    4) 고정 규칙은 아래 "타이틀 고정" 블록이 !important 로 적용한다(인라인·유틸리티 클래스보다 우선). 지우거나 완화하지 말 것.
 
-   테마 토큰(색·배경·그림자)은 사이트마다 다르므로 각 저장소 주 CSS 에 남겨 둔다.
+   테마 토큰의 '값'은 사이트마다 다르므로 각 저장소 주 CSS 의 :root 에 남겨 두고,
+   '이름'은 아래 0-2 표준 토큰 계약을 따른다.
    ══════════════════════════════════════════════════════════════════════════════ */
+
+/* ══ 0. 캐스케이드 계층 선언 ═══════════════════════════════════════════════
+   아래 세 계층(reset·tokens·components)은 **계층에 속하지 않은 각 사이트 CSS 보다
+   항상 약하다**(CSS Cascade Layers 규칙). 그래서 이 파일을 마지막에 불러도
+   사이트 고유 테마를 덮지 않는다. 공통 값은 "사이트가 정의하지 않았을 때의 기본"이고,
+   사이트가 같은 셀렉터·토큰을 선언하면 사이트 쪽이 이긴다.
+   반대로 이 파일 아래쪽의 "타이틀 고정"·"공통 푸터" 블록은 계층 밖 !important 이므로
+   예전처럼 사이트 CSS 를 덮는다. 두 성질을 섞지 말 것.
+   ══════════════════════════════════════════════════════════════════════════ */
+@layer edumgt-reset, edumgt-tokens, edumgt-components;
+
+/* ══ 0-1. 리셋 — 4개 사이트가 모두 같은 값으로 갖고 있던 것만 둔다 ══
+   margin·padding 0 은 pr·iv 에만 있어 fd·st 레이아웃을 바꾸므로 넣지 않는다. */
+@layer edumgt-reset {
+  *, *::before, *::after { box-sizing: border-box; }
+}
+
+/* ══ 0-2. 표준 토큰 계약 ════════════════════════════════════════════════════
+   4개 사이트가 공통으로 쓰는 토큰 "이름"을 고정한다. 값은 사이트별 테마가 공급하고
+   (각 저장소 주 CSS 의 :root), 여기 값은 선언이 없을 때의 기본값일 뿐이다.
+   새 공통 컴포넌트는 반드시 이 이름만 참조해서 작성한다.
+
+     --bg          페이지 배경          --text        본문 글자색
+     --surface     카드·패널 배경       --muted       보조 글자색
+     --border      선·테두리            --accent      강조색(브랜드 액션)
+     --radius      기본 모서리          --radius-sm   작은 모서리
+     --accent-on   강조색 위 글자색(노란 액센트인 pr·iv 는 #000)
+   ══════════════════════════════════════════════════════════════════════════ */
+@layer edumgt-tokens {
+  :root {
+    --bg:         #ffffff;
+    --surface:    #ffffff;
+    --border:     #e0e3eb;
+    --text:       #131722;
+    --muted:      #787b86;
+    --accent:     #2962ff;
+    --accent-on:  #ffffff;
+    --radius:     8px;
+    --radius-sm:  6px;
+
+    /* 스크롤바 — 사이트별로 값만 바꿔 쓴다. 기본값은 pr·iv 현행과 동일 */
+    --sb-width:       5px;
+    --sb-height:      auto;
+    --sb-track:       transparent;
+    --sb-thumb:       var(--border);
+    --sb-radius:      3px;
+    --sb-thumb-hover: var(--accent);
+  }
+}
+
+/* ══ 0-3. 공통 컴포넌트 ═════════════════════════════════════════════════════
+   토큰만 참조한다. 사이트가 같은 클래스를 정의하면 사이트 쪽이 이기므로,
+   여기 정의는 "아직 정의하지 않은 사이트"에서만 보인다.
+   ══════════════════════════════════════════════════════════════════════════ */
+@layer edumgt-components {
+  /* 스크롤바 — 4개 사이트가 구조는 같고 값만 달랐던 규칙(16개 → 4개) */
+  ::-webkit-scrollbar             { width: var(--sb-width); height: var(--sb-height); }
+  ::-webkit-scrollbar-track       { background: var(--sb-track); }
+  ::-webkit-scrollbar-thumb       { background: var(--sb-thumb); border-radius: var(--sb-radius); }
+  ::-webkit-scrollbar-thumb:hover { background: var(--sb-thumb-hover); }
+
+  /* 버튼 */
+  .btn-primary {
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    padding: 9px 16px; border: 0; border-radius: var(--radius-sm);
+    background: var(--accent); color: var(--accent-on);
+    font-family: inherit; font-size: 15px; font-weight: 700; line-height: 1.2;
+    cursor: pointer; transition: background .15s, box-shadow .15s;
+  }
+  .btn-primary:hover    { background: var(--accent-h, var(--accent)); }
+  .btn-primary:disabled { opacity: .55; cursor: not-allowed; }
+  .btn-ghost {
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    padding: 8px 14px; border: 1.5px solid var(--border); border-radius: var(--radius-sm);
+    background: transparent; color: var(--muted);
+    font-family: inherit; font-size: 15px; font-weight: 600; line-height: 1.2;
+    cursor: pointer; transition: border-color .15s, color .15s, background .15s;
+  }
+  .btn-ghost:hover    { border-color: var(--accent); color: var(--text); }
+  .btn-ghost:disabled { opacity: .55; cursor: not-allowed; }
+
+  /* 섹션 머리 위의 작은 라벨 */
+  .eyebrow {
+    font-size: 13px; font-weight: 700; letter-spacing: .08em;
+    text-transform: uppercase; color: var(--muted);
+  }
+}
 
 /* ══ 1. 한글 글자 스케일 — 라틴 문자는 원래 크기, 한글 글리프만 10% 크게 ══ */
 @font-face {

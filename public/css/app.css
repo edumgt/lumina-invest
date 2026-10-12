@@ -427,10 +427,8 @@
     .step-clarify      { border-left: 3px solid var(--brand); padding-left: 10px; }
 
     /* ── Scrollbar ──────────────────────────────────── */
-    ::-webkit-scrollbar { width: 4px; height: 4px; }
-    ::-webkit-scrollbar-track { background: transparent; }
-    ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 4px; }
-    ::-webkit-scrollbar-thumb:hover { background: var(--accent); }
+    /* 스크롤바 규칙은 공통 CSS 로 이동했다(edumgt-components 계층).
+       값만 바꾸려면 아래 :root 의 --sb-* 토큰을 조정한다. */
 
     /* ── Table ──────────────────────────────────────── */
     table { width: 100%; border-collapse: collapse; }
@@ -744,3 +742,22 @@
 body.xai-modal-open { overflow:hidden; }
 
 /* 공통 스타일(한글 스케일·최소 글자 크기·타이틀 고정·공통 푸터)은 https://www.edumgt.co.kr/css/common.css 정본에 있다. 여기에 다시 복제하지 말 것. */
+
+/* ══ 표준 토큰 계약 (20261012-common-3) ══════════════════════════════════════════════════
+   공통 CSS(https://www.edumgt.co.kr/css/common.css)의 edumgt-components 계층이
+   참조하는 8개 표준 토큰 이름을 이 사이트의 기존 토큰에 연결한다.
+   이 사이트의 색·값은 바뀌지 않는다. 검증: python3 shared-css/audit.py
+   ══════════════════════════════════════════════════════════════════════════ */
+:root {
+  /* 사이트 토큰 → 표준 토큰 이름 (값은 그대로, 이름만 공통 계약에 맞춘다) */
+  --surface: var(--surf);
+  --muted: var(--text-mute);
+  --accent-on: #fff;
+  --radius: 8px;              /* app.css 에서 가장 많이 쓰는 값 */
+  --radius-sm: 6px;
+  /* 스크롤바 — 기존 fd 값 유지 */
+  --sb-width: 4px;
+  --sb-height: 4px;
+  --sb-thumb: var(--border2);
+  --sb-radius: 4px;
+}

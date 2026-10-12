@@ -10,6 +10,10 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
+# 업로드 전 감사 — 주석 균형·:root 토큰 수·표준 토큰·미정의 var() (2026-10-08 사고 유형 차단)
+echo "── 배포 전 감사"
+python3 audit.py
+
 BUCKET="s3://www.edumgt.co.kr/css/common.css"
 URL="https://www.edumgt.co.kr/css/common.css"
 
@@ -20,3 +24,6 @@ aws s3 cp common.css "$BUCKET" \
 echo "배포 완료: $URL"
 echo "검증:"
 curl -fsS -D- -o /dev/null "$URL" | grep -iE '^(HTTP|content-type|cache-control|content-length)'
+
+echo "── 전파 후(최대 5분) 라이브 감사로 마무리한다:"
+echo "     python3 shared-css/audit.py --live"
