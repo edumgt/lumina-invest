@@ -106,6 +106,14 @@ class Settings(BaseSettings):
     KIS_CHART_TIMEOUT: float = 45.0
     QUANT_INDICATOR_CONCURRENCY: int = 6            # 지표 선조회 동시 요청 수. st 외부읽기 제한 12슬롯보다 낮게
     CONFIRM_FILLS_BUDGET_SEC: float = 75.0          # confirm_fills 소프트 데드라인(task time_limit 100초 안에서 커밋 보장)
+    # ── DART(금융감독원 전자공시) — 영업이익·재무상태표 (app/services/dart.py) ──
+    # Yahoo 가 영업이익·재무상태표를 빈 값으로 보내므로 국내 상장사는 DART 원문에서 받는다.
+    # 키가 없으면 조용히 비활성이고 기존 동작을 바꾸지 않는다. 여러 이름을 허용한다(배포별 상이).
+    DART_API_KEY: str = ""
+    OPEN_DART_API_KEY: str = ""
+    OPENDART_API_KEY: str = ""
+    DART_KEY: str = ""
+
     KIS_CHART_MINUTES: int = 240                    # 분봉 조회 개수(1분봉, st 최대 240) → 5분봉 48개
 
     # ── 정합성 점검: 로그(가상 장부·live_orders·사이클 로그) vs 실거래(KIS 잔고) (app/services/reconciliation.py) ──

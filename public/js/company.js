@@ -132,12 +132,14 @@ function renderCompanyData(d) {
         <tr><td style="color:var(--text-dim);font-size:12px;">매출액 (${amountUnit(d)})</td>${d.revenue.map(v=>`<td style="text-align:right;font-weight:600;">${nfmt(v)}</td>`).join("")}</tr>
         <tr><td style="color:var(--text-dim);font-size:12px;">영업이익 (${amountUnit(d)})</td>${d.op.map(v=>`<td style="text-align:right;color:var(--green);font-weight:600;">${nfmt(v)}</td>`).join("")}</tr>
         ${d.op.every(v => v === null || v === undefined) ? `<tr><td colspan="${d.quarters.length + 1}" style="color:var(--text-mute);font-size:11px;padding-top:6px;">
-          영업이익은 Yahoo 가 분기 손익계산서에서 <code>operatingIncome</code> 을 빈 값으로 보내 N/A 입니다(<code>ebit</code>·<code>grossProfit</code> 도 0 으로만 옵니다).
-          영업이익률은 <code>financialData</code> 에서 받아 위 「수익성」에 표시합니다.
+          ${d.dartOperatingIncome != null
+            ? `Yahoo 는 분기 영업이익(<code>operatingIncome</code>)을 빈 값으로 보냅니다. 대신 <b>DART 공시 기준 영업이익 ${fmt(d.dartOperatingIncome)}${amountUnit(d)}</b> — ${escHtml(d.opSource || "")}`
+            : `영업이익은 Yahoo 가 분기 손익계산서에서 <code>operatingIncome</code> 을 빈 값으로 보내 N/A 입니다(<code>ebit</code>·<code>grossProfit</code> 도 0 으로만 옵니다). 국내 상장사는 DART 연동 시 채워집니다. 영업이익률은 <code>financialData</code> 에서 받아 위 「수익성」에 표시합니다.`}
         </td></tr>` : ""}
         <tr><td style="color:var(--text-dim);font-size:12px;">순이익 (${amountUnit(d)})</td>${d.net.map(v=>`<td style="text-align:right;color:var(--accent);font-weight:600;">${nfmt(v)}</td>`).join("")}</tr>
       </tbody>
-    </table>` : `<div class="text-xs" style="color:var(--text-mute);">분기 실적 데이터 없음</div>`;
+    </table>
+    <div class="text-xs mt-2" style="color:var(--text-mute);">출처: ${escHtml(d.balanceSource || d.source || "출처 미기록")}</div>` : `<div class="text-xs" style="color:var(--text-mute);">분기 실적 데이터 없음</div>`;
 
   // 재무상태표
   const hasBalance = d.assets != null;
@@ -154,6 +156,7 @@ function renderCompanyData(d) {
       Yahoo Finance quoteSummary 의 <code>balanceSheetHistory</code> 가 결산일만 돌려주고 총자산·자기자본·부채 항목을 비워 보냅니다
       (2026-10-12 확인: 국내·해외 종목 모두 동일). 값을 추정해 채우지 않습니다 —
       대신 아래 「현금흐름」의 현금 및 단기투자·총차입금은 <code>financialData</code> 에서 받아 표시합니다.
+      국내 상장사는 DART 연동(<code>DART_API_KEY</code>)이 설정되면 전자공시 원문으로 채워집니다. 해외 종목은 DART 범위가 아닙니다.
     </div>`;
   attachIndicatorHelp();
 }

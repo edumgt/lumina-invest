@@ -318,8 +318,44 @@ async def get_fundamentals(symbol: str) -> dict:
         "liabilities": _eok(_raw(bs, "totalLiab")),
         "cash": _eok(_raw(bs, "cash")),
     }
+    # ── DART 덮어쓰기 ───────────────────────────────────────────────────────
+    # Yahoo 가 비워 보내는 두 블록(영업이익·재무상태표)만 국내 상장사에 한해 DART 원문으로 채운다.
+    # 키가 없거나 해외 종목이면 아무것도 바뀌지 않는다. 금액 단위는 원이므로 _eok 로 맞춘다.
+    await _overlay_dart(fundamentals, symbol, _eok, fin_cur)
+
     await cache_set(cache_key, fundamentals)
     return fundamentals
+
+
+async def _overlay_dart(fundamentals: dict, symbol: str, eok, fin_cur: str | None) -> None:
+    """DART 재무제표를 fundamentals 에 덮어쓴다. 실패는 조용히 무시한다(화면을 막지 않는다)."""
+    from app.services import dart
+    if not dart.is_enabled() or not dart.is_krx(symbol) or fin_cur not in (None, "KRW"):
+        return
+    try:
+        d = await dart.latest_financials(symbol)
+    except Exception as exc:                      # 외부 의존이므로 화면을 막지 않는다
+        logger.warning("DART 보강 실패 %s: %s", symbol, exc)
+        return
+    if not d:
+        return
+    period = f"{d['year']} {d['reportName']}"
+    if d.get("assets") is not None:
+        fundamentals.update({
+            "assets": eok(d.get("assets")), "equity": eok(d.get("equity")),
+            "liabilities": eok(d.get("liabilities")), "cash": eok(d.get("cash")),
+            "balanceSource": f"DART {d['fsDiv']} · {period}",
+        })
+    if d.get("operatingIncome") is not None:
+        fundamentals.update({
+            "dartOperatingIncome": eok(d.get("operatingIncome")),
+            "opSource": f"DART {d['fsDiv']} · {period}"
+                       + (f" · {d['opBasis']}" if d.get("opBasis") else ""),
+        })
+    fundamentals["dart"] = {
+        "period": period, "fsDiv": d["fsDiv"], "corpCode": d["corpCode"],
+        "source": d["source"], "opBasis": d.get("opBasis"),
+    }
 
 
 async def get_candles(symbol: str, period: str = "1y", interval: str = "1d", max_age_hours: float = 6) -> dict:

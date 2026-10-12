@@ -1336,3 +1336,73 @@ public/ CSS 뿐) ② st 의 1.05초 직렬화는 시간에 무관한 고정 속�
   로그인 세션이 필요하다. 지표 이름(점선 밑줄)을 눌러 모달 내용이 의도대로 보이는지 봐 주면 좋겠다.
 
 **커밋 안 했다** — 변경만 남겨 두었다.
+
+### 6-40. 2026-10-12 #company-dashboard 해외 종목 통화 오류 수정 + 영업이익·재무상태표 DART 모듈 연동 (사용자 요청)
+
+**(1) 통화 미구분 — 로직 버그, 수정 완료**
+
+`_eok()` 가 통화와 무관하게 1e8 로 나눠 '억원' 으로 환산했다. 종목 검색은 해외 종목을 의도적으로
+지원하는데(`routes/stocks.py` 검색 ②단계 "저장소에 없는 종목(해외·신규 상장 등)") 응답에 통화 필드가
+없어 프런트가 18곳에서 원/억원/조원을 하드코딩했다.
+
+실측 피해: AAPL `totalRevenue` = 109,417,000,000 **USD** → `1,094` → 화면 **"1,094억원"**
+(실제 $109.4B ≈ 152조원, 약 1,400배 오차). 시가총액·EPS·BPS·배당금·현금흐름도 동일.
+
+조치: `price.currency`(시세·주당)와 `financialData.financialCurrency`(재무제표)를 각각 따라
+원화는 억원, 그 외는 백만 단위로 환산하고 `currency·financialCurrency·priceUnit·capUnit·amountUnit` 을
+응답에 추가. 프런트는 이 값으로 라벨을 붙인다. **환율 환산은 하지 않는다**(환율 출처 없음 + 지어낸 환산 금지 원칙).
+캐시 키 `fundamentals:v2 → v3`. 폴백 경로도 chart meta 의 `currency` 로 통화를 채운다.
+
+검증(라이브): AAPL `336.64 달러 / 4.91조 달러`, 삼성전자 `250,000 원 / 1,642조원`,
+토요타(7203.T) `2,910.5 엔 / 34.47조 엔`. 시가총액 단위는 규모에 따라 조→억→서버단위로 내려간다
+(`$85.1B → 851억 달러`, `$850.5M → 8.51억 달러`, `$12M → 12 백만 USD`, 통화 미확인 시 꼬리 생략).
+
+**(2) 영업이익·재무상태표가 항상 N/A — Yahoo 소스 공백 확인**
+
+Yahoo quoteSummary 원문을 직접 찍었다(AAPL·삼성전자 동일):
+- 분기 손익계산서에 `operatingIncome` 키는 있으나 **값이 `{}`**. `ebit`·`grossProfit`·`costOfRevenue`·
+  `totalOperatingExpenses` 는 모두 **raw=0 placeholder**. 채워지는 건 `totalRevenue`·`netIncome` 뿐.
+  → `ebit` 로 폴백하면 0 이 찍혀 N/A 보다 나쁘다. 코드는 정상이고 **출처 공백**이다.
+- `balanceSheetHistory` 는 4건을 주지만 **각 건에 `endDate`·`maxAge` 만** 있다(총자산·자본·부채·현금 키 자체가 없음).
+
+**(3) DART 모듈 신설 — `app/services/dart.py`**
+
+국내 상장사는 DART 원문이 정본이므로 이 두 블록만 DART 에서 받는다.
+
+- 연결성·규약 실측: fd 컨테이너에서 `opendart.fss.or.kr` 접속 정상. **모든 응답이 HTTP 200** 이고
+  성공·실패는 본문 `status` 로 온다(`010 등록되지 않은 인증키` 확인). HTTP 코드만 보면 안 된다.
+- `corpCode.xml` 은 **ZIP** → 풀어서 종목코드(6자리)→고유번호(8자리) 맵을 만들고 30일 캐시.
+- `fnlttSinglAcntAll.json` 계정 행에서 `sj_div=BS` → 자산총계·부채총계·자본총계·현금및현금성자산,
+  `sj_div=IS|CIS` → 영업이익·매출액·당기순이익. 회사별 표기 차이(`영업이익(손실)`·`수익(매출액)`·
+  `현금및현금성자산등`)를 정규화해 맞춘다. 금액 문자열의 쉼표·괄호 음수·`-` 를 처리한다.
+- 영업이익은 **3개월 금액(`thstrm_amount`)을 우선**, 없으면 누적(`thstrm_add_amount`)을 쓰고
+  **어느 기준인지 `opBasis` 로 화면에 밝힌다**(누적을 3개월처럼 쓰면 분기 추이가 부풀려진다).
+- 연결(CFS)을 먼저 보고 `013 데이터 없음`이면 별도(OFS)로 재시도. 최근 분기부터 5개까지 거슬러 올라가
+  실제 공시된 보고서를 찾는다(분기 공시는 두 달 이상 늦게 올라온다). 키·한도·점검 오류(`010/011/020/800`)는
+  더 뒤져도 같은 실패이므로 즉시 중단한다. 결과는 종목별 24시간 캐시, '없음'도 캐시해 반복 조회를 막는다.
+- `get_fundamentals()` 마지막에 `_overlay_dart()` 로 덮어쓴다. **키가 없거나 해외 종목이면 아무것도 바뀌지 않는다.**
+  실패는 조용히 무시해 화면을 막지 않는다. 출처는 `balanceSource`·`opSource`(예: `DART 연결 · 2025 반기보고서 · 3개월`)로 표시한다.
+- 프런트: 재무상태표에 출처 줄 추가, 영업이익 각주에 DART 값·출처 표시, 미연동 시 안내 문구.
+
+**검증**: 신규 테스트 `tests/test_dart_financials.py` **33건**(금액 파싱 10 · 종목코드 11 · 계정 매핑 5 ·
+활성/비활성 6 · 보고서 탐색 1). 전체 스위트 **340개 통과**.
+
+**⚠ 인증키를 찾지 못했다 — 연동은 비활성 상태다.** 아래를 전부 확인했지만 DART 키가 없다:
+- 4개 저장소의 `.env`·`.env.example`·`.env.prod` (로컬 14개 파일)
+- fd 서버 `~/lumina-invest/.env`(변수 78개)·`.env.example`·`.env.prod`, `~/domain-rag-lab/.env.prod`
+- st 서버 `/opt/stock-coin-trade/.env*`, `/opt/stock-kms-portal/.env.prod`
+- 실행 중 컨테이너 4개(`fin-ai-app`·`domain-rag-lab-api-1`·`crypto-mock-python`·`stock-kms-portal-api-1`) 환경변수
+- AWS Secrets Manager (`stock-coin-trade/kis`·`/kb`·`/alpaca` 뿐)
+- 변수명(`dart|fss|disclosure|corpcode`) 검색과 **값이 40자 16진수(DART 키 형식)인 변수** 전수 검색 → 0건
+- 코드에서 `crtfc_key`·`opendart.fss` 참조 → domain-rag-lab 의 RAG 샘플 문서뿐(실제 호출 없음)
+
+fd `.env` 에 `DART_API_KEY=<40자 키>` 한 줄을 넣고 app·celery-worker 를 재생성하면 즉시 동작한다
+(변수명은 `OPEN_DART_API_KEY`·`OPENDART_API_KEY`·`DART_KEY` 도 받는다). 15:09 KST 장중이라
+파일만 올려두고 **재시작은 하지 않았다** — 키가 없으면 비활성이므로 지금 재시작해도 달라지는 게 없다.
+
+**키 투입 후 1회 실제 검증이 필요한 항목**(실제 응답 없이는 확정 못 함):
+- 분기보고서 손익 행의 `thstrm_amount` 가 정말 3개월 금액인지(사업보고서는 연간일 가능성)
+- 4개 분기 시계열을 채울지 — 사업보고서 4분기 금액은 연간−3분기누적 계산이 필요할 수 있어
+  **지금은 최근 1개 보고서 값만** 쓴다. 계산을 지어내지 않았다.
+
+**커밋 안 했다** — 변경만 남겨 두었다.
