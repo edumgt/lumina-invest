@@ -418,6 +418,7 @@ cd /home/ubuntu/lumina-invest && .venv/bin/python -m pytest tests/test_spec_rule
 | L10 | KIS 자격증명 Secrets Manager 시크릿 이름·IAM (**진행 중** — 6-8절 사용자 수행 명령 참고) | fd EC2 역할에 `secretsmanager:GetSecretValue` 를 붙이고 `.env KIS_SECRETS_NAME` 기입 vs 당분간 게이트웨이(stock-coin-trade 가 KIS 키 보유)만 사용 | 실주문은 게이트웨이가 정본이므로 `KIS_SECRETS_NAME` 은 가격·잔고 조회용으로 기입. 시크릿 이름 `lumina-invest/prod/kis`, environment=paper |
 | L11 | 대시보드 「KIS 모의투자 시작」 원클릭 노출 범위 | 모든 로그인 사용자 vs 운영 계정만. 버튼은 경로가 Testbed(paper)일 때만 활성화되지만 누르면 그 계정의 자동매매가 live+KIS 로 바뀐다 | Phase 4 관찰 기간에는 운영 계정 1개로만 사용 |
 | L12 | 포지션 단위 청산 규칙(손절·익절·트레일링) 도입 여부 | 현재 매도는 시그널(지표/전략 exit)에만 의존, 일손실 한도만 존재. 손절 −5%·익절 +10% 같은 규칙을 risk_guard 에 추가하면 Testbed 체결 데이터 해석이 바뀜 | Testbed 1주 관찰 뒤 도입, 값은 관찰 결과로 결정 |
+| L23 | `confirm_fills` 의 열린 주문 백로그 처리 방식 (**2026-10-12 발견, 조치 필요**) | 열린 live_orders 가 **95건**(처리 15 + 이월 80). st 의 KIS 직렬화로 건별 조회가 8초여서 75초 예산에 15건만 본다. 더 나쁜 것은 `created_at` 오름차순이라 **회차마다 같은 오래된 주문만 다시 조회**하고(실측: 0000002525·0000018202·0000029344·0000002409 반복) 최근 주문의 체결은 영원히 확인되지 않는다. ① ~~당일 주문목록 1회로 전 건 갱신~~ **불가 — 2026-10-12 확인**: st `list_today_orders` 는 KIS `inquire-daily-ccld`(당일 체결 목록)를 읽고 **KIS 모의투자는 이 목록을 비워 준다**(실측 `{"orders":[]}`). 건별 조회만 동작하는 이유는 st 가 목록에서 못 찾으면 `infer_status_from_holdings`(보유수량 추정)로 넘어가기 때문이다. 배치로 줄이려면 잔고 1회 조회로 추정하는 st 측 일괄 상태 엔드포인트가 필요하다(계약 변경) ② `STOCK_COIN_TRADE_CANCEL_OPEN_AFTER_MIN` 을 0 에서 20~30 으로 올려 미체결을 정리해 백로그 자체를 막는다(L2 와 같은 결정) ③ 스캔 순서를 최신 우선·라운드로빈으로 바꿔 굶주림만 해소 | **②+③ 먼저.** ① 은 모의투자에서 성립하지 않는다(위 정정). ② 로 백로그 유입을 막고 ③ 으로 최근 주문 굶주림을 없애는 것이 비용 대비 효과가 가장 크다. ① 의 배치화는 st 계약에 일괄 상태 엔드포인트를 추가하는 별건으로 다룬다. 또한 주문번호 없는 PENDING 행은 모의투자에서 당일목록 매칭이 영구히 실패하므로(실측 회차마다 skipped 6건) UNKNOWN 과 같은 만료 규칙이 필요하다 |
 | L14 | (2026-10-06) 백그라운드 배치 종목 | `KIS_PAPER_BATCH_SYMBOLS` 비움(AI 추천 상위 3, 기본) vs 고정 종목 | 1주 관찰은 AI 추천 유지, 체결 로그 보고 고정 여부 결정 |
 | L16 | (2026-10-06) 공격 모드 파라미터 | 익절 1.5%/손절 1.0%/사이클 매수 2·매도 3/강제 로테이션 매수 ON/시장가. 6-11 참고 | 1~2일 체결 로그 보고 TP/SL·강제 매수 조정 |
 | L17 | (2026-10-06) celery-beat 정지 근본 원인 | 6-13. heartbeat/autoheal 로 자동 복구는 되지만 원인 로그가 없다. 재발 시 beat 로그·RestartCount 수집 | 재발 2회 이상이면 beat 를 worker 내장(`-B`) 또는 RedBeat 스케줄러로 교체 검토 |
@@ -1207,3 +1208,90 @@ python3 shared-css/audit.py --live   # 라이브 4개 사이트
 - pr↔iv 포크 중복 337KB(`days/assets/site.css` 147KB 등)를 S3 공통 파일로 끌어올리는 작업은 별건으로 남겼다
 
 **커밋 안 했다** — 변경만 남겨 두었다.
+
+### 6-38. 2026-10-12 봇 주문 자동화 정지 — st KIS 호출 직렬화 큐에 사이클이 갇혀 매번 SIGKILL (사용자 보고)
+
+**증상**: 사용자가 "fd.edumgt.co.kr 에서 봇주문 자동화가 멈춤" 이라고 보고했다. 컨테이너는 전부 `healthy`,
+Beat 도 정상(3분마다 `quant.auto_trade_cycle`, 2분마다 `quant.confirm_fills` 발행)인데 주문이 나가지 않았다.
+
+**진단 (재배포 직후 12분간 워커 로그)**
+
+| 항목 | 값 |
+|---|---|
+| `quant.auto_trade_cycle` | 4회 실행 / **4회 전부** 하드 타임리밋 165초 초과 → SIGKILL |
+| `quant.confirm_fills` | 6회 실행 / **6회 전부** 100초 초과 → SIGKILL |
+| 정상 완료된 quant 태스크 | **0건** |
+| KIS 분봉 조회 | 60회 시도 / **성공 0회** (전부 httpx 타임아웃, 오류 메시지 빈 문자열) |
+
+**원인 — 고장이 아니라 처리량 불일치**
+
+1. st 은 모든 KIS 호출을 전역 1.05초 간격으로 직렬화한다(`stock-coin-trade .../brokers/kis.py` `_KIS_API_CALL_GAP_SECONDS`)
+2. `auto_trade_cycle` 은 `QUANT_STOCKS` 31종목을 **순차로** 돌며 종목마다 st 차트를 호출했다(`auto_trade.py` 지표 루프)
+3. fd 의 `KIS_CHART_TIMEOUT` 은 10초인데 st 응답은 큐가 밀려 32초가 걸렸다 —
+   직접 호출로 확인: `GET /api/kis-chart/minutes?symbol=005930` → **HTTP 200, 32.2초**, 삼성전자 254,500원 정상 응답.
+   **엔드포인트는 정상이고 느린 것이었다.**
+4. fd 는 10초에 포기하지만 st 은 버려진 요청을 계속 처리하므로 큐가 안 빠진다 → 종목마다 10초를 헛되게 쓰고
+   15~16종목째에 165초 리밋에 걸려 죽는다(로그의 실패 종목이 정확히 15개로 일치)
+5. `confirm_fills` 에는 **N+1 호출 버그**가 있었다. 주문번호 없는(PENDING) 행마다 루프 안에서
+   `gateway.list_today_orders()` 를 새로 호출해(캐시 없음, `retry=True`) 주문 7건에 전체목록 호출이 35회 나갔다
+6. **커밋이 루프 끝에 한 번뿐**이라 100초에 SIGKILL 되면 그 회차의 갱신이 전부 사라졌다 → 열린 주문이 영원히
+   닫히지 않고 다음 회차 조회량이 더 늘어나는 악순환
+
+타임리밋을 올리는 것은 **답이 아니다**. 이 프로젝트는 사이클 중복 실행을 락이 아니라
+`time_limit = 주기 − 15초`(165초)와 `expires` 로 막는다(`celery_app.py`). 올리면 사이클이 겹쳐 중복 주문 위험이 생긴다.
+따라서 "주기 안에 끝나도록" 고쳐야 한다.
+
+**조치 1 — 즉시 완화(코드 변경 없음)**: fd `.env` 에 `MARKET_DATA_SOURCE=yahoo` 추가 후 app·worker·beat 재생성.
+KIS 차트 부하가 사라져 31종목 조회가 약 10초(Yahoo 5분봉 ~0.3초/종목)로 끝났다. 백업 `~/lumina-invest/.env.bak-20261012-marketdata`.
+대가는 국내 분봉 ~20분 지연. **03:24:37 에 `quant_auto_trade_cycle 완료: {'enabled_users': 2, 'ran': 2, 'failed': 0}`
+가 찍히고 `POST /openapi/v1/kis/orders` 200 이 나가기 시작했다 — 주문 자동화 복구 확인.**
+
+**조치 2 — 근본 수정(코드)**
+
+- `auto_trade.py` 지표 루프: 31종목을 순차 조회에서 **제한 동시 요청(`QUANT_INDICATOR_CONCURRENCY`=6)** 선조회로 변경.
+  st 처리량은 그대로지만 한 사이클이 "31 × 10초 타임아웃" 대신 "약 31 × 1.05초 ≈ 35초에 전부 수신"이 된다.
+  st 의 외부 읽기 동시 제한이 12슬롯이고 초과 시 즉시 503 이므로(`ExternalReadLimitMiddleware`) 그보다 낮게 묶었다.
+  종목별 예외는 `return_exceptions=True` 로 받아 기존 except 블록에 그대로 넘겨 처리 동작을 유지했다.
+- `confirm_live_fills`: 당일 주문목록을 **회차당 1회**만 조회(환경별 캐시)
+- `confirm_live_fills`: **소프트 데드라인**(`CONFIRM_FILLS_BUDGET_SEC`=75초) 추가. 초과 시 루프를 멈추고
+  `deferred` 로 보고한 뒤 커밋해 부분 진행을 남긴다. 남은 행은 `created_at` 오름차순이라 다음 회차가 이어서 처리한다.
+- `KIS_CHART_TIMEOUT` 10 → 45초(동시 6개일 때 마지막 응답이 ~35초에 오므로). `time_limit` 은 **건드리지 않았다**.
+
+**검증**
+
+- 새 테스트 `tests/test_confirm_fills_call_budget.py` 2건 추가: ① PENDING 행 8개여도 전체목록 조회는 1회
+  ② 예산 초과 시 중단·`deferred` 보고·커밋 1회. 전체 스위트 **307개 통과**
+- 배포 후 첫 회차(03:28:02)에서 전체목록 호출이 회차당 **5회 → 1회**로 줄어든 것을 로그로 확인
+- `MARKET_DATA_SOURCE` 를 `kis` 로 되돌리는 것은 `confirm_fills` 안정화를 확인한 뒤 별도로 한다(7절 L23)
+
+**커밋 안 했다** — 변경만 남겨 두었다(`app/config.py`, `app/services/auto_trade.py`, 신규 테스트 1개).
+
+**배포 후 관찰 (03:29 회차)** — 두 태스크 모두 **SIGKILL 없이 완료**됐다.
+
+```
+[beat] quant_confirm_fills 완료: {'checked': 15, 'updated': 0, 'filled': 0, 'errors': 0, 'skipped': 6, 'deferred': 80}
+[beat] quant_auto_trade_cycle 완료: {'enabled_users': 2, 'ran': 2, 'failed': 0, ...}
+```
+
+이 숫자가 **새 문제를 드러냈다**. 열린 live_orders 가 95건(15+80)이고 건별 조회가 8초여서 한 회차에 15건만 본다.
+게다가 `created_at` 오름차순이라 회차마다 **같은 오래된 주문만 다시 조회**한다(실측: `0000002525`·`0000018202`·
+`0000029344`·`0000002409` 가 세 회차 연속 반복) → 이월 80건과 **최근 주문의 체결은 영원히 확인되지 않는다**.
+`STOCK_COIN_TRADE_CANCEL_OPEN_AFTER_MIN=0`(미체결 자동취소 끔)이라 백로그는 계속 늘어난다.
+소프트 데드라인을 넣기 전에는 아무것도 커밋되지 않아 이 굶주림이 보이지 않았을 뿐, 전부터 있던 결함이다.
+
+해결 방향은 **7절 L23** 에 올렸다. 계약 2-4(당일 주문 목록)가 2-3 과 같은 `order` 객체를 주므로
+목록 1회로 전 건을 갱신하면 회차당 KIS 호출이 95회 → 1~2회가 된다. 체결 확인 경로를 바꾸는 수정이라 승인 후 착수한다.
+
+**증거 범위에 대한 정정 (중요)** — 위 진단의 로그 증거는 **11:59~12:12 KST 구간**이다. fd 컨테이너가
+2026-10-12 02:59 UTC(11:59 KST)에 **재생성**되면서 그 이전 컨테이너의 `docker logs` 가 함께 삭제됐다
+(`/var/lib/docker/containers` 에 잔존 디렉터리 없음 — 컨테이너 16개 = 디렉터리 16개). 따라서 **09:00~11:59 구간은
+직접 증거가 없고 추론이다.** 추론 근거: ① 그 구간의 앱 코드·설정이 동일했다(이미지는 02:59 에 재빌드됐지만 변경분은
+public/ CSS 뿐) ② st 의 1.05초 직렬화는 시간에 무관한 고정 속성이다 ③ 열린 live_orders 가 95건까지 쌓이고
+가장 오래된 것들만 회차마다 반복 조회되는 상태는 `confirm_fills` 가 오래 못 빠져나왔음을 보여준다.
+
+**오늘 당일 주문 목록이 비어 있는 것은 "오늘 주문이 없었다"는 뜻이 아니다** — 실측 `{"ok":true,"date":"20261012","orders":[]}`
+인데도 같은 시간대에 `POST /openapi/v1/kis/orders` 200 이 나갔고 건별 조회는 200 이다. KIS 모의투자가 당일 체결 목록을
+비워 주기 때문이다(L23 정정 참고).
+
+09:00~11:59 를 사실로 확정하려면 fd DB 가 답을 갖고 있다 — `_persist_cycle` 의 사이클 로그와 `live_orders.created_at`.
+이번 세션에서는 프로덕션 DB 읽기가 권한 분류기에 막혀 조회하지 못했다. 화면 「모의 투자 의사결정」 에 같은 사이클 로그가 보인다.

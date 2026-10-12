@@ -100,7 +100,12 @@ class Settings(BaseSettings):
     # kis 면 국내(.KS/.KQ) 일봉·분봉·현재가를 st 게이트웨이의 KIS 차트 API 에서 받는다(실시간). Yahoo 는 국내 분봉 ~20분 지연·요청 제한.
     MARKET_DATA_SOURCE: str = "kis"                 # kis | yahoo
     MARKET_DATA_FALLBACK_YAHOO: bool = True         # KIS 조회 실패·빈 응답이면 Yahoo 로 폴백
-    KIS_CHART_TIMEOUT: float = 10.0
+    # st 는 KIS 호출을 전역 1.05초 간격으로 직렬화한다. 31종목을 동시 6개로 보내면 마지막 응답이
+    # 약 31 × 1.05초 ≈ 35초 뒤에 온다. 10초였을 때는 전부 타임아웃돼 분봉 조회가 60전 60패였다(2026-10-12).
+    # 사이클 하드 타임리밋(165초)보다 넉넉히 작게 둔다.
+    KIS_CHART_TIMEOUT: float = 45.0
+    QUANT_INDICATOR_CONCURRENCY: int = 6            # 지표 선조회 동시 요청 수. st 외부읽기 제한 12슬롯보다 낮게
+    CONFIRM_FILLS_BUDGET_SEC: float = 75.0          # confirm_fills 소프트 데드라인(task time_limit 100초 안에서 커밋 보장)
     KIS_CHART_MINUTES: int = 240                    # 분봉 조회 개수(1분봉, st 최대 240) → 5분봉 48개
 
     # ── 정합성 점검: 로그(가상 장부·live_orders·사이클 로그) vs 실거래(KIS 잔고) (app/services/reconciliation.py) ──

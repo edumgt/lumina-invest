@@ -11,6 +11,7 @@ import json
 import logging
 import uuid
 from datetime import datetime, timezone
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -611,12 +612,31 @@ async def confirm_live_fills(limit: int = 100) -> dict:
         summary["skipped"] = -1
         return summary
     session_factory = get_session_factory()
+    # st 는 KIS 호출을 전역 1.05초 간격으로 직렬화한다. 이 루프가 time_limit(100초) 에 걸려 SIGKILL 되면
+    # 루프 끝의 db.commit() 이 실행되지 않아 **그 회차의 갱신이 전부 버려진다** → 열린 주문이 영원히 안 닫히고
+    # 다음 회차의 조회량이 더 늘어난다(2026-10-12 자동화 정지 사고). 소프트 데드라인에서 멈추고 커밋해
+    # 부분 진행이라도 남긴다. 남은 행은 created_at 오름차순이므로 다음 회차가 이어서 처리한다.
+    deadline = asyncio.get_running_loop().time() + max(1.0, float(getattr(app_settings, "CONFIRM_FILLS_BUDGET_SEC", 75.0) or 75.0))
+    # 당일 주문 목록은 회차당 1회만 받는다. 예전에는 주문번호 없는 행마다 새로 조회해(N+1) 주문 7건에
+    # 전체목록 호출 35회가 나갔다.
+    today_orders: dict[str, list[dict[str, Any]]] = {}
+
+    async def _today_orders(env: str | None) -> list[dict[str, Any]]:
+        key = str(env or "")
+        if key not in today_orders:
+            today_orders[key] = await gateway.list_today_orders(env=env)
+        return today_orders[key]
+
     async with session_factory() as db:
         result = await db.execute(
             select(LiveOrder).where(LiveOrder.status.in_(LIVE_ORDER_OPEN_STATUSES)).order_by(LiveOrder.created_at).limit(limit)
         )
         rows = list(result.scalars().all())
         for row in rows:
+            if asyncio.get_running_loop().time() > deadline:
+                summary["deferred"] = len(rows) - summary["checked"]
+                logger.warning("confirm_live_fills 예산 초과 — %d건을 다음 회차로 넘긴다", summary["deferred"])
+                break
             summary["checked"] += 1
             try:
                 if row.order_no:
@@ -652,7 +672,7 @@ async def confirm_live_fills(limit: int = 100) -> dict:
                 else:
                     # 주문번호를 못 받은(PENDING) 건: 당일 목록에서 같은 종목·방향·수량으로 추정 매칭
                     code = gateway.normalize_symbol(row.symbol)
-                    candidates = [o for o in await gateway.list_today_orders(env=row.environment)
+                    candidates = [o for o in await _today_orders(row.environment)
                                   if o.get("symbol") == code and o.get("side") == row.side and int(o.get("orderedQuantity") or 0) == row.quantity]
                     if not candidates:
                         summary["skipped"] += 1
@@ -782,10 +802,31 @@ async def _run_quant_cycle(user_id: str = "quant_system") -> None:
         indicator_map: dict[str, dict] = {}
         stock_map = {s["symbol"]: s for s in QUANT_STOCKS}
 
+        # 지표 선조회 — 순차로 돌면 안 된다. st 는 KIS 호출을 전역 1.05초 간격으로 직렬화하므로
+        # 종목마다 KIS_CHART_TIMEOUT 을 통째로 소진하고(31종목 × 10초 = 310초) 사이클이 하드 타임리밋
+        # (165초 = 주기 180초 − 15초, 중복 실행 방지 장치)에 걸려 죽는다 → 주문이 한 건도 나가지 않는다.
+        # 동시에 보내면 st 처리량은 그대로여도 한 사이클이 약 31 × 1.05초 ≈ 35초에 전부 받는다.
+        # st 의 외부 읽기 동시 제한은 12슬롯이고 초과 시 즉시 503 이므로(ExternalReadLimitMiddleware)
+        # 다른 호출자 몫을 남겨 그보다 낮게 묶는다.
+        _sem = asyncio.Semaphore(max(1, int(getattr(app_settings, "QUANT_INDICATOR_CONCURRENCY", 6) or 6)))
+
+        async def _indicators_for(symbol: str) -> dict:
+            async with _sem:
+                return (await aggressive_mode.get_intraday_indicators(symbol) if aggressive
+                        else await get_quant_indicators(symbol, "2y"))
+
+        _prefetched = dict(zip(
+            [s["symbol"] for s in QUANT_STOCKS],
+            await asyncio.gather(*(_indicators_for(s["symbol"]) for s in QUANT_STOCKS), return_exceptions=True),
+        ))
+
         for stock in QUANT_STOCKS:
             try:
-                indicators = (await aggressive_mode.get_intraday_indicators(stock["symbol"]) if aggressive
-                              else await get_quant_indicators(stock["symbol"], "2y"))
+                indicators = _prefetched.get(stock["symbol"])
+                if isinstance(indicators, BaseException):
+                    raise indicators            # 종목별 예외 처리는 아래 except 로 그대로 넘긴다
+                if indicators is None:
+                    indicators = await _indicators_for(stock["symbol"])
                 indicator_map[stock["symbol"]] = indicators
                 signal = indicators.get("signal", {})
                 price = indicators.get("current_price")
