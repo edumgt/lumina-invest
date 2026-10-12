@@ -1545,4 +1545,14 @@ st 공개 조회 계약(`rows[].trade_date`, `nextOffset`)은 라이브 응답�
 **검증**: JS 5개 `node --check` 통과. 분석 함수를 node 에서 스텁(escHtml)으로 실행해 새 형식 3건 + 예전 형식 백테스트/ML 2건으로 순위표·읽는 법 6건·주의 8건이 기대대로 나오는 것을 확인(빈 목록은 빈 문자열). 브라우저 렌더링은 확인하지 못했다.
 예전 항목의 종목명(예 "삼성전자")과 새 항목의 코드("005930.KS")는 다른 종목으로 집계된다 — 트레이를 비우고 다시 담으면 해소.
 
-**커밋·배포 안 했다** — 변경만 남겨 두었다(배포는 main 푸시 → GitHub Actions).
+**배포 완료 (2026-10-12, 사용자 요청)**: 커밋 `03eed2b` 푸시 → GitHub Actions `Deploy to fund-web EC2` success. fd `/api/health` 200, 서빙되는 `core.js`·`quant.js` 에 새 코드 반영 확인. 이 todo 갱신분만 미커밋.
+
+### 6-44. 2026-10-12 #quant-backtest '비교에 추가' 버튼 스크립트 오류 (사용자 보고)
+
+**원인**: `quant.js` 의 인라인 핸들러 템플릿이 `onclick='compareTrayAdd(${JSON.stringify(...)}')">` 로 끝나 있었다. `}` 다음이 `'` 라
+속성이 `)` **앞에서** 닫혀 브라우저가 `compareTrayAdd({...}` 만 실행 → `SyntaxError: missing ) after argument list`, 뒤의 `)">` 는 잡문자.
+이 패턴은 6-42 이전 원본(커밋 `6b607b6`, "퀀트 전략 분석" 시절)부터 있었고 6-42·6-43 에서 그대로 옮겨 왔다. node 로 생성 HTML 을 만들어
+`new Function(onclick)` 으로 재현했다.
+
+**조치**: `})'>` 로 순서 수정(괄호 닫고 속성 닫기). 다른 JS 의 인라인 `onclick` 은 모두 큰따옴표 속성 + 작은따옴표 인자라 영향 없음.
+재현 스크립트가 `called with keys: [source,label,kind,symbol,period,summary,metrics]` 로 통과.
