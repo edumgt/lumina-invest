@@ -1511,7 +1511,7 @@ DART 가 붙지 않고 통화(USD·백만 USD) 표기만 유지된다.
 | `app/services/lean_backtest.py` | `fetch_close_bars()` 신설(저장소 우선, 메타 반환), `fetch_close_series` 는 래퍼로 유지. `run()` 결과에 `price_source`, engine 문자열 "… + 시스템 OHLCV/Yahoo Finance", disclaimer 수정. 종가는 원시 종가로 통일(이전엔 Yahoo adjclose) — domain-rag-lab 과 같은 기준 |
 | `app/routes/stocks.py` | `/quant/pipeline`·`/quant/compare` 응답에 `source`·`price_source` |
 | `public/app.html` | `#quant-backtest` 카드: 제목 "퀀트 전략 백테스트 (10년 일봉)", 데이터 처리 순서 설명, 전략 선택(복합·MA·RSI·볼린저)·비용(bp) 입력, 버튼 "백테스트 실행". LEAN 카드 설명문도 저장소 우선으로 수정 |
-| `public/js/quant.js` | `bt-load` 가 `/api/stocks/quant/pipeline?period=10y&strategy&cost_bps` 를 호출해 누적수익률·보유 수익률·초과 수익·샤프·MDD·승률·매매 횟수/노출·비용 KPI 와 **"데이터: 저장소 n봉 · Yahoo→저장소 적재 m봉 → 총 k봉"** 줄을 보여 준다 |
+| `public/js/quant.js` | `bt-load` 가 `/api/quant/pipeline?period=10y&strategy&cost_bps` 를 호출해 누적수익률·보유 수익률·초과 수익·샤프·MDD·승률·매매 횟수/노출·비용 KPI 와 **"데이터: 저장소 n봉 · Yahoo→저장소 적재 m봉 → 총 k봉"** 줄을 보여 준다 |
 | `public/js/paper.js` | LEAN 결과에 같은 "데이터:" 줄(로컬·원격 메타 모두 처리, yfinance 표기 포함), 실행 중 안내문 수정 |
 | `public/js/core.js`·`completion.js` | 화면 안내·완성도 문구를 실제 동작에 맞춤 |
 | `tests/test_ohlcv_store.py` (신규, 11개) | 저장소 완비(적재 없음)·뒤 구간 적재 후 재조회·미등록 종목 전체 적재·API 키 없음→Yahoo 직접·해외 종목·st 미설정·st 장애→Yahoo·상장 전 구간 기억·페이지 병합·period_start/krx_code·`get_candles` 저장소 우선 |

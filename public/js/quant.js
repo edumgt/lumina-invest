@@ -187,7 +187,7 @@ document.getElementById("bt-load").addEventListener("click", async () => {
   const pct = v => (v == null || Number.isNaN(v)) ? "-" : `${v > 0 ? "+" : ""}${Number(v).toFixed(2)}%`;
   const cls = v => v > 0 ? "text-emerald-400" : v < 0 ? "text-red-400" : "text-slate-300";
   try {
-    const data = await api(`/api/stocks/quant/pipeline?symbol=${encodeURIComponent(symbol)}&period=10y&strategy=${encodeURIComponent(strategy)}&cost_bps=${cost}`);
+    const data = await api(`/api/quant/pipeline?symbol=${encodeURIComponent(symbol)}&period=10y&strategy=${encodeURIComponent(strategy)}&cost_bps=${cost}`);
     if (data.error) { el.innerHTML = `<div class='text-red-400'>${escHtml(data.error)}</div>`; return; }
     const ps = data.price_source || {};
     const srcLabel = f => f.source === "yahoo→store" ? "Yahoo→저장소 적재" : f.source === "yahoo" ? "Yahoo 직접" : escHtml(String(f.source));
