@@ -64,3 +64,18 @@ def max_drawdown(cum_returns: pd.Series) -> float:
     roll_max = cum_returns.cummax()
     drawdown = (cum_returns - roll_max) / roll_max.replace(0, np.nan)
     return float(drawdown.min())
+
+
+def ichimoku(high: pd.Series, low: pd.Series, close: pd.Series, tenkan: int = 9, kijun: int = 26,
+             senkou_b: int = 52, displacement: int = 26) -> dict[str, pd.Series]:
+    """일목균형표. 선행스팬은 displacement 만큼 앞으로 밀어 '현재 봉 위의 구름'이 되도록 정렬한다.
+
+    반환: tenkan(전환선)·kijun(기준선)·senkou_a/senkou_b(현재 봉에 적용되는 구름)·
+          lead_a/lead_b(현재 봉에서 계산한 값, 26봉 뒤의 구름)·chikou(후행스팬, 26봉 전 위치로 보낸 종가).
+    """
+    mid = lambda n: (high.rolling(n).max() + low.rolling(n).min()) / 2  # noqa: E731
+    tk, kj = mid(tenkan), mid(kijun)
+    lead_a, lead_b = (tk + kj) / 2, mid(senkou_b)
+    return {"tenkan": tk, "kijun": kj,
+            "senkou_a": lead_a.shift(displacement), "senkou_b": lead_b.shift(displacement),
+            "lead_a": lead_a, "lead_b": lead_b, "chikou": close.shift(-displacement)}

@@ -1558,9 +1558,17 @@
       <div class="space-y-4">
         <div class="card">
           <h2 class="text-lg font-semibold mb-1">🕯️ 차트 패턴 · 지지/저항 · 멀티타임프레임 신호</h2>
-          <p class="text-xs mb-3" style="color:var(--text-mute);">캔들 패턴(해머·장악형·샛별형 등)과 피벗 기반 지지·저항선, 돌파·골든크로스 이벤트를 탐지하고, 분봉(60분)·일봉·주봉 지표를 종합해 매수·매도·관망 신호와 신뢰도를 산출합니다.</p>
+          <p class="text-xs mb-3" style="color:var(--text-mute);">캔들 패턴(해머·장악형·샛별형 등)과 피벗 기반 지지·저항선, 돌파·골든크로스·거래량 급증 이벤트, 일목균형표(구름·전환/기준선·후행스팬), 가격대별 매물대, 갭(소진·돌파)을 탐지하고, 분봉(60분)·일봉·주봉 지표를 종합해 매수·매도·관망 신호와 신뢰도를 산출합니다. 봉 단위를 바꾸면 패턴·일목·매물대·갭이 그 봉으로 다시 계산됩니다.</p>
           <div class="flex flex-wrap gap-2 items-end">
             <div><label for="pt-symbol" class="text-xs" style="color:var(--text-mute);">종목코드</label><input id="pt-symbol" class="input" value="005930.KS" placeholder="005930.KS / AAPL" style="width:160px" /></div>
+            <div><label for="pt-interval" class="text-xs" style="color:var(--text-mute);">봉 단위</label>
+              <select id="pt-interval" class="input" style="width:150px">
+                <option value="1d" selected>일봉 · 1년</option>
+                <option value="60m">60분봉 · 1개월</option>
+                <option value="30m">30분봉 · 1개월</option>
+                <option value="15m">15분봉 · 1개월</option>
+                <option value="5m">5분봉 · 5일</option>
+              </select></div>
             <button id="pt-search" class="btn-ghost" type="button">🔍 종목 검색</button>
             <span id="pt-selected" class="text-xs" style="color:var(--text-mute);">삼성전자</span>
             <button id="pt-run" class="btn-primary">분석 실행</button>
@@ -1596,8 +1604,10 @@
           <h3 id="pt-chart-title" class="font-semibold text-sm mb-2"></h3>
           <div class="flex flex-wrap gap-3 text-xs mb-2">
             <label><input id="pt-show-sr" type="checkbox" checked /> 지지(초록) · 저항(빨강)</label>
-            <label><input id="pt-show-patterns" type="checkbox" checked /> 패턴 · 돌파 표시</label>
-            <span style="color:var(--text-mute);">일봉 1년 · 휠/핀치로 확대 · 드래그로 이동</span>
+            <label><input id="pt-show-patterns" type="checkbox" checked /> 패턴 · 돌파 · 갭 표시</label>
+            <label><input id="pt-show-vp" type="checkbox" /> 매물대(POC · 가치영역)</label>
+            <label><input id="pt-show-ichimoku" type="checkbox" /> 일목 구름 · 전환/기준선</label>
+            <span id="pt-chart-range" style="color:var(--text-mute);">일봉 1년 · 휠/핀치로 확대 · 드래그로 이동</span>
             <button id="pt-chart-reset" class="btn-secondary text-xs" type="button">차트 초기화</button>
           </div>
           <p id="pt-chart-ohlc" class="text-xs mb-2" style="color:var(--text-dim);min-height:20px;"></p>
@@ -1611,6 +1621,11 @@
           <div id="pt-sr" class="card hidden"></div>
         </div>
         <div id="pt-breakouts" class="card hidden"></div>
+        <div class="grid lg:grid-cols-2 gap-4">
+          <div id="pt-ichimoku" class="card hidden"></div>
+          <div id="pt-vp" class="card hidden"></div>
+        </div>
+        <div id="pt-gaps" class="card hidden"></div>
       </div>
     </div>
 

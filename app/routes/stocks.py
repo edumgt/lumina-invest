@@ -882,18 +882,25 @@ async def broker_test(
 
 # ── 차트 패턴 · 지지/저항 · 멀티타임프레임 ─────────────────────────────
 
+PATTERN_INTERVALS = {"1d": "1y", "60m": "1mo", "30m": "1mo", "15m": "1mo", "5m": "5d"}   # interval → 기본 range
+
+
 @router.get("/stocks/patterns")
-async def stock_patterns(symbol: str = Query("005930.KS"), period: str = Query("1y"), _user=Depends(get_current_user)):
-    """캔들 패턴·지지/저항선·돌파 신호 (일봉)."""
+async def stock_patterns(symbol: str = Query("005930.KS"), period: str | None = Query(None),
+                         interval: str = Query("1d", description="1d | 60m | 30m | 15m | 5m"), _user=Depends(get_current_user)):
+    """캔들 패턴·지지/저항선·돌파 신호·일목균형표·매물대·갭. 기본 일봉 1년, 분봉은 Yahoo 분봉(60m·30m·15m 1개월, 5m 5일)."""
     from app.services.patterns import pattern_summary
-    data = await get_candles(symbol, period=period, interval="1d", max_age_hours=0)
+    if interval not in PATTERN_INTERVALS:
+        raise HTTPException(400, f"interval 은 {', '.join(PATTERN_INTERVALS)} 중 하나여야 합니다")
+    period = period or PATTERN_INTERVALS[interval]
+    data = await get_candles(symbol, period=period, interval=interval, max_age_hours=0)
     candles = data.get("candles", [])
     if not candles:
         raise HTTPException(404, f"종목 데이터 없음: {symbol}")
     result = pattern_summary(candles)
     if "error" in result:
         raise HTTPException(422, result["error"])
-    return {"symbol": symbol, "candles": candles, **result,
+    return {"symbol": symbol, "interval": interval, "period": period, "candles": candles, **result,
             "source": data.get("source", "unknown"),
             "fetched_at": datetime.now(timezone.utc).isoformat(),
             "refresh_seconds": 30}

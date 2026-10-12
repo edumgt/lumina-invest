@@ -480,6 +480,7 @@ let patternChart = null;
 let patternSeries = null;
 let patternMarkers = null;
 let patternPriceLines = [];
+let patternIchimokuSeries = [];
 let patternChartData = null;
 let patternRun = 0;
 let patternRequest = null;
@@ -502,9 +503,10 @@ function clearPatternResults() {
   patternChart?.remove();
   patternSeries = null;
   patternPriceLines = [];
+  patternIchimokuSeries = [];
   patternChart = null;
   patternChartData = null;
-  for (const id of ["pt-chart-card", "pt-mtf", "pt-patterns", "pt-sr", "pt-breakouts"]) {
+  for (const id of ["pt-chart-card", "pt-mtf", "pt-patterns", "pt-sr", "pt-breakouts", "pt-ichimoku", "pt-vp", "pt-gaps"]) {
     document.getElementById(id)?.classList.add("hidden");
   }
   document.getElementById("pt-chart").replaceChildren();
@@ -513,8 +515,10 @@ function clearPatternResults() {
 function patternMarkersData(pat, candles) {
   const colors = { bullish: "#089981", bearish: "#ef4444", neutral: "#64748b" };
   const groups = new Map();
-  for (const pattern of pat.patterns) {
-    const candle = candles.find(c => new Date(c.time * 1000).toISOString().slice(0, 10) === pattern.date);
+  const byTime = new Map(candles.map(c => [c.time, c]));
+  for (const pattern of [...pat.patterns, ...(pat.gaps || [])]) {
+    const candle = (Number.isFinite(pattern.time) && byTime.get(Math.floor(pattern.time)))
+      || candles.find(c => new Date(c.time * 1000).toISOString().slice(0, 10) === pattern.date);
     if (!candle) continue;
     const key = `${candle.time}:${pattern.direction}`;
     if (!groups.has(key)) groups.set(key, { candle, direction: pattern.direction, names: [] });
@@ -549,6 +553,14 @@ function updatePatternOverlays() {
       title: `${level.type === "support" ? "지지" : "저항"} · ${level.touches}회`,
     }));
   }
+  const vp = pat.volume_profile;
+  if (document.getElementById("pt-show-vp")?.checked && vp && !vp.error) {
+    patternPriceLines.push(patternSeries.createPriceLine({ price: vp.poc.mid, color: "#f59e0b", lineWidth: 2, lineStyle: LightweightCharts.LineStyle.Solid, axisLabelVisible: true, title: `최대 매물대 ${vp.poc.pct}%` }));
+    for (const [price, label] of [[vp.value_area.high, "가치영역 상단"], [vp.value_area.low, "가치영역 하단"]]) {
+      patternPriceLines.push(patternSeries.createPriceLine({ price, color: "#f59e0b", lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dotted, axisLabelVisible: true, title: label }));
+    }
+  }
+  for (const line of patternIchimokuSeries) line.applyOptions({ visible: !!document.getElementById("pt-show-ichimoku")?.checked });
   patternMarkers.setMarkers(document.getElementById("pt-show-patterns").checked ? patternMarkersData(pat, candles) : []);
   // Refresh autoscale after changing level visibility without resetting zoom or scroll.
   patternSeries.applyOptions({ autoscaleInfoProvider: patternAutoscale });
@@ -564,6 +576,34 @@ function patternAutoscale(original) {
   } };
 }
 
+// 일목균형표 오버레이: 전환선·기준선·선행스팬 A/B(26봉 선행). 프론트에서 다시 계산해 전 구간에 그린다.
+function ichimokuOverlaySeries(chart, candles) {
+  if (candles.length < 78) return [];
+  const hi = candles.map(c => c.high), lo = candles.map(c => c.low);
+  const mid = (i, n) => i + 1 < n ? null : (Math.max(...hi.slice(i - n + 1, i + 1)) + Math.min(...lo.slice(i - n + 1, i + 1))) / 2;
+  const step = candles.length > 1 ? candles[candles.length - 1].time - candles[candles.length - 2].time : 86400;
+  const tenkan = [], kijun = [], spanA = [], spanB = [];
+  candles.forEach((c, i) => {
+    const t = mid(i, 9), k = mid(i, 26), b = mid(i, 52);
+    if (t != null) tenkan.push({ time: c.time, value: t });
+    if (k != null) kijun.push({ time: c.time, value: k });
+    const ahead = i + 26 < candles.length ? candles[i + 26].time : c.time + step * 26;   // 주말·휴장 무시한 근사
+    if (t != null && k != null) spanA.push({ time: ahead, value: (t + k) / 2 });
+    if (b != null) spanB.push({ time: ahead, value: b });
+  });
+  const mk = (data, color, width, style) => {
+    const s = chart.addSeries(LightweightCharts.LineSeries, { color, lineWidth: width, lineStyle: style, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false, visible: false });
+    s.setData(data);
+    return s;
+  };
+  return [
+    mk(tenkan, "#2563eb", 1, LightweightCharts.LineStyle.Solid),
+    mk(kijun, "#b91c1c", 1, LightweightCharts.LineStyle.Solid),
+    mk(spanA, "#16a34a", 1, LightweightCharts.LineStyle.Dotted),
+    mk(spanB, "#dc2626", 1, LightweightCharts.LineStyle.Dotted),
+  ];
+}
+
 async function renderPatternChart(pat, symbol) {
   if (!window.LightweightCharts) throw new Error("TradingView 차트 라이브러리를 불러오지 못했습니다. 페이지를 새로고침하세요.");
   // Lightweight Charts requires strictly increasing, unique timestamps.
@@ -575,11 +615,13 @@ async function renderPatternChart(pat, symbol) {
     }
   }
   const candles = [...unique.values()].sort((a, b) => a.time - b.time);
-  if (!candles.length) throw new Error("차트에 표시할 일봉 데이터가 없습니다.");
+  if (!candles.length) throw new Error("차트에 표시할 봉 데이터가 없습니다.");
   patternChartData = { pat, candles };
   document.getElementById("pt-chart-card").classList.remove("hidden");
-  document.getElementById("pt-chart-title").textContent = `${symbol} · TradingView · 지지·저항 및 캔들 패턴 (${pat.as_of} 기준)`;
-  document.getElementById("pt-chart-note").textContent = `${pat.source === "kis" ? "KIS 최신 시세" : "Yahoo 시세 (지연 가능)"} · 조회 ${pat.fetched_at ? new Date(pat.fetched_at).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" }) : "시각 미제공"} · 30초마다 자동 갱신 · 장중 일봉은 미확정입니다. 패턴은 최근 5봉에 표시합니다. ${pat.patterns.length ? "표시된 패턴의 상세 해설은 아래 표에서 확인하세요." : "최근 5봉에서 뚜렷한 패턴이 없습니다."} 지지·저항은 과거 피벗 가격대이며 향후 반등·돌파를 보장하지 않습니다.`;
+  const intervalLabel = document.querySelector(`#pt-interval option[value="${pat.interval || "1d"}"]`)?.textContent || "일봉";
+  document.getElementById("pt-chart-title").textContent = `${symbol} · ${intervalLabel.split(" · ")[0]} · TradingView · 지지·저항 및 캔들 패턴 (${pat.as_of} 기준)`;
+  document.getElementById("pt-chart-range").textContent = `${intervalLabel} · 휠/핀치로 확대 · 드래그로 이동`;
+  document.getElementById("pt-chart-note").textContent = `${pat.source === "kis" ? "KIS 최신 시세" : "Yahoo 시세 (지연 가능)"} · 조회 ${pat.fetched_at ? new Date(pat.fetched_at).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" }) : "시각 미제공"} · 30초마다 자동 갱신 · 장중 마지막 봉은 미확정입니다. 패턴·갭은 최근 5봉에 표시합니다. ${pat.patterns.length ? "표시된 패턴의 상세 해설은 아래 표에서 확인하세요." : "최근 5봉에서 뚜렷한 패턴이 없습니다."} 지지·저항은 과거 피벗 가격대이며 향후 반등·돌파를 보장하지 않습니다.`;
   const css = getComputedStyle(document.documentElement);
   const background = css.getPropertyValue("--surf").trim() || "#ffffff";
   const text = css.getPropertyValue("--text-dim").trim() || "#334155";
@@ -589,7 +631,7 @@ async function renderPatternChart(pat, symbol) {
     layout: { background: { type: LightweightCharts.ColorType.Solid, color: background }, textColor: text, fontFamily: "Pretendard, sans-serif", attributionLogo: true },
     grid: { vertLines: { color: border }, horzLines: { color: border } },
     rightPriceScale: { borderColor: border, scaleMargins: { top: 0.2, bottom: 0.18 } },
-    timeScale: { borderColor: border, rightOffset: 8, timeVisible: false },
+    timeScale: { borderColor: border, rightOffset: 8, timeVisible: !!pat.intraday, secondsVisible: false },
     crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
     localization: { locale: "ko-KR", priceFormatter: value => new Intl.NumberFormat("ko-KR", { maximumFractionDigits: 2 }).format(value) },
   });
@@ -598,10 +640,12 @@ async function renderPatternChart(pat, symbol) {
     wickUpColor: "#089981", wickDownColor: "#ef4444", autoscaleInfoProvider: patternAutoscale,
   });
   patternSeries.setData(candles);
+  patternIchimokuSeries = ichimokuOverlaySeries(patternChart, candles);
   patternMarkers = LightweightCharts.createSeriesMarkers(patternSeries, [], { autoScale: true });
   updatePatternOverlays();
+  const stamp = t => new Date(t * 1000).toLocaleString("ko-KR", { timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit", ...(pat.intraday ? { hour: "2-digit", minute: "2-digit", hour12: false } : {}) });
   const showOhlc = candle => {
-    document.getElementById("pt-chart-ohlc").textContent = `${new Date(candle.time * 1000).toISOString().slice(0, 10)} · 시가 ${fmt(candle.open)} · 고가 ${fmt(candle.high)} · 저가 ${fmt(candle.low)} · 종가 ${fmt(candle.close)}`;
+    document.getElementById("pt-chart-ohlc").textContent = `${stamp(candle.time)} · 시가 ${fmt(candle.open)} · 고가 ${fmt(candle.high)} · 저가 ${fmt(candle.low)} · 종가 ${fmt(candle.close)}`;
   };
   showOhlc(candles[candles.length - 1]);
   patternChart.subscribeCrosshairMove(param => {
@@ -609,6 +653,56 @@ async function renderPatternChart(pat, symbol) {
     showOhlc(candle?.open != null ? candle : candles[candles.length - 1]);
   });
   patternChart.timeScale().fitContent();
+}
+
+function renderIchimokuCard(box, ich, dirBadge) {
+  if (!ich || ich.error) {
+    box("pt-ichimoku", `<h3 class="font-semibold text-sm mb-2">☁️ 일목균형표</h3><p class="text-sm" style="color:var(--text-mute)">${escHtml(ich?.error || "계산 불가")}</p>`);
+    return;
+  }
+  const pos = { above_cloud: ['<span class="badge-buy">구름 위</span>', "상승 추세 영역"], below_cloud: ['<span class="badge-sell">구름 아래</span>', "하락 추세 영역"], in_cloud: ['<span class="badge-hold">구름 안</span>', "방향성 불명"] }[ich.position] || ["", ""];
+  const scoreColor = ich.score > 0 ? "var(--green)" : ich.score < 0 ? "var(--red)" : "var(--text-mute)";
+  box("pt-ichimoku", `<h3 class="font-semibold text-sm mb-2">☁️ 일목균형표 · 점수 <span style="color:${scoreColor}">${ich.score > 0 ? "+" : ""}${ich.score}</span> (−5~+5)${ich.three_fold ? ` · <b>${escHtml(ich.three_fold)}</b>` : ""}</h3>
+    <div class="flex flex-wrap gap-2 text-xs mb-2">${pos[0]} <span style="color:var(--text-dim)">${pos[1]}</span> <span class="${ich.cloud_bullish ? "badge-buy" : "badge-sell"}">${ich.cloud_bullish ? "양운" : "음운"}</span> <span class="${ich.lead_cloud_bullish ? "badge-buy" : "badge-sell"}">선행 구름 ${ich.lead_cloud_bullish ? "양운" : "음운"}</span></div>
+    <table><tbody>
+      <tr><td>전환선(9) / 기준선(26)</td><td style="text-align:right;font-weight:600">${fmt(ich.tenkan)} / ${fmt(ich.kijun)}</td></tr>
+      <tr><td>현재 구름 (하단 ~ 상단)</td><td style="text-align:right;font-weight:600">${fmt(ich.cloud_bottom)} ~ ${fmt(ich.cloud_top)}</td></tr>
+      <tr><td>26봉 뒤 구름 (스팬 A / B)</td><td style="text-align:right">${fmt(ich.lead_a)} / ${fmt(ich.lead_b)}</td></tr>
+      <tr><td>후행스팬 기준(26봉 전 종가)</td><td style="text-align:right">${ich.chikou_ref != null ? fmt(ich.chikou_ref) : "-"}</td></tr>
+    </tbody></table>
+    <ul class="text-xs mt-2 space-y-1" style="color:var(--text-dim);line-height:1.6;">${ich.reasons.map(r => `<li>· ${escHtml(r)}</li>`).join("")}</ul>
+    ${ich.events.length ? `<div class="flex flex-wrap gap-2 mt-2">${ich.events.map(e => `<div class="rounded-lg p-2 text-xs" style="background:var(--surf2);border:1px solid var(--border);">${dirBadge(e.direction)} <b>${escHtml(e.name)}</b>${e.confirmed ? ' <span style="color:var(--green)">✔ 확인</span>' : ""}<div style="color:var(--text-dim);margin-top:2px;">${escHtml(e.detail || "")}</div></div>`).join("")}</div>` : ""}
+    <p class="text-xs mt-2" style="color:var(--text-mute);">구름 위 = 지지 영역 위에서 거래, 구름 아래 = 저항 영역 아래에서 거래. 전환선>기준선·후행스팬 양전이 함께 나오면 삼역 호전입니다. 차트 체크박스로 구름·선을 겹쳐 볼 수 있습니다.</p>`);
+}
+
+function renderVolumeProfileCard(box, vp) {
+  if (!vp || vp.error) {
+    box("pt-vp", `<h3 class="font-semibold text-sm mb-2">📊 매물대</h3><p class="text-sm" style="color:var(--text-mute)">${escHtml(vp?.error || "계산 불가")}</p>`);
+    return;
+  }
+  const maxPct = Math.max(...vp.rows.map(r => r.pct), 1);
+  const rows = [...vp.rows].reverse().map(r => `<tr${r.current ? ' style="outline:2px solid var(--primary, #2563eb);outline-offset:-2px;"' : ""}>
+      <td class="text-xs" style="white-space:nowrap">${fmt(r.low)} ~ ${fmt(r.high)}${r.current ? " <b>◀ 현재가</b>" : ""}</td>
+      <td style="width:45%"><div style="height:12px;border-radius:3px;background:${r.poc ? "#f59e0b" : r.value_area ? "#fbbf24aa" : "var(--border)"};width:${Math.max(2, r.pct / maxPct * 100)}%"></div></td>
+      <td class="text-xs" style="text-align:right;white-space:nowrap">${(r.volume / 1e6 >= 1 ? (r.volume / 1e6).toFixed(2) + "m" : (r.volume / 1e3).toFixed(0) + "k")} (${r.pct}%)</td>
+      <td class="text-xs">${r.poc ? "<b>최대 매물대</b>" : r.heavy ? "두터움" : r.value_area ? "가치영역" : ""}</td></tr>`).join("");
+  box("pt-vp", `<h3 class="font-semibold text-sm mb-2">📊 매물대 (최근 ${vp.lookback_bars}봉 · 가격대별 거래량)</h3>
+    <div class="flex flex-wrap gap-2 text-xs mb-2">
+      <span class="badge-hold">최대 매물대 ${fmt(vp.poc.low)}~${fmt(vp.poc.high)} (${vp.poc.pct}%)</span>
+      <span class="badge-hold">가치영역 ${fmt(vp.value_area.low)}~${fmt(vp.value_area.high)} (${vp.value_area.pct}%)</span>
+      ${vp.nearest_heavy_above ? `<span class="badge-sell">위 매물대(저항) ${fmt(vp.nearest_heavy_above.low)}~${fmt(vp.nearest_heavy_above.high)}</span>` : ""}
+      ${vp.nearest_heavy_below ? `<span class="badge-buy">아래 매물대(지지) ${fmt(vp.nearest_heavy_below.low)}~${fmt(vp.nearest_heavy_below.high)}</span>` : ""}
+    </div>
+    <p class="text-xs mb-2" style="color:var(--text-dim);line-height:1.6;">${escHtml(vp.summary)}</p>
+    <table><tbody>${rows}</tbody></table>
+    <p class="text-xs mt-2" style="color:var(--text-mute);">봉의 거래량을 고가~저가 구간에 비례 배분해 집계했습니다. 현재가 위의 두터운 매물대는 본전 매도가 나오기 쉬운 저항, 아래는 손바뀜이 끝난 지지로 봅니다.</p>`);
+}
+
+function renderGapsCard(box, gaps, dirBadge) {
+  box("pt-gaps", `<h3 class="font-semibold text-sm mb-2">🪜 갭 (최근 5봉)</h3>${
+    gaps.length ? `<table><thead><tr><th>시각</th><th>갭</th><th>방향</th><th style="text-align:right">거래량/20봉</th><th>메움</th><th>해설</th></tr></thead><tbody>${gaps.map(g => `<tr><td class="text-xs">${escHtml(g.date)}${g.bars_ago === 0 ? " <b>(최신)</b>" : ""}</td><td style="font-weight:600">${escHtml(g.name)}</td><td>${dirBadge(g.direction)}</td><td style="text-align:right">${g.vol_ratio}배</td><td class="text-xs">${g.filled ? "메워짐" : g.faded ? "되밀림" : "유지"}</td><td class="text-xs" style="color:var(--text-dim)">${escHtml(g.description)}</td></tr>`).join("")}</tbody></table>`
+    : `<p class="text-sm" style="color:var(--text-mute)">최근 5봉에 1% 이상 갭이 없습니다.</p>`}
+    <p class="text-xs mt-2" style="color:var(--text-mute);">거래량을 동반한 갭 상승이 당일 되밀리면 소진 갭(단기 고점), 유지되면 돌파 갭으로 분류합니다. 분봉에서는 장 시작 봉의 갭이 대부분입니다.</p>`);
 }
 
 async function loadPatternAnalysis({ automatic = false } = {}) {
@@ -631,7 +725,7 @@ async function loadPatternAnalysis({ automatic = false } = {}) {
   try {
     const [mtfResult, patResult] = await Promise.allSettled([
       api(`/api/stocks/mtf-signal?symbol=${encodeURIComponent(symbol)}`, { signal: controller.signal }),
-      api(`/api/stocks/patterns?symbol=${encodeURIComponent(symbol)}`, { signal: controller.signal }),
+      api(`/api/stocks/patterns?symbol=${encodeURIComponent(symbol)}&interval=${encodeURIComponent(document.getElementById("pt-interval")?.value || "1d")}`, { signal: controller.signal }),
     ]);
     if (run !== patternRun) return;
     if (patResult.status === "rejected") throw patResult.reason;
@@ -670,6 +764,9 @@ async function loadPatternAnalysis({ automatic = false } = {}) {
     box("pt-breakouts", `<h3 class="font-semibold text-sm mb-2">🚀 돌파·크로스 이벤트 (${pat.as_of} 기준)</h3>${
       pat.breakouts.length ? `<div class="flex flex-wrap gap-2">${pat.breakouts.map(e => `<div class="rounded-lg p-2 text-xs" style="background:var(--surf2);border:1px solid var(--border);min-width:220px;">${dirBadge(e.direction)} <b>${escHtml(e.name)}</b>${e.confirmed ? ' <span style="color:var(--green)">✔ 확인</span>' : ''}<div style="color:var(--text-dim);margin-top:2px;">${escHtml(e.detail || "")}</div></div>`).join("")}</div>`
       : `<p class="text-sm" style="color:var(--text-mute)">현재 봉에서 돌파·크로스 이벤트가 없습니다.</p>`}`);
+    renderIchimokuCard(box, pat.ichimoku, dirBadge);
+    renderVolumeProfileCard(box, pat.volume_profile);
+    renderGapsCard(box, pat.gaps || [], dirBadge);
     succeeded = true;
   } catch (e) {
     if (run !== patternRun) return;
@@ -691,7 +788,8 @@ async function loadPatternAnalysis({ automatic = false } = {}) {
   }
 }
 
-for (const id of ["pt-show-sr", "pt-show-patterns"]) {
+document.getElementById("pt-interval")?.addEventListener("change", () => { if (patternChartData) loadPatternAnalysis(); });
+for (const id of ["pt-show-sr", "pt-show-patterns", "pt-show-vp", "pt-show-ichimoku"]) {
   document.getElementById(id)?.addEventListener("change", () => {
     updatePatternOverlays();
   });

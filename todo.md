@@ -1454,3 +1454,35 @@ DART 가 붙지 않고 통화(USD·백만 USD) 표기만 유지된다.
 </details>
 
 **커밋 안 했다** — 변경만 남겨 두었다.
+
+### 6-41. 2026-10-12 #robo-patterns 일목균형표 · 매물대 · 갭 · 거래량 급증 탐지 + 분봉 분석 (사용자 요청)
+
+**배경**: 사용자가 기아(000270) 네이버 분봉 차트 캡처(10/08 장대 음봉+거래량 급증 → 10/12 갭 상승+거래량 급증 후 되밀림,
+배경에 볼린저·일목 구름·가격대별 매물대)를 "4개 저장소 중 어디가 설명·예측할 수 있나" 물었다. lumina-invest 의
+`patterns.py` 가 캔들·지지저항·볼린저·거래량 확인 돌파까지는 다루지만 **일목균형표·매물대·갭은 네 저장소 어디에도 없었고**,
+`/stocks/patterns` 는 일봉 고정이라 캡처 같은 분봉 구간을 볼 수 없었다. 그 빈 곳을 채웠다.
+
+**변경 (lumina-invest 만)**
+
+| 파일 | 내용 |
+|---|---|
+| `app/services/ta_utils.py` | `ichimoku(high, low, close)` — 전환선 9·기준선 26·선행스팬 A/B(26 선행)·후행스팬. 현재 봉에 적용되는 구름(`senkou_*`)과 26봉 뒤 구름(`lead_*`)을 둘 다 반환 |
+| `app/services/patterns.py` | ① `ichimoku_state(df)` — 구름 대비 위치(±2)·선행 구름 색(±1)·전환/기준선(±1)·후행스팬(±1) = 점수 −5~+5, 삼역 호전/역전, 최근 5봉 내 전환·기준선 교차/구름 돌파·이탈 이벤트. 최소 78봉 ② `volume_profile(df)` — 최근 120봉의 거래량을 봉의 고가~저가 구간에 **비례 배분**해 12개 가격대로 집계, POC(최대 매물대)·가치영역 70%·현재가 위/아래의 두터운 매물대(균등 분포 1.5배 이상) = 저항/지지 ③ `detect_gaps(df)` — 최근 5봉, 1% 이상 갭. 거래량 1.5배·당일 되밀림·메움으로 **소진 갭 의심 / 돌파 갭 / 메워진 갭 / 일반 갭**(하락은 반전 갭 의심 / 붕괴 갭) 분류 ④ `detect_breakouts` 에 **거래량 급증(20봉 평균 2배)** 이벤트 추가, 방향은 봉 색 ⑤ `pattern_summary` 에 `ichimoku`·`volume_profile`·`gaps`·`intraday` 키 추가, 점수에 갭(±1/0.5)·일목(점수×0.5) 합산, 일목 당일 이벤트는 `breakouts` 에 합쳐 차트 마커로 표시 ⑥ `timeframe_score` 에 일목 구름 위/아래 ±1(78봉 이상일 때) ⑦ 모든 패턴·갭 결과에 `time`(unix 초) 포함, 분봉이면 `date` 가 `YYYY-MM-DD HH:MM`(KST). 분봉 판정은 봉 간격 중앙값 < 0.9일 (일봉 시각은 거래소마다 달라 시각으로 판별하면 오판 — 실제로 한 번 틀렸다) |
+| `app/routes/stocks.py` | `/stocks/patterns` 에 `interval` 쿼리(1d·60m·30m·15m·5m) 추가. 기본 range 는 `PATTERN_INTERVALS`(일봉 1y, 60/30/15분 1mo, 5분 5d). 분봉은 KIS 를 타지 않고 Yahoo 분봉 (`get_candles` 가 `interval=="1d"` 일 때만 KIS) |
+| `public/app.html` | 봉 단위 `<select id="pt-interval">`, 체크박스 `pt-show-vp`(매물대 POC·가치영역 가격선)·`pt-show-ichimoku`(전환선·기준선·선행스팬 오버레이), 카드 `pt-ichimoku`·`pt-vp`·`pt-gaps` |
+| `public/js/robo.js` | interval 전달·변경 시 재분석, 분봉이면 `timeVisible`, OHLC 표시 KST, 마커를 `time` 으로 매칭(분봉에서 같은 날짜 여러 봉 문제 해소) + 갭도 마커, `ichimokuOverlaySeries()`(프런트에서 다시 계산해 전 구간에 그림, 선행 26봉은 마지막 봉 간격으로 근사), `renderIchimokuCard`·`renderVolumeProfileCard`(가로 막대 분포, 현재가 행 강조)·`renderGapsCard` |
+| `tests/test_patterns.py` | 9개 추가(총 16). 상승/하락 추세의 구름 위·아래와 삼역, 구름 상향 돌파 이벤트, 매물대 POC·가치영역·현재가 위치, 소진 갭·메워진 갭·돌파 갭·1% 미만 제외, 거래량 급증 이벤트, 분봉 스탬프, timeframe_score 일목 근거 |
+
+**검증**: `.venv/bin/python -m pytest tests/test_patterns.py -q` → 16 passed. `pytest tests -k "pattern or aggressive or risk"` 46 passed.
+`node --check public/js/robo.js`(Windows node 로) 통과. `routes/stocks.py` 는 lightgbm 때문에 로컬 import 불가라 `ast.parse` 만 확인.
+실데이터(기아 60분봉)로는 **실행하지 않았다** — 로컬에 네트워크 호출을 쓰는 테스트가 없고 컨테이너 배포도 안 했다.
+
+**캡처와의 대응**: 60분봉 선택 시 10/08 봉 = `volume_spike`(음봉)·`bearish_marubozu`/`support_break` 후보, 10/12 첫 봉 = `gap_up`(거래량 동반·되밀림 → **소진 갭 의심**, bearish) + `shooting_star`/`inverted_hammer` 후보, 112,700 은 `nearest_heavy_above`(위 매물대·저항)로 나오는 것이 기대 결과다. 캡처의 매물대 비율(28.03% 등)은 네이버가 기간·구간 수를 달리 잡으므로 숫자가 같지는 않다.
+
+**제한·주의**
+- 일목 선행 구름은 프런트에서 마지막 봉 간격×26 으로 미래 시각을 근사한다. 일봉은 주말이 빠져 실제보다 조금 앞에 그려진다(해석에는 지장 없음).
+- 분봉은 Yahoo 분봉이라 KIS 분봉과 달리 지연·결측이 있을 수 있다. KIS 분봉(`inquire-time-itemchartprice`)으로 바꾸려면 `kis_market_data` 에 분봉 함수를 추가하고 `get_candles` 의 `use_kis` 조건을 넓혀야 한다(별건).
+- 매물대 비례 배분은 봉 안의 실제 체결 분포를 모르므로 근사다. 정확한 매물대는 st 의 KIS "국내주식 매물대/거래비중" API 가 있다(stock-coin-trade `kis_api_catalog.json`).
+- fd 배포는 하지 않았다. 배포 시 6-40 과 같은 주의(호스트 소스 `~/lumina-invest/{app,public,tests}` 갱신 + 컨테이너 재생성 또는 `docker cp`).
+
+**커밋 안 했다** — 변경만 남겨 두었다.
