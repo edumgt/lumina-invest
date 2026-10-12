@@ -1113,6 +1113,8 @@ async def quant_pipeline_indicator_backtest(
         raise HTTPException(422, result["error"])
     result["symbol"] = symbol
     result["period"] = period
+    result["source"] = candle_data.get("source")
+    result["price_source"] = candle_data.get("price_source")   # 시스템 OHLCV 저장소 → 적재 → Yahoo 순 출처 메타
     return result
 
 
@@ -1138,6 +1140,8 @@ async def quant_compare_strategies(
     result = compare_strategies(candles, selected, cost_bps, slippage_bps, stop_loss_pct, take_profit_pct)
     if "error" in result:
         raise HTTPException(422, result["error"])
+    result["source"] = candle_data.get("source")
+    result["price_source"] = candle_data.get("price_source")
     result.update(symbol=symbol, period=period, source=candle_data.get("source"))
     return result
 

@@ -641,19 +641,30 @@
     <!-- 4-3. 전략 분석 (10년 백테스트 Mockup) -->
     <div class="view" data-view="quant-backtest">
       <div class="card">
-        <h2 class="text-lg font-semibold mb-2">📉 퀀트 전략 분석 (10년 Mockup)</h2>
-        <p class="text-sm text-slate-400 mb-4">
-          대표 5종목의 근 10년 데이터 기반 퀀트 지표를 조회합니다.
+        <h2 class="text-lg font-semibold mb-2">📉 퀀트 전략 백테스트 (10년 일봉)</h2>
+        <p class="text-sm text-slate-400 mb-2">
+          대표 5종목의 10년 일봉으로 규칙 기반 전략(RSI · 이동평균 · 볼린저 · 복합)을 백테스트합니다. 수수료·슬리피지를 반영하고 단순 보유(Buy&amp;Hold)와 비교합니다.
         </p>
-        <div class="flex gap-2 mb-4">
+        <p class="text-xs mb-4" style="color:var(--text-mute);">일봉 데이터는 <b>시스템 OHLCV 저장소</b>(stock-coin-trade pg-stock)를 먼저 조회하고, 없는 구간만 Yahoo Finance 에서 받아 저장소에 적재한 뒤 계산합니다. 해외 종목은 저장소가 국내 전용이라 Yahoo 를 직접 씁니다. 교육용 과거 검증이며 투자 권유가 아닙니다.</p>
+        <div class="flex flex-wrap gap-2 mb-4 items-end">
+          <div><label for="bt-symbol" class="text-xs" style="color:var(--text-mute);">종목</label>
           <select id="bt-symbol" class="input w-44">
             <option value="005930.KS">삼성전자</option>
             <option value="000660.KS">SK하이닉스</option>
             <option value="035420.KS">NAVER</option>
             <option value="005380.KS">현대자동차</option>
             <option value="051910.KS">LG화학</option>
-          </select>
-          <button id="bt-load" class="btn-primary">분석</button>
+          </select></div>
+          <div><label for="bt-strategy" class="text-xs" style="color:var(--text-mute);">전략</label>
+          <select id="bt-strategy" class="input" style="width:200px">
+            <option value="composite" selected>복합 (추세·MACD·RSI)</option>
+            <option value="ma">이동평균 교차 (MA5/MA20)</option>
+            <option value="rsi">RSI 과매도 매수</option>
+            <option value="bollinger">볼린저 밴드 회귀</option>
+          </select></div>
+          <div><label for="bt-cost" class="text-xs" style="color:var(--text-mute);">수수료+슬리피지 (bp)</label>
+          <input id="bt-cost" class="input w-24" type="number" value="10" min="0" max="500" /></div>
+          <button id="bt-load" class="btn-primary">백테스트 실행</button>
         </div>
         <div id="bt-result" class="text-sm space-y-3"></div>
         <div id="bt-compare-tray"></div>
@@ -668,7 +679,7 @@
           <h2 class="text-lg font-semibold">🐳 LEAN 백테스트 (QuantConnect)</h2>
           <div id="ql-status" class="text-sm"></div>
         </div>
-        <p class="text-xs mb-3" style="color:var(--text-mute);">Yahoo Finance 일봉을 정리해 QuantConnect LEAN 엔진(Docker)에서 동일 전략을 실행하고, pandas로 계산한 수익률·MDD·샤프와 함께 보여줍니다. 교육용 과거 검증이며 투자 권유가 아닙니다.</p>
+        <p class="text-xs mb-3" style="color:var(--text-mute);">일봉은 시스템 OHLCV 저장소를 먼저 쓰고 없는 구간만 Yahoo Finance 에서 받아 적재한 뒤, QuantConnect LEAN 엔진(Docker)에서 동일 전략을 실행하고, pandas로 계산한 수익률·MDD·샤프와 함께 보여줍니다. 교육용 과거 검증이며 투자 권유가 아닙니다.</p>
         <div id="ql-examples" class="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3"></div>
         <div id="ql-example-detail" class="mb-3"></div>
         <div class="grid md:grid-cols-3 gap-2 mb-2">

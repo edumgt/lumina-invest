@@ -1,7 +1,7 @@
 """QuantConnect LEAN 백테스트 — domain-rag-lab의 lean_backtest_service 이식.
 
-흐름: Yahoo Finance 일봉(httpx) → prices.csv + LEAN 알고리즘(main.py) 생성 → LEAN 실행 →
-pandas로 전략 곡선/리스크 지표 계산 → 결과 dict.
+흐름: 일봉 종가(시스템 OHLCV 저장소 → 없는 구간 적재 → Yahoo 폴백, `ohlcv_store`) → prices.csv + LEAN 알고리즘(main.py) 생성 →
+LEAN 실행 → pandas로 전략 곡선/리스크 지표 계산 → 결과 dict. 종가는 세 소스가 섞여도 단절이 없도록 원시 종가로 통일한다.
 
 LEAN 실행 모드 (settings.LEAN_MODE):
   - ssh    : domain-rag-lab 방식. 원격 서버(LEAN_SSH_HOST)로 scp 후 `docker run quantconnect/lean` (SSH).
@@ -93,30 +93,22 @@ def lean_status() -> dict:
 
 # ── 가격 데이터 ───────────────────────────────────────────────────────────
 
+async def fetch_close_bars(ticker: str, start: date, end: date) -> tuple[pd.Series, dict]:
+    """[start, end] 일봉 종가(DatetimeIndex Series)와 출처 메타.
+
+    시스템 OHLCV 저장소를 먼저 읽고, 없는 구간은 st 에 적재를 요청한 뒤 다시 읽는다. 저장소가 없거나
+    해외 종목이면 Yahoo chart API 를 직접 쓴다(`ohlcv_store.daily_candles`)."""
+    from app.services import ohlcv_store
+    candles, meta = await ohlcv_store.daily_candles(ticker, start, end)
+    if len(candles) < 2:
+        raise LeanBacktestError("시스템 OHLCV 저장소와 Yahoo Finance 어디에서도 해당 기간의 종가를 받지 못했습니다. 티커·상장일을 확인하세요.")
+    idx = pd.to_datetime([datetime.fromtimestamp(int(c["time"]), tz=timezone.utc).date() for c in candles])
+    return pd.Series([float(c["close"]) for c in candles], index=idx, name="close"), meta
+
+
 async def fetch_close_series(ticker: str, start: date, end: date) -> pd.Series:
-    """Yahoo chart API(period1/period2)로 일봉 종가를 받아 DatetimeIndex Series로 돌려준다."""
-    p1 = int(datetime.combine(start, datetime.min.time(), tzinfo=timezone.utc).timestamp())
-    p2 = int(datetime.combine(end + timedelta(days=1), datetime.min.time(), tzinfo=timezone.utc).timestamp())
-    url = f"https://query2.finance.yahoo.com/v8/finance/chart/{ticker}"
-    params = {"interval": "1d", "period1": p1, "period2": p2, "events": "div,splits"}
-    async with httpx.AsyncClient(timeout=20.0, headers=HEADERS) as client:
-        resp = await client.get(url, params=params)
-        if resp.status_code == 404:
-            raise LeanBacktestError(f"Yahoo Finance에서 티커를 찾지 못했습니다: {ticker}")
-        resp.raise_for_status()
-        result = resp.json().get("chart", {}).get("result") or []
-    if not result:
-        raise LeanBacktestError("Yahoo Finance에서 해당 기간의 종가를 받지 못했습니다.")
-    data = result[0]
-    ts = data.get("timestamp") or []
-    ind = data.get("indicators", {})
-    adj = (ind.get("adjclose") or [{}])[0].get("adjclose")
-    closes = adj if adj else (ind.get("quote") or [{}])[0].get("close") or []
-    rows = [(datetime.fromtimestamp(t, tz=timezone.utc).date(), c) for t, c in zip(ts, closes) if c is not None]
-    if len(rows) < 2:
-        raise LeanBacktestError("Yahoo Finance에서 해당 기간의 종가를 받지 못했습니다.")
-    idx = pd.to_datetime([r[0] for r in rows])
-    return pd.Series([float(r[1]) for r in rows], index=idx, name="close")
+    """종가 Series 만 필요한 호출자용 (출처 메타는 `fetch_close_bars`)."""
+    return (await fetch_close_bars(ticker, start, end))[0]
 
 
 # ── 서비스 ─────────────────────────────────────────────────────────────────
@@ -145,7 +137,7 @@ class LeanBacktestService:
         buffer_days = self._lookback_buffer(strategy, long_window, breakout_window)
         fetch_start = min(start_date, compare_start_date) - timedelta(days=buffer_days)
         fetch_end = max(end_date, compare_end_date)
-        close = await fetch_close_series(ticker, fetch_start, fetch_end)
+        close, price_source = await fetch_close_bars(ticker, fetch_start, fetch_end)
 
         series = close.loc[(close.index.date >= start_date) & (close.index.date <= end_date)]
         comparison = close.loc[(close.index.date >= compare_start_date) & (close.index.date <= compare_end_date)]
@@ -183,14 +175,16 @@ class LeanBacktestService:
         bench_points = [{"date": idx.strftime("%Y-%m-%d"), "value": round(float(value * initial_cash), 2)}
                         for idx, value in bench_curve.iloc[::max(1, len(bench_curve) // 120)].items()]
 
-        engine = {"ssh": "QuantConnect LEAN (remote docker) + Yahoo Finance",
-                  "docker": "QuantConnect LEAN (local docker) + Yahoo Finance",
-                  "local": "pandas (LEAN 미실행) + Yahoo Finance"}[mode]
+        data_label = "시스템 OHLCV" if price_source.get("db_rows_before") or price_source.get("stored_rows") else "Yahoo Finance"
+        engine = {"ssh": f"QuantConnect LEAN (remote docker) + {data_label}",
+                  "docker": f"QuantConnect LEAN (local docker) + {data_label}",
+                  "local": f"pandas (LEAN 미실행) + {data_label}"}[mode]
         return {
             "ticker": ticker,
             "engine": engine,
             "lean_mode": mode,
             "lean_ok": lean_ok,
+            "price_source": price_source,
             "strategy": strategy,
             "strategy_label": STRATEGY_LABELS.get(strategy, strategy),
             "start_date": start_date.isoformat(),
@@ -209,7 +203,7 @@ class LeanBacktestService:
             "lean_statistics": lean_stats,
             "lean_log": lean_log[-6000:],
             "algorithm_source": algorithm_source,
-            "disclaimer": "Yahoo Finance 일봉 기반 교육용 예시입니다. 배당·세금·수수료·슬리피지·데이터 품질과 실제 체결은 반영하지 않으며 투자 권유가 아닙니다.",
+            "disclaimer": "시스템 OHLCV 저장소(없는 구간은 Yahoo Finance 에서 적재) 일봉 기반 교육용 예시입니다. 배당·세금·수수료·슬리피지·데이터 품질과 실제 체결은 반영하지 않으며 투자 권유가 아닙니다.",
         }
 
     # ── LEAN 실행 ───────────────────────────────────────────────────────

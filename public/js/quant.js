@@ -180,25 +180,48 @@ document.getElementById("auto-refresh").addEventListener("click", loadAutoTradeS
 // ── 백테스트 ─────────────────────────────────────────────────────
 document.getElementById("bt-load").addEventListener("click", async () => {
   const symbol = document.getElementById("bt-symbol").value;
+  const strategy = document.getElementById("bt-strategy")?.value || "composite";
+  const cost = Math.max(0, parseFloat(document.getElementById("bt-cost")?.value) || 0);
   const el = document.getElementById("bt-result");
-  el.innerHTML = "<div class='text-slate-400'>분석 중 (10년치 데이터)...</div>";
+  el.innerHTML = "<div class='text-slate-400'>시스템 OHLCV 저장소 조회 → 없는 구간 적재 → 10년 백테스트 계산 중…</div>";
+  const pct = v => (v == null || Number.isNaN(v)) ? "-" : `${v > 0 ? "+" : ""}${Number(v).toFixed(2)}%`;
+  const cls = v => v > 0 ? "text-emerald-400" : v < 0 ? "text-red-400" : "text-slate-300";
   try {
-    const data = await api(`/api/stocks/quant/indicators?symbol=${encodeURIComponent(symbol)}&period=10y`);
+    const data = await api(`/api/stocks/quant/pipeline?symbol=${encodeURIComponent(symbol)}&period=10y&strategy=${encodeURIComponent(strategy)}&cost_bps=${cost}`);
     if (data.error) { el.innerHTML = `<div class='text-red-400'>${escHtml(data.error)}</div>`; return; }
-    const sig = data.signal || {};
+    const ps = data.price_source || {};
+    const srcLabel = f => f.source === "yahoo→store" ? "Yahoo→저장소 적재" : f.source === "yahoo" ? "Yahoo 직접" : escHtml(String(f.source));
+    const fetched = (ps.fetched || []).filter(f => f.rows).map(f => `${srcLabel(f)} ${f.rows}봉 (${escHtml(f.from)}~${escHtml(f.to)})`).join(", ");
+    const sourceLine = ps.source
+      ? `데이터: ${ps.db_rows_before ? `시스템 OHLCV 저장소 ${ps.db_rows_before}봉` : "저장소에 없음"}${fetched ? ` · ${fetched}` : ""}${ps.note ? ` · ${escHtml(ps.note)}` : ""} → 총 ${ps.rows}봉 (${escHtml(ps.first_date || "")} ~ ${escHtml(ps.last_date || "")})`
+      : `데이터: ${escHtml(data.source || "알 수 없음")} · ${data.data_points}봉`;
+    const kpi = (label, value, c = "") => `<div class="rounded-lg p-2" style="background:var(--surf2);border:1px solid var(--border);"><div class="text-xs" style="color:var(--text-mute)">${label}</div><div class="font-semibold ${c}">${value}</div></div>`;
+    const sig = data.latest_signal || "HOLD";
+    const excess = (data.total_return_pct ?? 0) - (data.buy_hold_return_pct ?? 0);
+    const explanation = typeof data.explanation === "string" ? data.explanation : (data.explanation?.summary || "");
     el.innerHTML = `
       <div class="rounded-xl border border-white/10 bg-black/20 p-4">
-        <div class="font-semibold text-indigo-300 mb-2">${escHtml(symbol)} 10년 퀀트 분석</div>
-        <div class="grid grid-cols-2 gap-2">
-          <div>현재가: <span class="font-semibold">${fmt(data.current_price)}</span></div>
-          <div>현재 RSI: <span class="font-semibold">${data.current_rsi?.toFixed(2) ?? "-"}</span></div>
-          <div>AI 시그널: <span class="font-semibold ${sig.action === "매수" || sig.action === "강력 매수" ? "text-emerald-400" : sig.action === "매도" || sig.action === "강력 매도" ? "text-red-400" : "text-slate-300"}">${escHtml(sig.action||"-")}</span></div>
-          <div>시그널 점수: <span class="font-semibold">${sig.score ?? "-"}</span></div>
+        <div class="flex flex-wrap items-center gap-2 mb-1">
+          <span class="font-semibold text-indigo-300">${escHtml(symbol)} · ${escHtml(document.getElementById("bt-strategy")?.selectedOptions?.[0]?.textContent || strategy)} · 10년 백테스트</span>
+          <span class="text-xs" style="color:var(--text-mute)">${escHtml((data.data_start || "").slice(0, 10))} ~ ${escHtml((data.data_end || "").slice(0, 10))} · ${data.data_points}봉 · 비용 ${data.cost_bps}bp</span>
+          <span class="text-xs ${sig === "BUY" ? "text-emerald-400" : sig === "SELL" ? "text-red-400" : "text-slate-300"}">최근 신호 ${escHtml(sig)}</span>
         </div>
-        <div class="mt-3 text-xs text-slate-400">${(sig.reasons || []).map(r => "• " + escHtml(r)).join("<br>")}</div>
+        <div class="text-xs mb-3" style="color:var(--text-mute)">${sourceLine}</div>
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-2">
+          ${kpi("전략 누적수익률", pct(data.total_return_pct), cls(data.total_return_pct))}
+          ${kpi("단순 보유 수익률", pct(data.buy_hold_return_pct), cls(data.buy_hold_return_pct))}
+          ${kpi("초과 수익 (vs 보유)", pct(excess), cls(excess))}
+          ${kpi("샤프 비율", data.sharpe_ratio ?? "-")}
+          ${kpi("최대 낙폭 (MDD)", `${data.mdd_pct}%`, "text-red-400")}
+          ${kpi("승률 (보유일 기준)", `${data.win_rate_pct}%`)}
+          ${kpi("매매 횟수 / 시장 노출", `${data.trade_count}회 / ${data.exposure_pct}%`)}
+          ${kpi("비용 차감", `${data.cost_pct}%`)}
+        </div>
+        ${explanation ? `<div class="mt-3 text-xs text-slate-400">${escHtml(explanation)}</div>` : ""}
+        <p class="text-xs mt-2" style="color:var(--text-mute)">t일 종가 신호를 t+1일부터 반영(룩어헤드 없음) · 수수료·슬리피지는 포지션 변동 시 차감 · 교육용 과거 검증이며 투자 권유가 아닙니다.</p>
         <button type="button" class="btn-secondary text-xs mt-3" onclick='compareTrayAdd(${JSON.stringify({
-          source: "퀀트 전략 분석", label: symbol,
-          summary: `RSI ${data.current_rsi?.toFixed(1) ?? "-"} · 시그널 ${sig.action || "-"} (점수 ${sig.score ?? "-"})`,
+          source: "퀀트 전략 백테스트", label: `${symbol} · ${strategy}`,
+          summary: `수익률 ${pct(data.total_return_pct)} · 보유 ${pct(data.buy_hold_return_pct)} · 샤프 ${data.sharpe_ratio ?? "-"} · MDD ${data.mdd_pct}%`,
         }).replace(/'/g, "&#39;")}')">⚖️ 비교에 추가</button>
       </div>
     `;

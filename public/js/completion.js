@@ -28,7 +28,7 @@ const ASSESSMENTS = {
 
   "quant-dashboard": A(82, "핵심 검증", "지표 계산·룩어헤드 방지 테스트 통과 · 시세 E2E 미검증"),
   "quant-auto": A(78, "부분 검증", "위험관리 단위 테스트 통과 · 스케줄러/실주문 통합 미검증"),
-  "quant-backtest": A(88, "핵심 검증", "비용·손절·익절·룩어헤드 테스트 통과 · API E2E 미검증"),
+  "quant-backtest": A(90, "핵심 검증", "비용·손절·익절·룩어헤드 테스트 통과 · 시스템 OHLCV 우선 적재 연결 · API E2E 미검증"),
   "quant-lean": A(62, "외부 의존", "LEAN 실행·이력 구현 · Docker 엔진 실제 실행 미검증"),
   settings: A(56, "목업 포함", "설정 저장 구현 · 증권사별 실연동 일부 목업/출시 예정"),
   "notification-settings": A(58, "외부 의존", "설정·테스트·이력 구현 · SMS/Slack/Telegram 실전송 미검증"),

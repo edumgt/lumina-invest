@@ -393,6 +393,17 @@ async def get_candles(symbol: str, period: str = "1y", interval: str = "1d", max
         if not settings.MARKET_DATA_FALLBACK_YAHOO:
             return {"symbol": symbol, "candles": []}
 
+    # 일봉: Yahoo 전에 시스템 OHLCV 저장소(stock-coin-trade pg-stock)를 먼저 보고, 없는 구간은 적재한 뒤 쓴다
+    if interval == "1d" and settings.OHLCV_STORE_FIRST:
+        from app.services import ohlcv_store
+        candles, meta = await ohlcv_store.daily_candles(symbol, ohlcv_store.period_start(period), datetime.now(timezone.utc).date())
+        if candles:
+            result = {"symbol": symbol, "interval": interval, "period": period, "candles": candles,
+                      "source": meta["source"], "price_source": meta}
+            await cache_set(cache_key, result)
+            return result
+        logger.warning("OHLCV 저장소·Yahoo 모두 빈 응답 %s — Yahoo range 조회로 폴백", symbol)
+
     # 10년치는 10y range로 요청
     data = await _yahoo_chart(symbol, interval, period)
     if not data:

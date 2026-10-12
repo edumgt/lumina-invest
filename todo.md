@@ -1486,3 +1486,44 @@ DART 가 붙지 않고 통화(USD·백만 USD) 표기만 유지된다.
 - fd 배포는 하지 않았다. 배포 시 6-40 과 같은 주의(호스트 소스 `~/lumina-invest/{app,public,tests}` 갱신 + 컨테이너 재생성 또는 `docker cp`).
 
 **커밋 안 했다** — 변경만 남겨 두었다.
+
+### 6-42. 2026-10-12 #quant-backtest — 시스템 OHLCV 저장소 우선 → 없는 구간 적재 → 백테스트, FE 문구 수정 (사용자 요청)
+
+**배경**: 사용자가 fd `#quant-backtest` 의 데이터 처리가 mockup 인지 물었다. 조사 결과 ① 그 화면은 제목만 "10년 Mockup" 이고
+실제로는 `/stocks/quant/indicators`(KIS/Yahoo 실데이터, 규칙 기반 시그널)를 호출하는 **지표 조회 화면이지 백테스트가 아니었다**
+(core.js 안내문은 "10년치 백테스트 성과·샤프·MDD" 라고 써 있어 불일치). ② LEAN 백테스트(`#quant-lean`)는 fd 에서
+`effective=remote:domain-rag-lab` 으로 돌고, domain-rag-lab 은 이미 `ohlcv_store`(stock_price_history 우선 → yfinance 적재)를
+갖고 있다(컨테이너 `/app/app/services/ohlcv_store.py` 존재 확인). 반면 lumina 의 로컬 폴백 경로와 `get_candles` 일봉은 Yahoo 를
+바로 불렀다. 사용자 지시: "Yahoo 일봉 전에 시스템 OHLCV 데이터를 먼저 찾고 없으면 Yahoo 에서 받아 OHLCV 에 적재한 뒤 백테스팅, FE 문구 수정".
+
+**시스템 OHLCV 저장소 = stock-coin-trade pg-stock** (`ohlcv` 테이블, 국내 2,700 종목 일봉). lumina 는 이미 종목 검색에 이 저장소를
+1차 소스로 쓰고(`ohlcv_catalog`), st 는 `GET /openapi/v1/ohlcv/{code}`(공개, 페이지 1,000) 와 `POST /openapi/v1/ohlcv/ingest`
+(API 키, start/end 지정 가능, st 가 Yahoo→네이버 순으로 받아 upsert)를 제공한다. fd `.env` 에 `STOCK_COIN_TRADE_BASE_URL=https://st.edumgt.co.kr`
+와 API 키가 있다(읽기 전용으로 확인). 실측: 삼성전자 저장소 마지막 봉 2026-09-30 → 첫 백테스트에서 10/01~ 구간이 적재된다.
+
+**변경 (lumina-invest 만, domain-rag-lab 은 이미 같은 구조)**
+
+| 파일 | 내용 |
+|---|---|
+| `app/services/ohlcv_store.py` (신규) | `daily_candles(symbol, start, end) → (candles, meta)`. 국내 6자리 종목이고 st 가 설정돼 있으면 ① 저장소 페이지 조회 → ② 비었거나 앞(10일)·뒤(3일) 구간이 모자라면 `ingest`(start/end 지정) 후 재조회 → ③ 적재 불가(API 키 없음·skipped·실패)면 그 구간만 Yahoo chart API 직접 조회해 병합. 해외 종목·st 미설정·st 장애는 Yahoo 직접. 외부에도 없는 앞 구간(상장 전)은 `_known_empty` 로 기억. 메타 키는 domain-rag-lab 과 동일(`source`·`db_rows_before`·`fetched[]`·`stored_rows`·`rows`·`first_date`·`last_date`) + `note`/`store_error`. `period_start("10y")` 로 Yahoo range 문자열을 시작일로 바꾼다. 테스트용 `set_transport` |
+| `app/config.py` | `OHLCV_STORE_FIRST: bool = True` |
+| `app/services/stock.py` | `get_candles` 일봉(interval=1d)의 Yahoo 경로 앞에 저장소 우선 호출. 순서: KIS(설정 시) → **시스템 OHLCV 저장소 → 적재 → Yahoo**. 응답에 `source`(예 `db+yahoo→store`)·`price_source`(메타) 추가. 전략 분석·패턴·스크리닝·`/quant/pipeline`·`/quant/compare` 가 모두 이 경로를 쓴다 |
+| `app/services/lean_backtest.py` | `fetch_close_bars()` 신설(저장소 우선, 메타 반환), `fetch_close_series` 는 래퍼로 유지. `run()` 결과에 `price_source`, engine 문자열 "… + 시스템 OHLCV/Yahoo Finance", disclaimer 수정. 종가는 원시 종가로 통일(이전엔 Yahoo adjclose) — domain-rag-lab 과 같은 기준 |
+| `app/routes/stocks.py` | `/quant/pipeline`·`/quant/compare` 응답에 `source`·`price_source` |
+| `public/app.html` | `#quant-backtest` 카드: 제목 "퀀트 전략 백테스트 (10년 일봉)", 데이터 처리 순서 설명, 전략 선택(복합·MA·RSI·볼린저)·비용(bp) 입력, 버튼 "백테스트 실행". LEAN 카드 설명문도 저장소 우선으로 수정 |
+| `public/js/quant.js` | `bt-load` 가 `/api/stocks/quant/pipeline?period=10y&strategy&cost_bps` 를 호출해 누적수익률·보유 수익률·초과 수익·샤프·MDD·승률·매매 횟수/노출·비용 KPI 와 **"데이터: 저장소 n봉 · Yahoo→저장소 적재 m봉 → 총 k봉"** 줄을 보여 준다 |
+| `public/js/paper.js` | LEAN 결과에 같은 "데이터:" 줄(로컬·원격 메타 모두 처리, yfinance 표기 포함), 실행 중 안내문 수정 |
+| `public/js/core.js`·`completion.js` | 화면 안내·완성도 문구를 실제 동작에 맞춤 |
+| `tests/test_ohlcv_store.py` (신규, 11개) | 저장소 완비(적재 없음)·뒤 구간 적재 후 재조회·미등록 종목 전체 적재·API 키 없음→Yahoo 직접·해외 종목·st 미설정·st 장애→Yahoo·상장 전 구간 기억·페이지 병합·period_start/krx_code·`get_candles` 저장소 우선 |
+| `tests/test_kis_market_data.py` | 비국내 일봉이 저장소 우선 함수로 가도록 기대값 갱신 |
+
+**검증**: `pytest tests -q` → 전부 통과(147개). 갱신 전엔 `test_kis_market_data` 1건만 새 경로 때문에 실패했다. JS 4개 `node --check` 통과.
+st 공개 조회 계약(`rows[].trade_date`, `nextOffset`)은 라이브 응답으로 확인. **fd 배포·실제 백테스트 실행은 하지 않았다.**
+
+**주의**
+- 적재는 st 가 Yahoo→네이버로 받으므로 lumina 컨테이너에서 Yahoo 가 막혀도 저장소 경로는 동작한다. 반대로 st `ingest` 는 10년치면 수십 초 걸릴 수 있어 `INGEST_TIMEOUT=90`. 적재는 처음 한 번이고 이후는 저장소만 읽는다.
+- 저장소가 3일 넘게 오래된 종목은 매 호출마다 뒤 구간 적재를 시도한다(적재가 성공하면 다음부턴 안 함). st 크롤러 배치가 돌면 이 비용은 사라진다.
+- `candles` 캐시(`data_cache`, 6시간)는 그대로라 같은 종목·기간은 6시간 동안 저장소도 다시 읽지 않는다.
+- fd 의 LEAN 은 원격(domain-rag-lab)이 정본이라 lumina 쪽 `fetch_close_bars` 는 원격 실패 폴백 때만 쓰인다. 두 구현의 메타 키를 맞춰 화면은 한 코드로 보여 준다.
+
+**커밋 안 했다** — 변경만 남겨 두었다.

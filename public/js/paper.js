@@ -468,7 +468,7 @@ async function runLeanBacktest() {
   };
   if (!payload.ticker || !payload.start_date || !payload.end_date) return setToast("티커와 기간을 입력하세요.", "error");
   btn.disabled = true;
-  $("ql-result").innerHTML = `<div class="text-sm" style="color:var(--text-mute);"><i class="fa-solid fa-spinner fa-spin"></i> Yahoo Finance 데이터를 정리하고 LEAN 컨테이너를 실행하고 있습니다. (최대 수 분 소요)</div>`;
+  $("ql-result").innerHTML = `<div class="text-sm" style="color:var(--text-mute);"><i class="fa-solid fa-spinner fa-spin"></i> 시스템 OHLCV 저장소를 조회하고(없는 구간은 Yahoo 에서 적재) LEAN 컨테이너를 실행하고 있습니다. (최대 수 분 소요)</div>`;
   try {
     const d = await api("/api/backtests/lean/run", { method: "POST", body: payload });
     renderLeanResult(d);
@@ -486,6 +486,7 @@ function renderLeanResult(d) {
       <span class="text-xs" style="color:var(--text-mute);">${escHtml(d.start_date)} ~ ${escHtml(d.end_date)} (비교 ${escHtml(d.compare_start_date)} ~ ${escHtml(d.compare_end_date)})</span>
       ${d.lean_ok ? `<span class="badge-buy">LEAN 실행 완료</span>` : `<span class="badge-sell">LEAN 미실행/실패</span>`}
       <button type="button" class="btn-secondary text-xs ml-auto" id="ql-add-compare">비교에 추가</button></div>
+    ${d.price_source ? `<p class="text-xs mb-2" style="color:var(--text-mute);">데이터: ${d.price_source.db_rows_before ? `시스템 OHLCV 저장소 ${d.price_source.db_rows_before}봉` : "저장소에 없음"}${(d.price_source.fetched || []).filter(f => f.rows).map(f => ` · ${f.source === "yahoo→store" || f.source === "yfinance" ? "Yahoo→저장소 적재" : f.source === "yahoo" ? "Yahoo 직접" : escHtml(String(f.source))} ${f.rows}봉 (${escHtml(f.from)}~${escHtml(f.to)})`).join("")}${d.price_source.note ? ` · ${escHtml(d.price_source.note)}` : ""} → 총 ${d.price_source.rows ?? "-"}봉 (${escHtml(d.price_source.first_date || "")} ~ ${escHtml(d.price_source.last_date || "")})${d.fallback_reason ? " · 원격 실패로 로컬 실행" : ""}</p>` : ""}
     <div class="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">
       ${kpi("전략 수익률", fmtPct(d.strategy_return_pct), up(d.strategy_return_pct))}
       ${kpi("단순 보유 수익률", fmtPct(d.benchmark_return_pct), up(d.benchmark_return_pct))}

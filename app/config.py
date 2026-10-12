@@ -100,6 +100,7 @@ class Settings(BaseSettings):
     # kis 면 국내(.KS/.KQ) 일봉·분봉·현재가를 st 게이트웨이의 KIS 차트 API 에서 받는다(실시간). Yahoo 는 국내 분봉 ~20분 지연·요청 제한.
     MARKET_DATA_SOURCE: str = "kis"                 # kis | yahoo
     MARKET_DATA_FALLBACK_YAHOO: bool = True         # KIS 조회 실패·빈 응답이면 Yahoo 로 폴백
+    OHLCV_STORE_FIRST: bool = True                  # 일봉(백테스트·분석)은 Yahoo 전에 시스템 OHLCV 저장소(st pg-stock)를 먼저 보고, 없는 구간은 적재 후 사용
     # st 는 KIS 호출을 전역 1.05초 간격으로 직렬화한다. 31종목을 동시 6개로 보내면 마지막 응답이
     # 약 31 × 1.05초 ≈ 35초 뒤에 온다. 10초였을 때는 전부 타임아웃돼 분봉 조회가 60전 60패였다(2026-10-12).
     # 사이클 하드 타임리밋(165초)보다 넉넉히 작게 둔다.

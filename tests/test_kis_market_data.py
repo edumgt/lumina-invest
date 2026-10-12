@@ -133,13 +133,17 @@ def test_stock_get_candles_prefers_kis_and_caches_separately():
 
 
 def test_stock_get_candles_non_krx_or_intraday_uses_yahoo():
+    """비국내 일봉은 OHLCV 저장소 우선 함수(내부에서 Yahoo 직접 조회)로, 분봉은 Yahoo range 조회로 간다. KIS 는 호출되지 않는다."""
+    from app.services import ohlcv_store
     seen = []; _server(seen)
     yahoo = AsyncMock(return_value={"timestamp": [1], "indicators": {"quote": [{"open": [1], "high": [1], "low": [1], "close": [1.0], "volume": [1]}]}})
+    daily = AsyncMock(return_value=([{"time": 1, "open": 1, "high": 1, "low": 1, "close": 1.0, "volume": 1}], {"source": "yahoo", "fetched": []}))
     with patch.object(stock, "cache_get", AsyncMock(return_value=None)), patch.object(stock, "cache_set", AsyncMock()), \
-         patch.object(stock, "_yahoo_chart", yahoo):
-        asyncio.run(stock.get_candles("AAPL", period="1y", interval="1d"))
+         patch.object(stock, "_yahoo_chart", yahoo), patch.object(ohlcv_store, "daily_candles", daily):
+        out = asyncio.run(stock.get_candles("AAPL", period="1y", interval="1d"))
         asyncio.run(stock.get_candles("005930.KS", period="5d", interval="5m"))
-    assert yahoo.await_count == 2 and seen == []
+    assert daily.await_count == 1 and daily.await_args.args[0] == "AAPL" and out["source"] == "yahoo"
+    assert yahoo.await_count == 1 and seen == []
 
 
 def test_stock_get_quote_kis_then_fallback():
