@@ -145,11 +145,22 @@ async def _fundamentals_fallback(symbol: str, cache_key: str, reason: str) -> di
     meta = (quote or {}).get("meta", {})
     price = meta.get("regularMarketPrice")
     name = next((c["name"] for c in QUANT_STOCKS if c["symbol"] == symbol), symbol)
+    # 가격만 있는 폴백에서도 통화를 함께 준다 — 없으면 프런트가 '원' 으로 오표기한다.
+    cur = str(meta.get("currency") or "").upper() or None
     return {"symbol": symbol, "name": name, "price": price,
+            "currency": cur, "priceUnit": PRICE_UNIT.get(cur, cur or ""),
+            "capUnit": "억원" if cur == "KRW" else (f"백만 {cur}" if cur else "단위 미확인"),
+            "amountUnit": "억원" if cur == "KRW" else (f"백만 {cur}" if cur else "단위 미확인"),
             "quarters": [], "revenue": [], "op": [], "net": [],
             "source": "Yahoo Finance chart" if price is not None else None,
             "data_status": "partial" if price is not None else "unavailable",
             "warning": f"재무 데이터 조회 실패 ({reason}). " + ("가격만 제공하며 재무 지표는 N/A입니다." if price is not None else "현재 제공할 자료가 없습니다. 다시 조회하세요.")}
+
+
+# 주당 금액·시세에 붙이는 통화 단위. 없는 통화는 ISO 코드를 그대로 쓴다.
+PRICE_UNIT = {"KRW": "원", "USD": "달러", "JPY": "엔", "EUR": "유로", "CNY": "위안",
+              "HKD": "홍콩달러", "GBP": "파운드", "TWD": "대만달러", "VND": "동"}
+# 큰 단위 표기(시가총액 등)에 쓰는 '조' 환산 제수 — 억원은 1e4, 백만 단위는 1e6 를 곱해 조가 된다.
 
 
 def _raw(mod: dict | None, key: str) -> Any:
@@ -169,7 +180,7 @@ async def get_fundamentals(symbol: str) -> dict:
     제공하지 않는 경우가 있어 해당 값은 null로 반환한다 — 프론트엔드가 '데이터 없음'
     으로 표시하며, 값을 지어내지 않는다.
     """
-    cache_key = f"fundamentals:v2:{symbol}"
+    cache_key = f"fundamentals:v3:{symbol}"
     cached = await cache_get(cache_key, max_age_hours=6)
     if cached is not None:
         return cached
@@ -220,9 +231,28 @@ async def get_fundamentals(symbol: str) -> dict:
         v = _raw(mod, key)
         return round(v * 100, 2) if v is not None else None
 
+    # ── 통화 ────────────────────────────────────────────────────────────────
+    # 금액을 통화와 무관하게 1e8 로 나눠 '억원' 으로 쓰면 해외 종목이 전부 틀어진다.
+    # (2026-10-12 확인: AAPL totalRevenue 109,417,000,000 USD → 1,094 "억원" 으로 표시돼
+    #  실제 152조원 규모가 1,094억원으로 보였다. 종목 검색은 해외 종목을 의도적으로 지원한다.)
+    # 시세·주당 지표는 price.currency, 재무제표는 financialData.financialCurrency 를 따른다
+    # (ADR 처럼 둘이 다를 수 있다). 환율로 원화 환산하지 않는다 — 환율 출처가 없고
+    # 지어낸 환산은 이 화면의 원칙에 어긋난다. 대신 단위를 정확히 알려 준다.
+    quote_cur = str(price_mod.get("currency") or "").upper() or None
+    fin_cur = str(fin.get("financialCurrency") or price_mod.get("financialCurrency") or quote_cur or "").upper() or None
+
+    def _scale(v: float | None, currency: str | None) -> float | None:
+        """재무 금액을 통화에 맞는 단위로 — 원화는 억원, 그 외는 백만 단위."""
+        if v is None:
+            return None
+        return round(v / 1e8, 0) if currency == "KRW" else round(v / 1e6, 2)
+
+    def _unit(currency: str | None) -> str:
+        return "억원" if currency == "KRW" else f"백만 {currency}" if currency else "단위 미확인"
+
     def _eok(v: float | None) -> float | None:
-        """원 단위 -> 억원 단위 (기존 목업과 동일한 스케일)."""
-        return round(v / 1e8, 0) if v is not None else None
+        """재무제표 금액 — financialCurrency 기준 단위."""
+        return _scale(v, fin_cur)
 
     quarters, revenue, op, net = [], [], [], []
     inc_history = list(reversed(r.get("incomeStatementHistoryQuarterly", {}).get("incomeStatementHistory", [])))
@@ -241,9 +271,15 @@ async def get_fundamentals(symbol: str) -> dict:
         "data_status": "complete",
         "source": "Yahoo Finance quoteSummary",
         "name": price_mod.get("longName") or price_mod.get("shortName") or symbol,
+        # 프런트가 라벨을 이 값으로 붙인다 — '원/억원' 을 하드코딩하면 해외 종목이 틀어진다.
+        "currency": quote_cur,
+        "financialCurrency": fin_cur,
+        "priceUnit": PRICE_UNIT.get(quote_cur, quote_cur or ""),
+        "capUnit": _unit(quote_cur),
+        "amountUnit": _unit(fin_cur),
         "price": _raw(price_mod, "regularMarketPrice"),
         "chg": _pct(price_mod, "regularMarketChangePercent"),
-        "cap": _eok(_raw(price_mod, "marketCap") or _raw(summary, "marketCap")),
+        "cap": _scale(_raw(price_mod, "marketCap") or _raw(summary, "marketCap"), quote_cur),
         # PER 은 실적(trailing) 우선, 없으면 전망(forward). 어느 쪽인지 perBasis 로 알려 준다 —
         # 둘을 같은 'PER' 로 섞어 보여 주면 투자 판단에서 의미가 달라진다.
         "per": _raw(summary, "trailingPE") or _raw(stats, "forwardPE"),

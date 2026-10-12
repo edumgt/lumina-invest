@@ -53,20 +53,29 @@ function nfmt(v, suffix = "") {
   return (v === null || v === undefined) ? "N/A" : `${fmt(v)}${suffix}`;
 }
 
-async function fetchAndRenderCompany(symbol) {
-  const overviewEl = document.getElementById("co-overview");
-  overviewEl.innerHTML = `<div class="text-xs" style="color:var(--text-mute);grid-column:1/-1;">불러오는 중…</div>`;
-  try {
-    let d = companyFundCache[symbol];
-    if (!d) {
-      d = await api(`/api/stocks/fundamentals?symbol=${encodeURIComponent(symbol)}`);
-      companyFundCache[symbol] = d;
-    }
-    if (selectedCompanySymbol === symbol) renderCompanyData(d);
-  } catch (e) {
-    overviewEl.innerHTML = `<div class="text-xs" style="color:var(--red);grid-column:1/-1;">데이터 조회 실패: ${escHtml(e.message)}</div>`;
-  }
+/* ── 통화 단위 ───────────────────────────────────────────────────────────────
+   '원 / 억원' 을 하드코딩하면 해외 종목이 전부 틀어진다. 서버가 종목의 통화를 보고
+   priceUnit(주당·시세) · capUnit(시가총액) · amountUnit(재무제표 금액)을 함께 준다.
+   예: 삼성전자 → 원 / 억원 / 억원,  AAPL → 달러 / 백만 USD / 백만 USD.
+   환율 환산은 하지 않는다(환율 출처가 없고 지어낸 환산은 이 화면 원칙에 어긋난다). */
+const priceUnit = d => d?.priceUnit ?? "";
+const amountUnit = d => d?.amountUnit ?? "";
+const capUnit = d => d?.capUnit ?? "";
+/** 시가총액을 규모에 맞는 단위로 — 서버가 준 cap 은 원화면 '억' 단위, 그 외 통화는 '백만' 단위다.
+    작은 종목까지 '조' 로 찍으면 0.00조가 되므로 조 → 억 → 원단위 순으로 내려간다. */
+function capBig(d) {
+  if (d?.cap === null || d?.cap === undefined) return "N/A";
+  const word = d.priceUnit || d.currency || "";            // 원 · 달러 · 엔 …
+  const krw = capUnit(d) === "억원";
+  const eok = krw ? d.cap : d.cap / 100;                   // 백만 단위 → 억 단위
+  const round2 = v => v >= 100 ? fmt(Math.round(v)) : v.toFixed(2);
+  const suffix = krw ? "원" : (word ? ` ${word}` : "");   // 통화를 모르면 꼬리를 비워 둔다
+  if (eok >= 1e4) return `${round2(eok / 1e4)}조${suffix}`;
+  if (eok >= 1)    return `${round2(eok)}억${suffix}`;
+  return `${fmt(d.cap)} ${capUnit(d)}`;                    // 아주 작으면 서버 단위 그대로
 }
+
+
 
 function renderCompanyData(d) {
   const pctColor = (d.chg ?? 0) >= 0 ? "var(--green)" : "var(--red)";
@@ -74,10 +83,10 @@ function renderCompanyData(d) {
 
   // 개요 카드 4개
   document.getElementById("co-overview").innerHTML = [
-    { label:"현재가", value:nfmt(d.price, "원"), sub:d.chg!=null?`${sign}${d.chg}%`:"", subColor:pctColor },
-    { label:"시가총액", value:d.cap!=null?`${fmt(Math.round(d.cap/10000))}조원`:"N/A", sub:d.name||"" },
-    { label:"EPS", value:nfmt(d.eps, "원"), sub:`PER ${d.per!=null?d.per.toFixed(1)+"x":"N/A"}` },
-    { label:"BPS", value:nfmt(d.bps, "원"), sub:`PBR ${d.pbr!=null?d.pbr.toFixed(2)+"x":"N/A"}` },
+    { label:"현재가", value:nfmt(d.price, priceUnit(d)), sub:d.chg!=null?`${sign}${d.chg}%`:"", subColor:pctColor },
+    { label:"시가총액", value:capBig(d), sub:d.name||"" },
+    { label:"EPS", value:nfmt(d.eps, priceUnit(d)), sub:`PER ${d.per!=null?d.per.toFixed(1)+"x":"N/A"}` },
+    { label:"BPS", value:nfmt(d.bps, priceUnit(d)), sub:`PBR ${d.pbr!=null?d.pbr.toFixed(2)+"x":"N/A"}` },
   ].map(c => `
     <div class="card" style="padding:16px;">
       <div class="text-xs" style="color:var(--text-mute);">${c.label}</div>
@@ -91,7 +100,7 @@ function renderCompanyData(d) {
     ["PER (주가수익비율)", d.per!=null ? `${d.per.toFixed(2)}x` : "N/A"],
     ["PBR (주가순자산비율)", d.pbr!=null ? `${d.pbr.toFixed(2)}x` : "N/A"],
     ["배당수익률", d.divYield!=null ? `${d.divYield}%` : "N/A"],
-    ["주당배당금 (DPS)", nfmt(d.div, "원")],
+    ["주당배당금 (DPS)", nfmt(d.div, priceUnit(d))],
   ];
   document.getElementById("co-valuation").innerHTML = valRows.map(([k,v]) => `
     <div class="flex justify-between items-center" style="padding:7px 0; border-bottom:1px solid var(--border);">
@@ -120,9 +129,13 @@ function renderCompanyData(d) {
     <table>
       <thead><tr><th>구분</th>${qs.map(q=>`<th style="text-align:right;">${escHtml(q)}</th>`).join("")}</tr></thead>
       <tbody>
-        <tr><td style="color:var(--text-dim);font-size:12px;">매출액 (억원)</td>${d.revenue.map(v=>`<td style="text-align:right;font-weight:600;">${nfmt(v)}</td>`).join("")}</tr>
-        <tr><td style="color:var(--text-dim);font-size:12px;">영업이익 (억원)</td>${d.op.map(v=>`<td style="text-align:right;color:var(--green);font-weight:600;">${nfmt(v)}</td>`).join("")}</tr>
-        <tr><td style="color:var(--text-dim);font-size:12px;">순이익 (억원)</td>${d.net.map(v=>`<td style="text-align:right;color:var(--accent);font-weight:600;">${nfmt(v)}</td>`).join("")}</tr>
+        <tr><td style="color:var(--text-dim);font-size:12px;">매출액 (${amountUnit(d)})</td>${d.revenue.map(v=>`<td style="text-align:right;font-weight:600;">${nfmt(v)}</td>`).join("")}</tr>
+        <tr><td style="color:var(--text-dim);font-size:12px;">영업이익 (${amountUnit(d)})</td>${d.op.map(v=>`<td style="text-align:right;color:var(--green);font-weight:600;">${nfmt(v)}</td>`).join("")}</tr>
+        ${d.op.every(v => v === null || v === undefined) ? `<tr><td colspan="${d.quarters.length + 1}" style="color:var(--text-mute);font-size:11px;padding-top:6px;">
+          영업이익은 Yahoo 가 분기 손익계산서에서 <code>operatingIncome</code> 을 빈 값으로 보내 N/A 입니다(<code>ebit</code>·<code>grossProfit</code> 도 0 으로만 옵니다).
+          영업이익률은 <code>financialData</code> 에서 받아 위 「수익성」에 표시합니다.
+        </td></tr>` : ""}
+        <tr><td style="color:var(--text-dim);font-size:12px;">순이익 (${amountUnit(d)})</td>${d.net.map(v=>`<td style="text-align:right;color:var(--accent);font-weight:600;">${nfmt(v)}</td>`).join("")}</tr>
       </tbody>
     </table>` : `<div class="text-xs" style="color:var(--text-mute);">분기 실적 데이터 없음</div>`;
 
@@ -130,14 +143,18 @@ function renderCompanyData(d) {
   const hasBalance = d.assets != null;
   document.getElementById("co-balance").innerHTML = hasBalance ? `
     <table>
-      <thead><tr><th>항목</th><th style="text-align:right;">금액 (억원)</th><th style="text-align:right;">비중</th></tr></thead>
+      <thead><tr><th>항목</th><th style="text-align:right;">금액 (${amountUnit(d)})</th><th style="text-align:right;">비중</th></tr></thead>
       <tbody>
         <tr><td style="color:var(--text-dim);font-size:12px;">총자산</td><td style="text-align:right;font-weight:700;">${fmt(d.assets)}</td><td style="text-align:right;">100%</td></tr>
         <tr><td style="color:var(--text-dim);font-size:12px;">자기자본</td><td style="text-align:right;font-weight:600;color:var(--green);">${nfmt(d.equity)}</td><td style="text-align:right;">${d.equity!=null?(d.equity/d.assets*100).toFixed(1)+"%":"N/A"}</td></tr>
         <tr><td style="color:var(--text-dim);font-size:12px;">부채총계</td><td style="text-align:right;font-weight:600;color:var(--red);">${nfmt(d.liabilities)}</td><td style="text-align:right;">${d.liabilities!=null?(d.liabilities/d.assets*100).toFixed(1)+"%":"N/A"}</td></tr>
         ${d.cash!=null ? `<tr><td style="color:var(--text-dim);font-size:12px;">현금및현금성자산</td><td style="text-align:right;">${fmt(d.cash)}</td><td style="text-align:right;">-</td></tr>` : ""}
       </tbody>
-    </table>` : `<div class="text-xs" style="color:var(--text-mute);">Yahoo Finance가 이 종목의 재무상태표 상세를 제공하지 않습니다.</div>`;
+    </table>` : `<div class="text-xs" style="color:var(--text-mute);">
+      Yahoo Finance quoteSummary 의 <code>balanceSheetHistory</code> 가 결산일만 돌려주고 총자산·자기자본·부채 항목을 비워 보냅니다
+      (2026-10-12 확인: 국내·해외 종목 모두 동일). 값을 추정해 채우지 않습니다 —
+      대신 아래 「현금흐름」의 현금 및 단기투자·총차입금은 <code>financialData</code> 에서 받아 표시합니다.
+    </div>`;
   attachIndicatorHelp();
 }
 
