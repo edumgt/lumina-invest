@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.database.postgres import get_pg_session
 from app.lib.session import get_current_user
-from app.models import LiveOrder, Portfolio, PORTFOLIO_BOOK_QUANT
+from app.models import LiveOrder, Portfolio, PORTFOLIO_BOOK_QUANT, User
 from app.models.base import SYSTEM_USER_ID
 from app.services import kis_batch, reconciliation
 from app.services.brokers import stock_coin_trade_gateway as gateway
@@ -59,6 +59,14 @@ def realized_pnl(rows: list) -> dict:
 
 
 OWNER_LABEL = {"batch": "봇(배치)", "me": "사용자"}
+# 주문 경로(live_orders.origin, 6-49). 빈 값(컬럼 추가 전 행)은 user_id 로 추정: 시스템 사용자 → batch_auto, 그 외 → user_auto.
+ORIGIN_LABEL = {
+    "batch_auto": "봇(배치 자동매매)",
+    "user_auto": "봇(사용자 계정 자동매매)",
+    "manual": "사람(화면 수동 주문)",
+    "rebalance": "사람(리밸런싱 실행)",
+}
+HUMAN_ORIGINS = ("manual", "rebalance")
 ORDER_STATUSES = ("PENDING", "ACCEPTED", "PARTIALLY_FILLED", "FILLED", "CANCEL_REQUESTED", "CANCELLED", "REJECTED", "UNKNOWN", "LOST", "ERROR")
 
 
@@ -66,15 +74,37 @@ def _owner(r: LiveOrder) -> str:
     return "batch" if r.user_id == SYSTEM_USER_ID else "me"
 
 
-def _order_dict(r: LiveOrder) -> dict:
-    owner = _owner(r)
+def _origin(r: LiveOrder) -> str:
+    o = str(getattr(r, "origin", "") or "")
+    if o in ORIGIN_LABEL:
+        return o
+    return "batch_auto" if r.user_id == SYSTEM_USER_ID else "user_auto"
+
+
+def _order_dict(r: LiveOrder, emails: dict | None = None) -> dict:
+    owner, origin = _owner(r), _origin(r)
     return {
         "owner": owner, "owner_label": OWNER_LABEL[owner],
+        "origin": origin, "origin_label": ORIGIN_LABEL[origin], "origin_recorded": bool(getattr(r, "origin", "")),
+        "is_human": origin in HUMAN_ORIGINS, "actor": "system" if owner == "batch" else ((emails or {}).get(r.user_id) or str(r.user_id)[:8]),
+        "client_ip": str(getattr(r, "client_ip", "") or ""), "user_agent": str(getattr(r, "user_agent", "") or ""),
         "client_order_id": r.client_order_id, "environment": r.environment, "symbol": r.symbol, "name": r.name, "side": r.side,
         "order_type": r.order_type, "quantity": r.quantity, "price": r.price, "order_no": r.order_no, "status": r.status,
         "filled_quantity": r.filled_quantity, "avg_filled_price": r.avg_filled_price, "message": r.message,
         "created_at": r.created_at.isoformat() if r.created_at else None,
     }
+
+
+async def _emails(db: AsyncSession, user_ids: list) -> dict:
+    """user_id → email (그리드 「계정」 열). 시스템 사용자는 표시하지 않는다."""
+    ids = [u for u in set(user_ids) if u != SYSTEM_USER_ID]
+    if not ids:
+        return {}
+    try:
+        rows = (await db.execute(select(User.id, User.email).where(User.id.in_(ids)))).all()
+        return {rid: email for rid, email in rows}
+    except Exception:   # 테스트 대체 DB 등 — 이메일은 부가 정보
+        return {}
 
 
 def _heartbeat_age() -> float | None:
@@ -114,20 +144,24 @@ async def kis_monitor(limit: int = Query(50, ge=1, le=200), cycles: int = Query(
     today = [r for r in rows if r.created_at and r.created_at.astimezone(timezone.utc) >= day_start]
     counts: dict[str, int] = {}
     owner_counts: dict[str, int] = {"batch": 0, "me": 0}
+    origin_counts: dict[str, int] = {k: 0 for k in ORIGIN_LABEL}
     for r in today:
         counts[r.status] = counts.get(r.status, 0) + 1
         owner_counts[_owner(r)] += 1
+        origin_counts[_origin(r)] += 1
+    emails = await _emails(db, [r.user_id for r in rows])
     filled_today = [r for r in today if r.status == "FILLED"]
     slips = [((float(r.avg_filled_price) / float(r.price)) - 1) * 100 for r in filled_today if r.price and r.avg_filled_price]
     pnl = realized_pnl(rows)
     out["orders"] = {
-        "recent": [_order_dict(r) for r in rows[:limit]],
-        "today_counts": counts, "today_owner_counts": owner_counts, "today_total": len(today), "today_filled": len(filled_today),
+        "recent": [_order_dict(r, emails) for r in rows[:limit]],
+        "today_counts": counts, "today_owner_counts": owner_counts, "today_origin_counts": origin_counts, "origin_labels": ORIGIN_LABEL,
+        "today_total": len(today), "today_filled": len(filled_today),
         "fill_rate_pct": round(len(filled_today) / len(today) * 100, 1) if today else None,
         "today_buy_amount": round(sum(float(r.avg_filled_price) * int(r.filled_quantity) for r in filled_today if str(r.side).upper() == "BUY" and r.avg_filled_price), 0),
         "today_sell_amount": round(sum(float(r.avg_filled_price) * int(r.filled_quantity) for r in filled_today if str(r.side).upper() == "SELL" and r.avg_filled_price), 0),
         "avg_slippage_pct": round(sum(slips) / len(slips), 3) if slips else None,
-        "unresolved": [_order_dict(r) for r in today if r.status in ("UNKNOWN", "LOST", "ERROR")][:20],
+        "unresolved": [_order_dict(r, emails) for r in today if r.status in ("UNKNOWN", "LOST", "ERROR")][:20],
         "realized_pnl": pnl,
     }
 
@@ -216,6 +250,8 @@ def _kst_day_bounds(date_from: str, date_to: str) -> tuple[datetime | None, date
 @router.get("/orders")
 async def kis_orders(
     owner: str = Query("all", pattern="^(all|batch|me)$", description="all | batch(봇·배치) | me(로그인 사용자)"),
+    origin: str = Query("", pattern="^(|batch_auto|user_auto|manual|rebalance|bot|human)$",
+                        description="주문 경로. bot = batch_auto+user_auto, human = manual+rebalance. 비우면 전체"),
     status: str = Query("", max_length=200, description="쉼표 구분 상태 목록. 비우면 전체"),
     side: str = Query("", pattern="^(|BUY|SELL)$"),
     q: str = Query("", max_length=80, description="종목코드·종목명·주문번호·clientOrderId·메모 부분 일치(대소문자 무시)"),
@@ -244,6 +280,7 @@ async def kis_orders(
     rows = list((await db.execute(stmt.order_by(LiveOrder.created_at.desc()).limit(2000))).scalars().all())
 
     wanted_status = {x.strip().upper() for x in status.split(",") if x.strip()}
+    wanted_origins = {"bot": {"batch_auto", "user_auto"}, "human": set(HUMAN_ORIGINS)}.get(origin, {origin} if origin else set())
     needle = q.strip().lower()
     code_needle = _safe_code(needle)   # "005930.KS" 로 검색해도 코드 "005930" 과 맞게
 
@@ -259,8 +296,11 @@ async def kis_orders(
             return False
         if side and str(r.side).upper() != side:
             return False
+        if wanted_origins and _origin(r) not in wanted_origins:
+            return False
         if needle:
-            hay = " ".join(str(x or "") for x in (r.symbol, _safe_code(r.symbol), r.name, r.order_no, r.client_order_id, r.message)).lower()
+            hay = " ".join(str(x or "") for x in (r.symbol, _safe_code(r.symbol), r.name, r.order_no, r.client_order_id, r.message,
+                                                  getattr(r, "client_ip", ""), getattr(r, "user_agent", ""))).lower()
             if needle not in hay and not (code_needle and code_needle in hay):
                 return False
         return True
@@ -269,16 +309,19 @@ async def kis_orders(
                      key=lambda r: r.created_at.astimezone(timezone.utc) if r.created_at else datetime.min.replace(tzinfo=timezone.utc), reverse=True)
     counts_by_status: dict[str, int] = {}
     counts_by_owner: dict[str, int] = {"batch": 0, "me": 0}
+    counts_by_origin: dict[str, int] = {k: 0 for k in ORIGIN_LABEL}
     for r in matched:
         counts_by_status[str(r.status)] = counts_by_status.get(str(r.status), 0) + 1
         counts_by_owner[_owner(r)] += 1
+        counts_by_origin[_origin(r)] += 1
     page = matched[offset:offset + limit]
+    emails = await _emails(db, [r.user_id for r in page])
     return {
         "total": len(matched), "offset": offset, "limit": limit, "truncated": len(rows) >= 2000,
-        "counts_by_status": counts_by_status, "counts_by_owner": counts_by_owner,
-        "filters": {"owner": owner, "status": sorted(wanted_status), "side": side, "q": q.strip(), "date_from": date_from, "date_to": date_to},
-        "statuses": list(ORDER_STATUSES), "owner_labels": OWNER_LABEL,
-        "rows": [_order_dict(r) for r in page],
+        "counts_by_status": counts_by_status, "counts_by_owner": counts_by_owner, "counts_by_origin": counts_by_origin,
+        "filters": {"owner": owner, "origin": origin, "status": sorted(wanted_status), "side": side, "q": q.strip(), "date_from": date_from, "date_to": date_to},
+        "statuses": list(ORDER_STATUSES), "owner_labels": OWNER_LABEL, "origin_labels": ORIGIN_LABEL,
+        "rows": [_order_dict(r, emails) for r in page],
     }
 
 

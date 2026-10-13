@@ -2,7 +2,7 @@ import logging
 from datetime import datetime, timezone
 import uuid
 import httpx
-from fastapi import APIRouter, Depends, Query, HTTPException
+from fastapi import Request, APIRouter, Depends, Query, HTTPException
 from pydantic import BaseModel, Field, ConfigDict
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -763,15 +763,19 @@ class ManualKisOrderBody(BaseModel):
 
 
 @router.post("/stocks/quant/manual-order")
-async def quant_manual_order(body: ManualKisOrderBody, user=Depends(get_current_user),
+async def quant_manual_order(body: ManualKisOrderBody, request: Request, user=Depends(get_current_user),
                              db: AsyncSession = Depends(get_pg_session)):
     """화면에서 직접 내는 KIS 모의투자 주문 — 자동매매와 같은 게이트웨이·추적 경로를 쓴다.
 
     가격은 서버가 현재가로 정한다(클라이언트 값 불신). 실전 환경·비상정지는 422 로 막는다.
+    사람이 낸 주문이므로 요청 IP·User-Agent 를 live_orders(origin=manual) 에 남긴다(6-49).
     """
+    from app.lib.request_meta import client_meta
+    meta = client_meta(request)
     try:
         return await auto_trade.place_manual_kis_order(
-            db, user["id"], body.symbol, body.name or body.symbol, body.side, body.quantity)
+            db, user["id"], body.symbol, body.name or body.symbol, body.side, body.quantity,
+            client_ip=meta["client_ip"], user_agent=meta["user_agent"])
     except auto_trade.ManualOrderBlocked as exc:
         raise HTTPException(422, exc.message)
 

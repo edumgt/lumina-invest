@@ -36,10 +36,11 @@ class FakeDb:
         raise AssertionError(entity)
 
 
-def order(symbol, side, qty, status, avg=None, price=100.0, age_min=10, user=SYSTEM_USER_ID, order_type="MARKET"):
+def order(symbol, side, qty, status, avg=None, price=100.0, age_min=10, user=SYSTEM_USER_ID, order_type="MARKET", origin="", client_ip="", user_agent=""):
     return SimpleNamespace(user_id=user, client_order_id=f"c-{symbol}-{side}-{age_min}", environment="paper", symbol=symbol, name=symbol, side=side,
                            order_type=order_type, quantity=qty, price=price, order_no="1", status=status,
-                           filled_quantity=qty if status == "FILLED" else 0, avg_filled_price=avg, message="", created_at=NOW - timedelta(minutes=age_min))
+                           filled_quantity=qty if status == "FILLED" else 0, avg_filled_price=avg, message="", created_at=NOW - timedelta(minutes=age_min),
+                           origin=origin, client_ip=client_ip, user_agent=user_agent)
 
 
 def test_realized_pnl_average_cost():
@@ -177,3 +178,34 @@ def test_batch_status_returns_system_status(ctl_client):
     with patch.object(kis_batch, "system_status", AsyncMock(return_value=status)):
         r = ctl_client.get("/api/quant/kis/batch/status")
     assert r.status_code == 200 and r.json() == status
+
+
+# ── 주체(origin) 구분 · IP (6-49) ──────────────────────────────────────────────
+
+def test_origin_inferred_for_legacy_rows_and_labels():
+    assert km._origin(order("A", "BUY", 1, "FILLED")) == "batch_auto"
+    assert km._origin(order("A", "BUY", 1, "FILLED", user=UID)) == "user_auto"
+    assert km._origin(order("A", "BUY", 1, "FILLED", user=UID, origin="manual")) == "manual"
+    d = km._order_dict(order("A", "BUY", 1, "FILLED", user=UID, origin="manual", client_ip="1.2.3.4", user_agent="Mozilla"), {UID: "a@a.com"})
+    assert d["origin_label"] == "사람(화면 수동 주문)" and d["is_human"] and d["client_ip"] == "1.2.3.4" and d["actor"] == "a@a.com" and d["origin_recorded"]
+    legacy = km._order_dict(order("A", "SELL", 1, "FILLED", user=UID))
+    assert legacy["origin"] == "user_auto" and legacy["is_human"] is False and legacy["origin_recorded"] is False and legacy["client_ip"] == ""
+    assert km._order_dict(order("A", "SELL", 1, "FILLED"))["actor"] == "system"
+
+
+def test_orders_origin_filter_and_counts(client):
+    db = client.app.dependency_overrides[get_pg_session]()
+    db.orders.append(order("005930.KS", "SELL", 1, "ACCEPTED", age_min=2, user=UID, origin="manual", client_ip="10.0.0.9", user_agent="UA"))
+    db.orders.append(order("000660.KS", "BUY", 1, "ACCEPTED", age_min=1, user=UID, origin="rebalance", client_ip="10.0.0.8"))
+    d = client.get("/api/quant/kis/orders").json()
+    assert d["counts_by_origin"] == {"batch_auto": 2, "user_auto": 1, "manual": 1, "rebalance": 1}
+    assert d["origin_labels"]["user_auto"] == "봇(사용자 계정 자동매매)"
+    human = client.get("/api/quant/kis/orders?origin=human").json()
+    assert human["total"] == 2 and {r["origin"] for r in human["rows"]} == {"manual", "rebalance"} and human["rows"][1]["client_ip"] == "10.0.0.9"
+    bot = client.get("/api/quant/kis/orders?origin=bot").json()
+    assert bot["total"] == 3 and all(not r["is_human"] for r in bot["rows"])
+    assert client.get("/api/quant/kis/orders?origin=user_auto").json()["total"] == 1
+    assert client.get("/api/quant/kis/orders?q=10.0.0.9").json()["total"] == 1     # IP 로도 검색
+    assert client.get("/api/quant/kis/orders?origin=nope").status_code == 422
+    mon = client.get("/api/quant/kis/monitor").json()["orders"]
+    assert mon["today_origin_counts"] == {"batch_auto": 2, "user_auto": 1, "manual": 1, "rebalance": 1}

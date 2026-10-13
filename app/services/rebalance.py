@@ -515,8 +515,10 @@ async def execute(db: AsyncSession, user_id: uuid.UUID, plan: RebalancePlan, tri
         if source == "kis":
             # KIS Testbed 실주문(게이트웨이). 체결은 비동기(quant.confirm_fills) → 여기서는 submitted/skipped/failed 만 기록
             from app.services import auto_trade
+            from app.lib import request_meta
             res = await auto_trade._place_live_order_via_gateway(db, None, o["symbol"], o["name"], o["side"].lower(),
-                                                                 int(o["quantity"]), float(o["price"]), str(user_id))
+                                                                 int(o["quantity"]), float(o["price"]), str(user_id),
+                                                                 origin="rebalance", **request_meta.current())   # 화면 실행이면 라우트가 bind 한 IP·UA
             st = res.get("status")
             rec.update({"status": "submitted" if st == "submitted" else ("skipped" if st == "skipped" else "failed"),
                         "live_order": {k: res.get(k) for k in ("status", "order_no", "client_order_id", "reason", "error", "environment") if res.get(k) is not None}})

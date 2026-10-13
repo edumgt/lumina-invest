@@ -135,3 +135,8 @@ class LiveOrder(Base, UUIDPkMixin, CreatedAtMixin, UpdatedAtMixin):
     avg_filled_price: Mapped[float] = mapped_column(Float, nullable=False, default=0)
     message: Mapped[str] = mapped_column(String(300), nullable=False, default="")
     raw: Mapped[str] = mapped_column(Text, nullable=False, default="")                    # 마지막 게이트웨이 응답 JSON
+    # 주문 경로 구분(6-49): batch_auto(배치 봇) | user_auto(로그인 사용자 계정의 자동매매 사이클) | manual(사람이 화면에서) | rebalance(리밸런싱 실행)
+    # 빈 값은 컬럼 추가 전 행 — kis_monitor._origin 이 user_id 로 추정한다. manual/rebalance 는 요청 IP·User-Agent 를 함께 남긴다.
+    origin: Mapped[str] = mapped_column(String(20), nullable=False, default="")
+    client_ip: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    user_agent: Mapped[str] = mapped_column(String(200), nullable=False, default="")

@@ -48,6 +48,26 @@ function addAndSelectCompany(symbol, name) {
   selectCompany(symbol);
 }
 
+// 종목 펀더멘털 조회 → 대시보드 렌더. 커밋 c66fa00(통화 단위 처리) 에서 실수로 삭제돼 ReferenceError 가 났던 함수(6-50 복원).
+// 비교 화면과 같은 캐시(companyFundCache)를 쓰고, 부분 데이터(data_status != complete)는 캐시하지 않아 새로고침 시 다시 받는다.
+async function fetchAndRenderCompany(symbol) {
+  const overviewEl = document.getElementById("co-overview");
+  if (!overviewEl) return;
+  overviewEl.innerHTML = `<div class="text-xs" style="color:var(--text-mute);grid-column:1/-1;">불러오는 중…</div>`;
+  try {
+    let d = companyFundCache[symbol];
+    if (!d) {
+      d = await api(`/api/stocks/fundamentals?symbol=${encodeURIComponent(symbol)}`);
+      if (!d.data_status || d.data_status === "complete") companyFundCache[symbol] = d;
+    }
+    if (selectedCompanySymbol === symbol) renderCompanyData(d);
+  } catch (e) {
+    if (selectedCompanySymbol !== symbol) return;
+    overviewEl.innerHTML = `<div class="text-xs" style="color:var(--red);grid-column:1/-1;">데이터 조회 실패: ${escHtml(e?.message || e)}</div>`;
+    ["co-valuation", "co-profitability", "co-quarterly", "co-balance"].forEach(id => { const el = document.getElementById(id); if (el) el.innerHTML = ""; });
+  }
+}
+
 // null-safe 포맷: 값 없으면 "N/A" (Yahoo가 국내 상장사 일부 지표를 제공하지 않는 경우가 있음)
 function nfmt(v, suffix = "") {
   return (v === null || v === undefined) ? "N/A" : `${fmt(v)}${suffix}`;

@@ -1634,3 +1634,10 @@ st 공개 조회 계약(`rows[].trade_date`, `nextOffset`)은 라이브 응답�
 - `public/js/completion.js`·`public/css/completion.css` 삭제(git rm, 2026-09-29 감사 결과 정적 표). `app.html`·`login.html`·`register.html` 의 CSS 링크와
   `initCompletionIndicator()` 호출(`main.js` boot, 로그인·가입 페이지 인라인 모듈) 제거. 남은 참조 없음(`grep -rn completion public/`).
 - 배포: `deploy/fd-strategy-settings.sh` 에 합침(login/register.html 복사 + 컨테이너·호스트에서 두 파일 rm). 사용자가 실행.
+
+### 6-50. 2026-10-13 #company-dashboard `ReferenceError: fetchAndRenderCompany is not defined` (사용자 보고)
+
+- 원인: 커밋 `c66fa00`(통화 단위 처리 개선)에서 `public/js/company.js` 의 `async function fetchAndRenderCompany` 정의가 통째로 삭제됐는데 호출(`loadCompanyDashboard`,
+  `selectCompany`) 은 남아 있었다. 화면 진입·종목 탭 클릭·종목 검색 선택이 모두 실패(개요 카드 비어 있음).
+- 조치: `addAndSelectCompany` 아래에 함수 복원. 비교 화면과 같은 `companyFundCache` 사용, `data_status != complete` 는 캐시 안 함, 실패 시 개요 카드에 오류 문구 + 하위 섹션 비움,
+  응답 도착 전에 다른 종목을 고르면 렌더 생략. 배포는 `deploy/fd-strategy-settings.sh` FE 목록에 `company.js` 추가(사용자 실행).

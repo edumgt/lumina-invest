@@ -151,3 +151,19 @@ def test_order_readiness_reports_blocking_reason():
     body = r.json()
     assert r.status_code == 200 and body["can_order"] is False and body["reason"] == "real_environment"
     assert body["max_quantity"] == auto_trade.MANUAL_ORDER_MAX_QTY
+
+
+# ── 사람 주문의 IP·UA 기록 (6-49) ─────────────────────────────────────────────
+
+def test_manual_order_marks_origin_manual_with_request_meta(gateway_ok):
+    _call(client_ip="203.0.113.5", user_agent="Mozilla/5.0 test")
+    kw = gateway_ok.await_args.kwargs
+    assert kw == {"origin": "manual", "client_ip": "203.0.113.5", "user_agent": "Mozilla/5.0 test"}
+
+
+def test_route_forwards_client_ip_from_x_forwarded_for():
+    with patch.object(auto_trade, "place_manual_kis_order", AsyncMock(return_value={"status": "submitted"})) as place:
+        r = _client().post("/api/stocks/quant/manual-order", json={"symbol": "005930.KS", "side": "buy", "quantity": 1},
+                           headers={"X-Forwarded-For": "198.51.100.7, 10.0.0.1", "User-Agent": "UA-X"})
+    assert r.status_code == 200
+    assert place.await_args.kwargs == {"client_ip": "198.51.100.7", "user_agent": "UA-X"}

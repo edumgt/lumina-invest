@@ -1709,8 +1709,10 @@
           <h3 class="font-semibold mb-2 text-sm">🧾 봇 실주문 (KIS 게이트웨이) <span id="kism-orders-note" class="text-xs" style="color:var(--text-mute);"></span></h3>
           <!-- 검색 툴바: GET /api/quant/kis/orders (구분 봇/사용자 · 상태 · 방향 · 기간 · 텍스트 · 건수). 결과는 컬럼 헤더 클릭으로 정렬 -->
           <form id="kism-orders-form" class="flex flex-wrap items-end gap-2 text-xs mb-2" onsubmit="return false;">
-            <label class="flex flex-col gap-1"><span style="color:var(--text-mute);">구분</span>
-              <select id="kism-o-owner" class="input text-xs" style="padding:4px 8px;"><option value="all">전체</option><option value="batch">봇(배치)</option><option value="me">사용자(내 계정)</option></select></label>
+            <label class="flex flex-col gap-1"><span style="color:var(--text-mute);">계정</span>
+              <select id="kism-o-owner" class="input text-xs" style="padding:4px 8px;"><option value="all">전체</option><option value="batch">시스템(배치)</option><option value="me">내 계정</option></select></label>
+            <label class="flex flex-col gap-1" title="주문을 낸 경로. 봇 = 자동매매 사이클(배치 또는 로그인 사용자 계정의 자동매매), 사람 = 화면에서 직접 낸 수동 주문·리밸런싱 실행 (IP·브라우저 기록)"><span style="color:var(--text-mute);">주체</span>
+              <select id="kism-o-origin" class="input text-xs" style="padding:4px 8px;"><option value="">전체</option><option value="bot">봇 전체</option><option value="batch_auto">봇(배치 자동매매)</option><option value="user_auto">봇(사용자 계정 자동매매)</option><option value="human">사람 전체</option><option value="manual">사람(화면 수동 주문)</option><option value="rebalance">사람(리밸런싱 실행)</option></select></label>
             <label class="flex flex-col gap-1"><span style="color:var(--text-mute);">상태</span>
               <select id="kism-o-status" class="input text-xs" style="padding:4px 8px;"><option value="">전체</option><option value="FILLED">FILLED</option><option value="ACCEPTED,PARTIALLY_FILLED,PENDING,CANCEL_REQUESTED">열린 주문</option><option value="ACCEPTED">ACCEPTED</option><option value="PARTIALLY_FILLED">PARTIALLY_FILLED</option><option value="PENDING">PENDING</option><option value="UNKNOWN,LOST,ERROR,REJECTED">미해결·실패</option><option value="UNKNOWN">UNKNOWN</option><option value="LOST">LOST</option><option value="ERROR">ERROR</option><option value="REJECTED">REJECTED</option><option value="CANCELLED">CANCELLED</option></select></label>
             <label class="flex flex-col gap-1"><span style="color:var(--text-mute);">방향</span>
@@ -1718,7 +1720,7 @@
             <label class="flex flex-col gap-1"><span style="color:var(--text-mute);">기간 (KST)</span>
               <span class="flex items-center gap-1"><input type="date" id="kism-o-from" class="input text-xs" style="padding:4px 8px;"> ~ <input type="date" id="kism-o-to" class="input text-xs" style="padding:4px 8px;"></span></label>
             <label class="flex flex-col gap-1" style="min-width:220px;"><span style="color:var(--text-mute);">검색어</span>
-              <input id="kism-o-q" class="input text-xs" style="padding:4px 8px;" placeholder="종목코드 · 종목명 · 주문번호 · 메모"></label>
+              <input id="kism-o-q" class="input text-xs" style="padding:4px 8px;" placeholder="종목코드 · 종목명 · 주문번호 · 메모 · IP"></label>
             <button type="submit" id="kism-o-search" class="btn-secondary text-xs">검색</button>
             <button type="button" id="kism-o-reset" class="btn-secondary text-xs">초기화</button>
             <button type="button" id="kism-o-csv" class="btn-secondary text-xs" title="그리드의 정렬·필터를 반영한 검색 결과 전체를 CSV로 내려받기">CSV</button>

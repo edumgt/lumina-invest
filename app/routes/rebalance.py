@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -115,8 +115,10 @@ async def preview(user=Depends(get_current_user_any), db: AsyncSession = Depends
 
 
 @router.post("/execute")
-async def execute(body: ExecuteBody, user=Depends(get_current_user_any), db: AsyncSession = Depends(get_pg_session)):
-    """수동 리밸런싱 실행(MANUAL) 또는 제안 승인 실행."""
+async def execute(body: ExecuteBody, request: Request, user=Depends(get_current_user_any), db: AsyncSession = Depends(get_pg_session)):
+    """수동 리밸런싱 실행(MANUAL) 또는 제안 승인 실행. 사람이 낸 실행이므로 요청 IP·UA 를 KIS 실주문 행에 남긴다(6-49)."""
+    from app.lib import request_meta
+    request_meta.bind(request)
     uid = _uid(user)
     try:
         if body.run_id:

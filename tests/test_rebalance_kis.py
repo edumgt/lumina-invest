@@ -89,8 +89,8 @@ def test_execute_kis_routes_orders_through_gateway(env):
     results = iter([{"status": "submitted", "order_no": "0000040001", "client_order_id": "c1", "environment": "paper"},
                     {"status": "skipped", "reason": "market_closed", "environment": "paper"}])
     calls = []
-    async def place(db, broker_row, symbol, name, side, qty, price, user_id):
-        calls.append((broker_row, symbol, side, qty, price, user_id)); return next(results)
+    async def place(db, broker_row, symbol, name, side, qty, price, user_id, **kw):
+        calls.append((broker_row, symbol, side, qty, price, user_id)); assert kw["origin"] == "rebalance"; return next(results)
     from app.services import auto_trade
     db = FakeDb()
     asyncio.run(rb.set_account_source(UID, "kis"))

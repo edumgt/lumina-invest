@@ -148,15 +148,22 @@ function renderRecon(d) {
 
 function renderOrdersSummary(d) {
   const note = document.getElementById("kism-orders-note"); if (!note) return;
-  const o = d.orders || {}; const oc = o.today_owner_counts || {};
+  const o = d.orders || {}; const og = o.today_origin_counts || {}, oc = o.today_owner_counts || {};
   const statusText = Object.entries(o.today_counts || {}).map(([k, v]) => `${k} ${v}`).join(", ") || "없음";
-  note.textContent = `· 당일 ${o.today_total ?? 0}건 (봇 ${oc.batch ?? 0} · 사용자 ${oc.me ?? 0}) · 상태 ${statusText}`;
+  const bots = (og.batch_auto ?? oc.batch ?? 0) + (og.user_auto ?? 0), humans = (og.manual ?? 0) + (og.rebalance ?? 0);
+  note.textContent = `· 당일 ${o.today_total ?? 0}건 (봇 ${bots} · 사람 ${humans}) · 상태 ${statusText}`;
 }
 
 /* ── 실주문 검색 그리드: GET /api/quant/kis/orders ─────────────────────────────── */
 const ORDER_COLUMNS = [
   { ...timeColumn("created_at"), sort: "desc" },
-  textColumn("owner_label", "구분", { width: 115, cellRenderer: ({ data }) => textCell(data.owner_label || (data.owner === "batch" ? "봇(배치)" : "사용자"), data.owner === "batch" ? "#6366f1" : "#15803d") }),
+  // 주체: live_orders.origin (6-49). 봇(배치 / 사용자 계정 자동매매) 은 보라, 사람(화면 수동 · 리밸런싱) 은 초록. 컬럼 추가 전 행은 user_id 로 추정(※).
+  textColumn("origin_label", "주체", { width: 190,
+    cellRenderer: ({ data }) => textCell(`${data.origin_label || data.owner_label || "-"}${data.origin_recorded === false ? " ※" : ""}`, data.is_human ? "#15803d" : "#6366f1"),
+    tooltipValueGetter: ({ data }) => `${data.origin_label || ""}${data.origin_recorded === false ? " (경로 미기록 — 계정으로 추정)" : ""} · 계정 ${data.actor || "-"}` }),
+  textColumn("actor", "계정", { width: 150, tooltipValueGetter: ({ data }) => data.owner === "batch" ? "시스템 사용자(배치)" : `로그인 사용자 ${data.actor || ""}` }),
+  textColumn("client_ip", "IP", { width: 130, valueFormatter: ({ value, data }) => value || (data?.is_human ? "(미기록)" : "-"), tooltipValueGetter: ({ value }) => value ? `요청 IP ${value} (X-Forwarded-For 첫 값)` : "봇 주문은 IP 가 없습니다" }),
+  textColumn("user_agent", "브라우저", { width: 220, valueFormatter: ({ value, data }) => value || (data?.is_human ? "(미기록)" : "-") }),
   textColumn("name", "종목", { width: 175, valueGetter: ({ data }) => data?.name || data?.symbol }), textColumn("symbol", "종목코드"),
   textColumn("side", "방향", { width: 110, cellRenderer: ({ value }) => textCell(value, value === "BUY" ? "#15803d" : "#dc2626") }),
   textColumn("order_type", "유형"), numericColumn("quantity", "주문수량"), numericColumn("filled_quantity", "체결수량"),
@@ -166,11 +173,11 @@ const ORDER_COLUMNS = [
   textColumn("order_no", "주문번호", { width: 180, tooltipValueGetter: ({ data }) => data.client_order_id || data.order_no || "" }),
   textColumn("message", "메모", { width: 300 }),
 ];
-const ordersState = { rows: [], total: 0, counts_by_owner: {}, counts_by_status: {}, truncated: false };
+const ordersState = { rows: [], total: 0, counts_by_owner: {}, counts_by_origin: {}, counts_by_status: {}, truncated: false };
 let ordersRun = 0;
 function readOrderFilters() {
   const v = id => document.getElementById(id)?.value ?? "";
-  return { owner: v("kism-o-owner") || "all", status: v("kism-o-status"), side: v("kism-o-side"), date_from: v("kism-o-from"), date_to: v("kism-o-to"), q: v("kism-o-q").trim() };
+  return { owner: v("kism-o-owner") || "all", origin: v("kism-o-origin"), status: v("kism-o-status"), side: v("kism-o-side"), date_from: v("kism-o-from"), date_to: v("kism-o-to"), q: v("kism-o-q").trim() };
 }
 function sortedOrderRows() {
   const rows = [], grid = grids.get("kism-orders");
@@ -179,8 +186,9 @@ function sortedOrderRows() {
 }
 function renderOrdersTable(resetPage = false) {
   const st = ordersState, result = document.getElementById("kism-orders-result");
-  const oc = st.counts_by_owner || {}, statusText = Object.entries(st.counts_by_status || {}).map(([k, v]) => `${k} ${v}`).join(", ") || "없음";
-  if (result) result.textContent = `검색 결과 ${fmt(st.total)}건 (봇 ${fmt(oc.batch ?? 0)} · 사용자 ${fmt(oc.me ?? 0)}) · 상태 ${statusText} · 페이지당 10건${st.truncated ? " · 최근 2,000건까지만 검색" : ""}`;
+  const og = st.counts_by_origin || {}, statusText = Object.entries(st.counts_by_status || {}).map(([k, v]) => `${k} ${v}`).join(", ") || "없음";
+  const bots = (og.batch_auto ?? 0) + (og.user_auto ?? 0), humans = (og.manual ?? 0) + (og.rebalance ?? 0);
+  if (result) result.textContent = `검색 결과 ${fmt(st.total)}건 (봇 ${fmt(bots)}: 배치 ${fmt(og.batch_auto ?? 0)} · 사용자 계정 자동매매 ${fmt(og.user_auto ?? 0)} / 사람 ${fmt(humans)}: 수동 ${fmt(og.manual ?? 0)} · 리밸런싱 ${fmt(og.rebalance ?? 0)}) · 상태 ${statusText} · 페이지당 10건${st.truncated ? " · 최근 2,000건까지만 검색" : ""}`;
   updateGrid("kism-orders", ORDER_COLUMNS, st.rows.map(r => ({ ...r, current_quantity: currentQuantity(r.symbol) })), "조건에 맞는 실주문이 없습니다.", resetPage);
 }
 export async function loadKisOrders({ resetPage = true } = {}) {
@@ -202,7 +210,7 @@ export async function loadKisOrders({ resetPage = true } = {}) {
     if (run !== ordersRun) return;
     // Pagination and sorting apply to the complete search result, not a single API page.
     const rows = [...new Map(collected.map(r => [r.id || r.client_order_id || JSON.stringify(r), r])).values()];
-    Object.assign(ordersState, { rows, total: first.total || 0, counts_by_owner: first.counts_by_owner || {}, counts_by_status: first.counts_by_status || {}, truncated: Boolean(first.truncated) });
+    Object.assign(ordersState, { rows, total: first.total || 0, counts_by_owner: first.counts_by_owner || {}, counts_by_origin: first.counts_by_origin || {}, counts_by_status: first.counts_by_status || {}, truncated: Boolean(first.truncated) });
     renderOrdersTable(resetPage);
   } catch (e) {
     if (run !== ordersRun) return;
@@ -214,7 +222,7 @@ export async function loadKisOrders({ resetPage = true } = {}) {
 
 function downloadOrdersCsv() {
   const rows = sortedOrderRows(); if (!rows.length) return;
-  const cols = ["created_at", "owner_label", "symbol", "name", "side", "order_type", "quantity", "filled_quantity", "current_quantity", "price", "avg_filled_price", "status", "order_no", "client_order_id", "environment", "message"];
+  const cols = ["created_at", "origin_label", "actor", "client_ip", "user_agent", "symbol", "name", "side", "order_type", "quantity", "filled_quantity", "current_quantity", "price", "avg_filled_price", "status", "order_no", "client_order_id", "environment", "message"];
   const cell = v => `"${String(v ?? "").replace(/"/g, '""')}"`;
   const csv = "\ufeff" + [cols.map(c => c === "created_at" ? "created_at_kst" : c).join(","), ...rows.map(r => cols.map(c => cell(c === "created_at" ? formatKisTime(r[c]) : r[c])).join(","))].join("\r\n");
   const a = document.createElement("a");
@@ -224,9 +232,9 @@ function downloadOrdersCsv() {
 }
 
 document.getElementById("kism-orders-form")?.addEventListener("submit", e => { e.preventDefault(); loadKisOrders({ resetPage: true }); });
-["kism-o-owner", "kism-o-status", "kism-o-side", "kism-o-from", "kism-o-to"].forEach(id => document.getElementById(id)?.addEventListener("change", () => loadKisOrders({ resetPage: true })));
+["kism-o-owner", "kism-o-origin", "kism-o-status", "kism-o-side", "kism-o-from", "kism-o-to"].forEach(id => document.getElementById(id)?.addEventListener("change", () => loadKisOrders({ resetPage: true })));
 document.getElementById("kism-o-reset")?.addEventListener("click", () => {
-  ["kism-o-status", "kism-o-side", "kism-o-from", "kism-o-to", "kism-o-q"].forEach(id => { const n = document.getElementById(id); if (n) n.value = ""; });
+  ["kism-o-origin", "kism-o-status", "kism-o-side", "kism-o-from", "kism-o-to", "kism-o-q"].forEach(id => { const n = document.getElementById(id); if (n) n.value = ""; });
   const owner = document.getElementById("kism-o-owner"); if (owner) owner.value = "all";
   loadKisOrders({ resetPage: true });
 });

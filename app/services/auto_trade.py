@@ -403,13 +403,20 @@ async def _place_live_order_via_gateway(
     quantity: int,
     price: float,
     user_id: str,
+    origin: str = "",
+    client_ip: str = "",
+    user_agent: str = "",
 ) -> dict:
     """stock-coin-trade 게이트웨이로 KIS 주문을 내고 live_orders 에 추적 행을 남긴다.
+
+    origin: batch_auto(배치 봇) | user_auto(사용자 계정 자동매매) | manual(사람·화면) | rebalance. 비우면 user_id 로 추정한다.
+    client_ip/user_agent 는 사람이 낸 주문(manual·rebalance)에서만 채운다 — 모니터 그리드에 표시.
 
     실패해도 예외를 올리지 않는다(사이클 지속). 가상계좌 체결은 이미 끝났으므로 쿨다운 슬롯은 반납하지 않는다 —
     반납하면 다음 사이클에 가상 포지션이 중복으로 쌓인다. 실패는 알림 + live_orders.status=ERROR 로 남긴다.
     """
     uid = _resolve_user_id(user_id)
+    origin = origin or ("batch_auto" if uid == SYSTEM_USER_ID else "user_auto")
     env = gateway.environment()
     if gateway.enforce_market_hours() and not gateway.is_krx_market_open():
         logger.info("장 운영시간 외 — 실주문 생략 (%s %s x%d)", side, symbol, quantity)
@@ -429,6 +436,7 @@ async def _place_live_order_via_gateway(
             user_id=uid, client_order_id=client_order_id, environment=env, broker="kis",
             symbol=symbol, name=name, side=side.upper(), order_type=_live_order_type(),
             quantity=quantity, price=float(price), status="PENDING",
+            origin=origin[:20], client_ip=(client_ip or "")[:64], user_agent=(user_agent or "")[:200],
         )
         db.add(row)
         await db.commit()
@@ -473,7 +481,8 @@ class ManualOrderBlocked(Exception):
 
 
 async def place_manual_kis_order(db: AsyncSession, user_id: str, symbol: str, name: str,
-                                 side: str, quantity: int, price: float | None = None) -> dict:
+                                 side: str, quantity: int, price: float | None = None,
+                                 client_ip: str = "", user_agent: str = "") -> dict:
     """사용자가 화면에서 직접 낸 KIS 모의투자 주문.
 
     자동매매 사이클과 **같은 경로**(stock-coin-trade 게이트웨이 → live_orders 추적행 → 알림)를 쓴다.
@@ -514,7 +523,8 @@ async def place_manual_kis_order(db: AsyncSession, user_id: str, symbol: str, na
     price = float(price)
 
     if gateway.is_configured():
-        result = await _place_live_order_via_gateway(db, broker_row, symbol, name or symbol, side, quantity, price, str(uid))
+        result = await _place_live_order_via_gateway(db, broker_row, symbol, name or symbol, side, quantity, price, str(uid),
+                                                     origin="manual", client_ip=client_ip, user_agent=user_agent)
     else:
         creds = await kis_credentials.get_credentials()
         if creds is None:
@@ -536,6 +546,7 @@ async def place_manual_kis_order(db: AsyncSession, user_id: str, symbol: str, na
     await audit(str(uid), "", "order.manual_kis", {
         "symbol": symbol, "side": side, "quantity": quantity, "price": price,
         "via": result.get("via"), "status": result.get("status"), "environment": result.get("environment"),
+        "client_ip": client_ip, "user_agent": (user_agent or "")[:200],
     })
     return {**result, "symbol": symbol, "name": name or symbol, "side": side,
             "quantity": quantity, "price": price, "amount": round(price * quantity)}
