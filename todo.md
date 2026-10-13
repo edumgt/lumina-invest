@@ -1666,3 +1666,33 @@ st 공개 조회 계약(`rows[].trade_date`, `nextOffset`)은 라이브 응답�
 - 실측(fd 컨테이너에서 새 모듈로 직접 계산, 2026 반기 연결): 아모레퍼시픽(우 동일) EPS 4,302.55 / BPS 80,709.92, 삼성전자 EPS 22,668.85 / BPS 84,989.40,
   SK하이닉스 EPS 227,461 / BPS 368,587.56. 이 검증으로 fd data_cache 에 `dart:fin:v2/shares/pershare` 키가 미리 적재됐다.
 - 테스트 `tests/test_dart_per_share.py` 17건. 전체 통과. 배포는 `deploy/fd-strategy-settings.sh`(dart.py·stock.py·company.js·app.css 포함, 사용자 실행).
+
+### 6-53. 2026-10-13 전략설정 운영 모드 3분할(공격 / 백테스트 기반 규칙 / 사용자 설정) + 백테스트 연동 강화 + 하이퍼파라미터 설명 + 신규 GNB 「수익율검증」 (사용자 요청)
+
+**배경**: 공격 모드(bool) ON 이면 전략 스펙을 골라도 매매에 쓰이지 않는데 화면에서 구분되지 않았고, 일봉 점수 규칙은 임계값이 코드에 고정돼 있었다. pr 백테스트 결과는 저장 수단이 API 직접 호출뿐이었다. KIS Testbed 는 9/28~10/12 누적 −6.66%(10/12 하루 −4.7%p)로 손실이 가속 중이었다.
+
+| 변경 | 내용 |
+|------|------|
+| `app/services/signal_mode.py` 신설 · `app/config.py` | `QUANT_SIGNAL_MODE`(aggressive·backtest·custom, 비우면 이전 호환: 공격 플래그 → 전략 유무). `resolve()`·`is_aggressive()`·`apply_custom_rules()`(③ 임계값 `QUANT_CUSTOM_BUY_SCORE`/`SELL_SCORE`·추세 필터 `QUANT_CUSTOM_TREND_FILTER`). `QUANT_SPEC_UNIVERSE_STRICT`, `DOMAIN_RAG_LAB_PUBLIC_URL` |
+| `app/services/aggressive_mode.py` | `is_enabled()` 가 `signal_mode.is_aggressive()` 를 따름 → **명시 모드가 backtest/custom 이면 fd compose 기본 `QUANT_AGGRESSIVE_MODE=true` 여도 공격 모드가 돌지 않는다** |
+| `app/services/auto_trade.py` | 사이클에 `signal_mode_name` 도입: ③ 은 전략 스펙 무시(`strategy_log.ignored`), ② 에서 합격 스펙이 없으면 **매수 보류**(target_symbols=[], 청산 규칙만), `apply_strategy_spec_to_symbols(strict=)`(교집합 비면 빈 목록), ③ 은 `apply_custom_rules` 로 재판정, buy_hold/dca 스펙(entry=always)은 보유 중이면 추가 매수 생략. `cycle_log.settings.signal_mode` |
+| `app/services/strategy_settings.py` | 그룹을 운영 모드 / ①공격 / ②백테스트 기반 규칙(`strategy_id`, 유니버스 엄격) / ③사용자 설정 / 일봉 모드 공통(익절·손절·주문 유형) / 종목·투자금 / 위험관리 로 재편(`GROUP_MODES` 로 모드별 활성). `Field.hp_like`(하이퍼파라미터 유사: 분봉 간격·약세 임계·익절/손절·③ 임계값·추세 필터·일봉 익절/손절) · `hidden`(공격 플래그는 모드에서 유도). `HP_HELP`(전략설정 vs 하이퍼파라미터 비교표). `validate_env_values` 가 모드 → 공격 플래그 유도. `spec_health()`(buy_hold/dca·기간 경과 90일·sample 엔진·버전 지연·교집합 공집합·position_sizing) |
+| `app/services/strategy_loader.py` | `list_versions()`, `revalidate()`(POST 중계, 캐시 비움, 타임아웃 420초), `public_url()` |
+| `app/routes/strategy_settings.py` | GET 에 `signal_mode`·`signal_modes`·`hp_help`·`spec`·`spec_versions`·`spec_latest_version`·`spec_health`·`strategy_public_url`·`stock_names`. POST: ② 인데 전략 없으면 422. 신규 `GET /spec?strategy_id=`, `POST /revalidate` |
+| `public/js/strategy_settings.js`·`app.html`·`core.js` | 운영 모드 3카드(지금 적용 중 배지, 미저장 추정 안내), HP 설명 카드(비교표 + 「HP 유사」 배지 항목 나열), **HP 유사 항목은 라벨 볼드 + 배지 + 입력란 굵게/강조 테두리**, 모드별 그룹 활성/비활성, 백테스트 그룹의 스펙 카드(규칙·universe(종목명)·백테스트 결과·합격 기준·버전 이력(불합격 포함)·상태 점검·「스펙 새로고침」·「최근 기간으로 재검증」·「최신 버전 적용」·「pr 에서 이 전략 백테스트 열기」(`?view=backtest&…&from_fd=`)). 성과 표 모드 열은 3모드 라벨 |
+| **수익율검증** `app/models/review.py`·`alembic/versions/0011_kis_equity_snapshots.py` | 테이블 `kis_equity_snapshots`(environment+snap_date 유니크, 원금·평가액·누적수익률·누적손익·raw_count·source·note). 마이그레이션이 사용자가 준 Testbed 9행(9/28~10/12)을 시드 |
+| `app/services/return_review.py` | `parse_pasted()`(KIS 표 붙여넣기 검증), `enrich()`(일변화·일손익·낙폭·공백일), `summary()`, `trading_by_day()`(live_orders FILLED 평균단가법 왕복 손익·체결률·가상 체결), `trade_stats()`(승률·손익비·기대값), `mode_by_day()`(프로필 → 15:30 KST 기준 운영 모드), `build_guide()`(누적 성과·손실 가속·모드별 일수익·과매매 상관·기대값 vs 익절/손절 손익분기 승률·일손실 한도 초과일·체결률·관측 공백·5단계 로드맵. 각 항목 = 근거 → 전략설정 필드 권고 → 기대 효과 → 검증), `record_gateway_snapshot()` |
+| `app/routes/return_review.py`·`app/tasks/sync_tasks.py`·`app/celery_app.py`·`app/main.py` | `GET /api/quant/return-review`, `POST /rows`(붙여넣기/rows upsert), `POST /snapshot`(게이트웨이 잔고), `DELETE /rows/{date}`. 비트 `quant.equity_snapshot` 평일 15:40 KST |
+| `public/js/return_review.js`·`app.html`·`core.js`·`main.js` | GNB 그룹 「수익율검증」 → 뷰 `return-review`: KPI(누적·MDD·최악일·상승/하락일·승률/손익비·기대값), 캔버스 차트(평가액 선 + 일변화 막대 + 운영 모드 음영), 가이드 카드(권고 버튼 → 전략설정 해당 필드로 이동·강조, pr 링크), 일별 표(모드/프로필·체결·실현손익·주문/미체결·가상·건수·삭제), 붙여넣기 적재, 오늘 스냅샷 |
+| `.env.example`·`docs/contracts/kis-autotrade-api.md` v0.6 | 새 env 설명. 계약: `GET /strategies/{id}/versions`, Bearer 인증, ②에서만 스펙 적용, 프리필 링크 |
+
+**검증**: `pytest tests/test_signal_mode.py tests/test_return_review.py tests/test_strategy_settings.py tests/test_strategy_spec_apply.py tests/test_strategy_loader.py tests/test_aggressive_mode.py tests/test_lean_remote.py` → **66 passed**(신규 21). `app.celery_app`·`app.models`·`app.routes.return_review` import 확인. JS 4개 파일 구문 검사(node). 시드 9행으로 가이드 생성 확인: overview(bad) · acceleration(bad) · overtrading(warn, 건수 열 상관) · daily-limit(warn, 10/12 −4.71%p > 3%) · coverage · roadmap. 브라우저 미실행.
+
+**배포(미완, 사용자)**: main push → `deploy.yml`(rsync + 재빌드). **alembic 0011 적용 필요** — fd `.env` `RUN_MIGRATIONS_ON_STARTUP` 이 false 면 `sudo docker compose run --rm app alembic upgrade head`. 배포 후 전략설정에서 운영 모드를 한 번 **명시 저장**해야 추정(공격)이 고정된다.
+
+**7절 추가 결정 항목**
+| # | 결정할 것 | 선택지와 영향 | 에이전트 권고 |
+|---|-----------|---------------|---------------|
+| L24 | KIS 표 6번째 열(건수 2284→4021)의 의미 | 주문 건수 / 체결 건수 / 기타. 지금은 `raw_count` 원본 보존 + 과매매 상관 근거로만 사용 | KIS 화면 헤더 확인 후 라벨 확정 |
+| L25 | 수익율검증 가이드의 1단계(손실 유입 차단) 즉시 적용 여부 | 공격 모드 매수 한도 0 또는 운영 모드 ③(매수≥3·추세 필터) / 일손실 한도 2% | 10/12 −4.7%p 가 한도 3% 초과였으므로 **즉시 적용**, 합격 전략 확보 후 ② 전환(L13) |
+| L26 | 자동 스냅샷 시각·환경 | 15:40 KST paper 고정 vs real 병행 | Testbed 기간은 paper 만 |

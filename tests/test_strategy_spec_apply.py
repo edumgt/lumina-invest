@@ -10,6 +10,9 @@ def test_symbols_restricted_to_universe_and_capped():
     # 교집합 없으면 원본 유지 (전략이 종목 선정 화면 선택을 완전히 무효화하지 않음)
     assert apply_strategy_spec_to_symbols(["035420.KS"], SPEC) == ["035420.KS"]
     assert apply_strategy_spec_to_symbols(["005930.KS"], {"universe": []}) == ["005930.KS"]
+    # 유니버스 엄격 적용: 교집합이 없으면 빈 목록(백테스트하지 않은 종목에 규칙을 걸지 않음). universe 가 비면 strict 여도 원본
+    assert apply_strategy_spec_to_symbols(["035420.KS"], SPEC, strict=True) == []
+    assert apply_strategy_spec_to_symbols(["005930.KS"], {"universe": []}, strict=True) == ["005930.KS"]
 
 
 def test_signal_rejudged_by_thresholds():

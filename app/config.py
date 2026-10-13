@@ -167,6 +167,17 @@ class Settings(BaseSettings):
     # ── 기본 모드(일봉) 익절·손절: 0 이면 사용 안 함(스펙 exit 규칙·일손실 한도만). 공격 모드에서는 QUANT_AGGRESSIVE_* 가 쓰인다 ──
     QUANT_BASE_TAKE_PROFIT_PCT: float = 0.0
     QUANT_BASE_STOP_LOSS_PCT: float = 0.0
+    # ── 운영 모드 3분할 (전략설정 화면, app/services/signal_mode.py) ─────────────────────────
+    # aggressive = 공격 모드(분봉 plan) · backtest = 백테스트 기반 규칙(domain-rag-lab 합격 스펙의 entry/exit 가 매매 결정)
+    # · custom = 사용자 설정(일봉 지표 점수 + 아래 QUANT_CUSTOM_* 임계값). 비우면 이전 호환: QUANT_AGGRESSIVE_MODE 가 true 면
+    # aggressive, 아니면 배치 행에 전략이 있으면 backtest, 없으면 custom 으로 본다.
+    QUANT_SIGNAL_MODE: str = ""
+    # 백테스트 모드: 스펙 universe 와 거래 대상의 교집합이 비면 매수하지 않음(true). false 면 원래 종목을 그대로 거래(이전 동작).
+    QUANT_SPEC_UNIVERSE_STRICT: bool = False
+    # 사용자 설정 모드: 일봉 지표 점수(RSI ±2 · MA 교차 ±3/±1 · 볼린저 ±1, 대략 -6~+6)로 다시 판정하는 임계값과 추세 필터.
+    QUANT_CUSTOM_BUY_SCORE: int = 1               # 점수 ≥ 이 값 → 매수 (≥ 값+2 → 강력 매수)
+    QUANT_CUSTOM_SELL_SCORE: int = -1             # 점수 ≤ 이 값 → 매도 (≤ 값-2 → 강력 매도)
+    QUANT_CUSTOM_TREND_FILTER: bool = False       # true 면 현재가 > MA20 일 때만 매수(하락 추세 역행 매수 차단)
     # 위 QUANT_*/MARKET_DATA_SOURCE/STOCK_COIN_TRADE_ORDER_TYPE/KIS_PAPER_BATCH_* 는 「전략설정」 화면(app/services/strategy_settings.py)이
     # data_cache(quant:strategy_settings) 의 값으로 매 사이클 덮어쓴다. env 는 기본값이고 화면 저장값이 우선한다.
 
@@ -184,6 +195,7 @@ class Settings(BaseSettings):
     DOMAIN_RAG_LAB_BASE_URL: str = ""
     DOMAIN_RAG_LAB_API_KEY: str = ""
     STRATEGY_SPEC_CACHE_TTL: int = 600
+    DOMAIN_RAG_LAB_PUBLIC_URL: str = "https://pr.edumgt.co.kr"   # 전략설정 화면의 「pr 백테스트 열기」 링크(브라우저용 공개 주소)
 
     # ── 외부 Open API (/openapi/v1) 호출 제한 ────────────────────────────────
     OPENAPI_RATE_LIMIT_MAX: int = 60       # 키당 분당 호출 수

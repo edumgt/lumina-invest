@@ -28,7 +28,9 @@ VOLUME_WINDOW = 20
 
 
 def is_enabled() -> bool:
-    return bool(settings.QUANT_AGGRESSIVE_MODE)
+    # 전략설정 「운영 모드」(QUANT_SIGNAL_MODE) 가 명시돼 있으면 그 값이 우선한다 — backtest/custom 이면 env 플래그가 true 여도 꺼진다.
+    from app.services import signal_mode
+    return signal_mode.is_aggressive()
 
 
 def order_type() -> str | None:

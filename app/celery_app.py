@@ -5,6 +5,7 @@
 Beat  실행: celery -A app.celery_app beat  --loglevel=info
 """
 from celery import Celery
+from celery.schedules import crontab
 from app.config import settings
 
 celery_app = Celery(
@@ -66,6 +67,11 @@ celery_app.conf.update(
             "task": "quant.confirm_fills",
             "schedule": 120.0,            # 2분 — 게이트웨이 경유 KIS 실주문의 체결 확인 (live_orders)
             "options": {"expires": 110},
+        },
+        "quant-equity-snapshot-daily": {
+            "task": "quant.equity_snapshot",
+            "schedule": crontab(hour=15, minute=40, day_of_week="mon-fri"),   # 장 마감 후 KIS 평가액을 kis_equity_snapshots 에 기록 (수익율검증)
+            "options": {"expires": 3000},
         },
         "rebalance-check-hourly": {
             "task": "rebalance.check_triggers",

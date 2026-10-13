@@ -270,3 +270,77 @@ def test_system_row_created_when_missing(client):
     r = c.post("/api/quant/strategy/settings", json={"values": {"quant_sell_ratio": 0.8}})
     assert r.status_code == 200, r.text
     assert db.added and db.added[0].user_id == SYSTEM_USER_ID and db.added[0].quant_sell_ratio == 0.8 and db.added[0].quant_auto_enabled is False
+
+
+# ── 운영 모드 3분할 · 백테스트 연동 ──────────────────────────────────────────────
+
+def test_signal_mode_derives_aggressive_flag_and_fields_carry_hp_marks():
+    out = ss.validate_env_values({"QUANT_SIGNAL_MODE": "aggressive"})
+    assert out == {"QUANT_SIGNAL_MODE": "aggressive", "QUANT_AGGRESSIVE_MODE": True}
+    assert ss.validate_env_values({"QUANT_SIGNAL_MODE": "backtest"})["QUANT_AGGRESSIVE_MODE"] is False
+    with pytest.raises(ValueError):
+        ss.validate_env_values({"QUANT_SIGNAL_MODE": "turbo"})
+    fields = {f["key"]: f for f in ss.describe_fields()}
+    assert fields["QUANT_AGGRESSIVE_MODE"]["hidden"] is True
+    assert fields["QUANT_CUSTOM_BUY_SCORE"]["hp_like"] is True and fields["risk_daily_loss_limit_pct"]["hp_like"] is False
+    groups = {g["name"]: g["modes"] for g in ss.describe_groups()}
+    assert groups[ss.G_BT] == ["backtest"] and groups[ss.G_CUSTOM] == ["custom"] and groups[ss.G_BASE] == ["backtest", "custom"] and groups[ss.G_RISK] == []
+    assert ss.HP_HELP["rows"] and "하이퍼파라미터" in ss.HP_HELP["title"]
+
+
+def test_spec_health_flags_buy_hold_stale_and_versions():
+    spec = {"entry": {"indicator": "buy_hold", "condition": "always"}, "universe": ["005930"],
+            "backtest_result": {"period": {"start": "2021-01-01", "end": "2026-01-01"}, "engine": "lean"}, "position_sizing": {"max_symbols": 2, "max_position_pct": 20}}
+    from datetime import date
+    h = ss.spec_health(spec, latest_version=3, applied_version=1, target_symbols=["000660.KS"], today=date(2026, 10, 13))
+    texts = " ".join(x["text"] for x in h)
+    assert "buy_hold" in texts and "지났습니다" in texts and "v3" in texts and "교집합이 없습니다" in texts and "최대 2종목" in texts
+    assert ss.spec_health(None)[0]["level"] == "warn"
+    ok = ss.spec_health({"entry": {"indicator": "ma_cross"}, "universe": ["000660"], "backtest_result": {"period": {"end": "2026-10-10"}}}, 1, 1, ["000660.KS"], today=date(2026, 10, 13))
+    assert all(x["level"] != "warn" for x in ok)
+
+
+def test_get_settings_exposes_mode_hp_help_and_spec(client):
+    c, db, _ = client
+    db.row.quant_strategy_id, db.row.quant_strategy_version = "sample_ma_cross_kr", 1
+    with patch.object(strategy_loader, "list_versions", AsyncMock(return_value={"latest_passed_version": 1, "versions": [{"version": 1, "passed": True}]})), \
+         patch.object(strategy_loader, "public_url", lambda: "https://pr.test"):
+        d = c.get("/api/quant/strategy/settings").json()
+    assert d["signal_mode"] == "backtest" and d["signal_mode_explicit"] == ""
+    assert [m["value"] for m in d["signal_modes"]] == ["aggressive", "backtest", "custom"]
+    assert d["hp_help"]["rows"] and d["strategy_public_url"] == "https://pr.test"
+    assert d["spec"]["strategy_id"] == "sample_ma_cross_kr" and d["spec_versions"]["versions"][0]["version"] == 1 and d["spec_latest_version"] == 1
+    assert isinstance(d["spec_health"], list) and "005930" in d["stock_names"]
+
+
+def test_save_backtest_mode_requires_strategy_and_custom_ignores_it(client):
+    c, db, store = client
+    r = c.post("/api/quant/strategy/settings", json={"values": {"QUANT_SIGNAL_MODE": "backtest", "strategy_id": ""}})
+    assert r.status_code == 422 and "전략 스펙" in r.json()["detail"]
+    r = c.post("/api/quant/strategy/settings", json={"values": {"QUANT_SIGNAL_MODE": "backtest", "strategy_id": "sample_ma_cross_kr"}})
+    assert r.status_code == 200, r.text
+    assert settings.QUANT_SIGNAL_MODE == "backtest" and settings.QUANT_AGGRESSIVE_MODE is False
+    assert store[ss.CACHE_KEY]["values"]["QUANT_SIGNAL_MODE"] == "backtest" and db.row.quant_strategy_version == 1
+    r = c.post("/api/quant/strategy/settings", json={"values": {"QUANT_SIGNAL_MODE": "custom", "strategy_id": "sample_ma_cross_kr"}})
+    assert r.status_code == 200 and settings.QUANT_SIGNAL_MODE == "custom"
+    assert c.get("/api/quant/strategy/settings").json()["signal_mode"] == "custom"
+
+
+def test_spec_endpoint_and_revalidate_proxy(client):
+    c, db, _ = client
+    with patch.object(strategy_loader, "list_versions", AsyncMock(return_value={"latest_passed_version": 1, "versions": []})):
+        r = c.get("/api/quant/strategy/spec", params={"strategy_id": "sample_ma_cross_kr"})
+        assert r.status_code == 200 and r.json()["spec"]["version"] == 1
+        assert c.get("/api/quant/strategy/spec", params={"strategy_id": "nope"}).status_code == 404
+        assert c.get("/api/quant/strategy/spec").json()["spec"] is None
+    with patch.object(strategy_loader, "revalidate", AsyncMock(return_value=(201, {"strategy_id": "sample_ma_cross_kr", "version": 2}))) as rv:
+        r = c.post("/api/quant/strategy/revalidate", json={"strategy_id": "sample_ma_cross_kr", "end_date": "2026-10-13"})
+        assert r.status_code == 200 and r.json()["spec"]["version"] == 2 and "v2" in r.json()["note"]
+        assert rv.await_args.kwargs["end_date"] == "2026-10-13"
+    with patch.object(strategy_loader, "revalidate", AsyncMock(return_value=(422, {"detail": {"message": "재검증 불합격.", "failed": ["max_drawdown_pct -33.9 > 20"]}}))):
+        r = c.post("/api/quant/strategy/revalidate", json={"strategy_id": "sample_ma_cross_kr"})
+        assert r.status_code == 422 and "max_drawdown_pct" in r.json()["detail"]
+    with patch.object(strategy_loader, "revalidate", AsyncMock(return_value=(0, {"detail": "pr 연결 실패"}))):
+        assert c.post("/api/quant/strategy/revalidate", json={"strategy_id": "sample_ma_cross_kr"}).status_code == 502
+    with patch.object(strategy_loader, "is_configured", lambda: False):
+        assert c.post("/api/quant/strategy/revalidate", json={"strategy_id": "x"}).status_code == 503

@@ -31,7 +31,7 @@ from app.services.brokers.factory import get_broker_client
 from app.services import kis_credentials
 from app.services.brokers import stock_coin_trade_gateway as gateway
 from app.services.data_cache import cache_get, cache_set
-from app.services import aggressive_mode
+from app.services import aggressive_mode, signal_mode
 from app.services import strategy_settings
 
 logger = logging.getLogger(__name__)
@@ -267,12 +267,16 @@ async def _place_live_order(
 _SIGNAL_SCORE_SCALE = 8.0   # stock.py 지표 점수(대략 -8~+8)를 스펙 임계값([-1,1])과 비교하기 위한 정규화 분모
 
 
-def apply_strategy_spec_to_symbols(target_symbols: list[str], spec: dict) -> list[str]:
-    """스펙 universe(6자리 코드)에 있는 종목만 남기고 position_sizing.max_symbols 로 자른다. 교집합이 없으면 원본 유지."""
+def apply_strategy_spec_to_symbols(target_symbols: list[str], spec: dict, strict: bool = False) -> list[str]:
+    """스펙 universe(6자리 코드)에 있는 종목만 남기고 position_sizing.max_symbols 로 자른다.
+
+    교집합이 없으면 기본은 원본 유지(전략이 종목 선정 화면 선택을 완전히 무효화하지 않음). strict=True(전략설정
+    「유니버스 엄격 적용」)면 빈 목록을 돌려줘 백테스트하지 않은 종목에 규칙이 걸리지 않게 한다.
+    """
     universe = {str(c)[:6] for c in (spec.get("universe") or [])}
     restricted = [s for s in target_symbols if str(s)[:6] in universe] if universe else list(target_symbols)
     if not restricted:
-        return list(target_symbols)
+        return [] if (strict and universe) else list(target_symbols)
     max_symbols = int((spec.get("position_sizing") or {}).get("max_symbols") or 0)
     return restricted[:max_symbols] if max_symbols > 0 else restricted
 
@@ -804,6 +808,13 @@ async def _run_quant_cycle(user_id: str = "quant_system") -> None:
 
         limits = risk_guard.RiskLimits.from_row(broker_row)
         aggressive = aggressive_mode.is_enabled()
+        # 운영 모드 3분할(전략설정): aggressive / backtest / custom. is_enabled() 가 공격이면 그대로, 아니면 명시 모드 → 이전 호환.
+        _sid = (broker_row.quant_strategy_id if broker_row else "") or ""
+        signal_mode_name = signal_mode.resolve(_sid)
+        if aggressive:
+            signal_mode_name = signal_mode.AGGRESSIVE
+        elif signal_mode_name == signal_mode.AGGRESSIVE:   # 공격 플래그만 따로 꺼진 경우(테스트·env)
+            signal_mode_name = signal_mode.BACKTEST if _sid else signal_mode.CUSTOM
         if aggressive:
             limits = aggressive_mode.apply_limits(limits)   # 쿨다운·일 주문 수만 덮어씀
         if limits.kill_switch:
@@ -876,12 +887,19 @@ async def _run_quant_cycle(user_id: str = "quant_system") -> None:
         strategy_spec: dict | None = None
         ml_scores: dict[str, float] = {}
         ml_weight_on = False
-        strategy_log = {"id": "", "version": 0, "applied": False}
-        if broker_row and broker_row.quant_strategy_id:
+        strategy_log = {"id": "", "version": 0, "applied": False, "mode": signal_mode_name}
+        if broker_row and broker_row.quant_strategy_id and signal_mode_name == signal_mode.CUSTOM:
+            # ③ 사용자 설정: 전략이 선택돼 있어도 스펙을 쓰지 않는다 (화면에 그렇게 안내)
+            strategy_log.update(id=broker_row.quant_strategy_id, version=broker_row.quant_strategy_version or 0, ignored="사용자 설정 모드 — 전략 스펙 미적용")
+        elif broker_row and broker_row.quant_strategy_id:
             strategy_log.update(id=broker_row.quant_strategy_id, version=broker_row.quant_strategy_version or 0)
             strategy_spec = await strategy_loader.get_strategy(broker_row.quant_strategy_id, broker_row.quant_strategy_version or None)
             if strategy_spec:
-                target_symbols = apply_strategy_spec_to_symbols(target_symbols, strategy_spec)
+                strict = bool(getattr(app_settings, "QUANT_SPEC_UNIVERSE_STRICT", False)) and signal_mode_name == signal_mode.BACKTEST
+                target_symbols = apply_strategy_spec_to_symbols(target_symbols, strategy_spec, strict=strict)
+                if strict and not target_symbols:
+                    strategy_log["universe_empty"] = True
+                    cycle_log["note"] = "스펙 universe 와 거래 대상의 교집합이 없어 매수를 보류합니다(유니버스 엄격 적용 ON)."
                 strategy_log.update(version=int(strategy_spec.get("version") or strategy_log["version"]), applied=True)
                 if float((strategy_spec.get("signal_weights") or {}).get("lightgbm", 0) or 0) > 0:
                     ml_weight_on = True
@@ -891,6 +909,11 @@ async def _run_quant_cycle(user_id: str = "quant_system") -> None:
                     strategy_log["ml_model"] = _ml_meta.get("model")
             else:
                 strategy_log["error"] = "domain-rag-lab 에서 스펙을 받지 못해 기본 규칙 사용"
+        if signal_mode_name == signal_mode.BACKTEST and not strategy_spec:
+            # ② 백테스트 기반 규칙인데 합격 스펙이 없으면 기본 규칙으로 '대신' 사지 않는다 — 청산(익절·손절)만 돌고 매수는 보류
+            strategy_log["error"] = strategy_log.get("error") or "백테스트 기반 규칙 모드인데 선택된 합격 전략 스펙이 없음"
+            cycle_log["note"] = "백테스트 기반 규칙 모드 — 합격 전략 스펙이 없어 이번 사이클 매수를 보류합니다(청산 규칙만 동작)."
+            target_symbols = []
 
         # ── 공격 모드: 보유분 점검 + 이번 사이클 매수/매도 계획 ──
         forced_action: dict[str, dict] = {}
@@ -938,6 +961,7 @@ async def _run_quant_cycle(user_id: str = "quant_system") -> None:
         cycle_log["settings"] = {
             "mode": mode,
             "aggressive": aggressive,
+            "signal_mode": signal_mode_name,
             "profile_id": profile.get("id") or "",
             "symbol_source": symbol_source,
             "strategy": strategy_log,
@@ -1016,6 +1040,8 @@ async def _run_quant_cycle(user_id: str = "quant_system") -> None:
                     if ml_score is not None:
                         strategy_log["ml_source"] = "symbol_ridge"
                 signal = apply_strategy_spec_to_signal(signal, strategy_spec, ml_score, indicators)
+            elif signal_mode_name == signal_mode.CUSTOM:
+                signal = signal_mode.apply_custom_rules(signal, indicators)   # ③ 사용자 임계값·추세 필터로 재판정
             price = indicators.get("current_price")
             if not price:
                 continue
@@ -1032,6 +1058,11 @@ async def _run_quant_cycle(user_id: str = "quant_system") -> None:
                     sell_ratio_here = float(forced["ratio"])
             elif aggressive:
                 action = "관망"   # 공격 모드에서는 plan 이 정한 종목만 거래한다(사이클당 매수·매도 수 한도)
+            elif (strategy_spec and action in ("강력 매수", "매수") and position_values.get(symbol, 0.0) > 0
+                  and str((strategy_spec.get("entry") or {}).get("condition") or "") == "always"):
+                # buy_hold/dca 스펙은 entry 가 '항상' 이라 매 사이클 매수가 나온다 → 보유 중이면 추가 매수 생략(1종목 1포지션)
+                action = "관망"
+                reasons = [*reasons, "buy_hold/dca 스펙: 이미 보유 중 — 추가 매수 생략(1종목 1포지션)"]
             cycle_log["signals"].append({
                 "symbol": stock["symbol"], "name": stock["name"],
                 "price": price, "action": action, "score": score,

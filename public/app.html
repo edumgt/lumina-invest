@@ -1771,13 +1771,47 @@
         .ss-kv{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:4px 16px;font-size:12px}
         .ss-kv div{display:flex;justify-content:space-between;gap:8px;padding:3px 0;border-bottom:1px dashed var(--border)}
         .ss-kv span:last-child{font-variant-numeric:tabular-nums}
+        /* 운영 모드 3분할 카드 */
+        .ss-mode-cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+        .ss-mode-card{display:block;padding:12px 14px;border:1px solid var(--border);border-radius:10px;background:var(--surf2);cursor:pointer;transition:.15s}
+        .ss-mode-card:hover{border-color:var(--accent)}
+        .ss-mode-card.selected{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
+        .ss-mode-card input{margin-right:6px}
+        .ss-mode-card .ss-mode-title{font-weight:700;font-size:13px}
+        .ss-mode-card .ss-mode-desc{font-size:12px;color:var(--text-dim);line-height:1.5;margin-top:6px}
+        .ss-mode-card .ss-mode-now{display:inline-block;margin-left:6px;padding:1px 7px;border-radius:999px;font-size:11px;background:var(--accent);color:#fff}
+        @media (max-width:860px){.ss-mode-cards{grid-template-columns:1fr}}
+        /* 하이퍼파라미터 유사 항목: 볼드 + 배지 */
+        .ss-field.hp .ss-label{font-weight:800}
+        .ss-field.hp input,.ss-field.hp select{font-weight:700;border-color:var(--accent)}
+        .ss-hp-tag{display:inline-block;margin-left:6px;padding:0 6px;border:1px solid var(--accent);border-radius:999px;font-size:10px;font-weight:700;color:var(--accent);vertical-align:middle;cursor:help}
+        .ss-hp-table{width:100%;font-size:12px;border-collapse:collapse;margin-top:8px}
+        .ss-hp-table th,.ss-hp-table td{padding:6px 8px;border-bottom:1px solid var(--border);text-align:left;vertical-align:top;line-height:1.45}
+        .ss-hp-table th{color:var(--text-mute);font-weight:600;white-space:nowrap}
+        .ss-hp-table td:first-child{font-weight:600;white-space:nowrap}
+        .ss-hp-table td b{font-weight:800}
+        /* 백테스트 기반 규칙 — 스펙 카드 */
+        .ss-spec-card{margin-top:10px;padding:12px 14px;border:1px solid var(--border);border-radius:10px;background:var(--surf2)}
+        .ss-spec-card h4{font-size:13px;font-weight:700;margin:0 0 6px}
+        .ss-spec-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px 16px;font-size:12px}
+        .ss-spec-grid dt{color:var(--text-mute);font-size:11px}
+        .ss-spec-grid dd{margin:0 0 4px;font-variant-numeric:tabular-nums}
+        .ss-spec-grid code{font-size:11.5px;padding:1px 5px;border-radius:4px;background:var(--surf);border:1px solid var(--border)}
+        .ss-spec-actions{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
+        .ss-health{margin:8px 0 0;padding:0;list-style:none;font-size:12px}
+        .ss-health li{padding:5px 8px;border-radius:6px;margin-top:4px;line-height:1.45}
+        .ss-health li.warn{background:rgba(229,72,77,.10);border:1px solid rgba(229,72,77,.35)}
+        .ss-health li.info{background:var(--surf);border:1px solid var(--border)}
+        .ss-versions{width:100%;font-size:11.5px;border-collapse:collapse;margin-top:8px}
+        .ss-versions th,.ss-versions td{padding:4px 6px;border-bottom:1px solid var(--border);text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+        .ss-versions th:first-child,.ss-versions td:first-child,.ss-versions td:nth-child(2){text-align:left;white-space:normal}
       </style>
       <div class="space-y-4">
         <div class="card">
           <div class="flex items-center justify-between mb-2 flex-wrap gap-2">
             <div>
               <h2 class="text-lg font-semibold">🎛️ 봇 전략 · 파라미터 설정</h2>
-              <p class="text-xs mt-1" style="color:var(--text-mute);">KIS 모의투자 배치(시스템 사용자)의 시그널 엔진·청산 규칙·주문 유형·전략 스펙·투자금·위험관리를 한 곳에서 바꿉니다. 저장하면 서버 env 를 덮어써 <b>다음 사이클부터</b> 적용되고(재시작 불필요), 저장 시점마다 「설정 프로필」이 기록되어 <a href="#strategy-performance" style="color:var(--accent);">설정별 성과</a>에서 비교할 수 있습니다.</p>
+              <p class="text-xs mt-1" style="color:var(--text-mute);">KIS 모의투자 배치(시스템 사용자)의 <b>운영 모드(① 공격 · ② 백테스트 기반 규칙 · ③ 사용자 설정)</b>와 모드별 파라미터·청산 규칙·주문 유형·투자금·위험관리를 한 곳에서 바꿉니다. 저장하면 서버 env 를 덮어써 <b>다음 사이클부터</b> 적용되고(재시작 불필요), 저장 시점마다 「설정 프로필」이 기록되어 <a href="#strategy-performance" style="color:var(--accent);">설정별 성과</a>에서 비교할 수 있습니다.</p>
             </div>
             <div class="flex items-center gap-2 text-xs">
               <button id="ss-reload" class="btn-secondary text-xs">다시 불러오기</button>
@@ -1786,6 +1820,10 @@
           <div id="ss-badges" class="flex flex-wrap gap-2 text-xs mb-2"></div>
           <div id="ss-status" class="text-xs" style="color:var(--text-mute);"></div>
         </div>
+
+        <div id="ss-hp" class="card"></div>
+
+        <div id="ss-modes" class="card"></div>
 
         <div id="ss-groups" class="space-y-4"></div>
 
@@ -1825,6 +1863,78 @@
         <div class="card" id="sp-detail" style="display:none;">
           <h3 class="font-semibold mb-2 text-sm" id="sp-detail-title"></h3>
           <div class="ss-kv" id="sp-detail-body"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ 수익율검증 (GNB 수익율검증) — 데이터: /api/quant/return-review (js/return_review.js) ══ -->
+    <div class="view" data-view="return-review">
+      <style>
+        .rr-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+        .rr-kpi{padding:10px 12px;border:1px solid var(--border);border-radius:10px;background:var(--surf2)}
+        .rr-kpi .k{font-size:11px;color:var(--text-mute)}.rr-kpi .v{font-size:18px;font-weight:700;margin-top:2px;font-variant-numeric:tabular-nums}.rr-kpi .s{font-size:11px;color:var(--text-dim);margin-top:2px}
+        #rr-chart{width:100%;height:260px;display:block;border:1px solid var(--border);border-radius:10px;background:var(--surf2)}
+        .rr-guide{display:grid;gap:10px}
+        .rr-card{padding:12px 14px;border:1px solid var(--border);border-left-width:5px;border-radius:10px;background:var(--surf2)}
+        .rr-card.bad{border-left-color:#e5484d}.rr-card.warn{border-left-color:#f5a524}.rr-card.ok{border-left-color:#17c964}.rr-card.info{border-left-color:var(--accent)}
+        .rr-card h4{margin:0 0 6px;font-size:13px;font-weight:700}
+        .rr-card .rr-lv{display:inline-block;margin-right:6px;padding:0 7px;border-radius:999px;font-size:10px;font-weight:700;vertical-align:middle}
+        .rr-card.bad .rr-lv{background:#e5484d;color:#fff}.rr-card.warn .rr-lv{background:#f5a524;color:#111}.rr-card.ok .rr-lv{background:#17c964;color:#111}.rr-card.info .rr-lv{background:var(--accent);color:#fff}
+        .rr-card ul{margin:4px 0 0 16px;padding:0;font-size:12px;line-height:1.55;color:var(--text-dim)}
+        .rr-card .rr-sec{margin-top:8px;font-size:11px;color:var(--text-mute);font-weight:600}
+        .rr-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+        .rr-actions button,.rr-actions a{font-size:11.5px;padding:4px 10px}
+        .rr-table{width:100%;font-size:12px;border-collapse:collapse}
+        .rr-table th,.rr-table td{padding:6px 8px;border-bottom:1px solid var(--border);text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+        .rr-table th:first-child,.rr-table td:first-child,.rr-table th.l,.rr-table td.l{text-align:left}
+        .rr-table tbody tr:hover{background:var(--surf2)}
+        .rr-table td.neg{color:var(--down,#2962ff)}.rr-table td.pos{color:var(--up,#e5484d)}
+        .rr-table .rr-del{opacity:.5;cursor:pointer}.rr-table .rr-del:hover{opacity:1;color:#e5484d}
+        #rr-paste{width:100%;min-height:110px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
+        .ss-field.rr-flash{animation:rrflash 2.4s ease-out}
+        @keyframes rrflash{0%{background:rgba(245,165,36,.45)}100%{background:transparent}}
+      </style>
+      <div class="space-y-4">
+        <div class="card">
+          <div class="flex items-center justify-between mb-2 flex-wrap gap-2">
+            <div>
+              <h2 class="text-lg font-semibold">📈 수익율검증 · 개선 가이드</h2>
+              <p class="text-xs mt-1" style="color:var(--text-mute);">KIS 계좌의 <b>일별 평가액·누적 수익률</b>을 DB(<code>kis_equity_snapshots</code>)에 저장하고, 같은 날의 <b>매매 이력</b>(체결 수·실현손익·승률·손익비)과 <b>전략설정 프로필</b>(운영 모드)을 맞춰 봅니다. 아래 가이드는 이 수치에서 나온 진단과 전략설정 변경 권고입니다. 매 영업일 15:40 KST 에 게이트웨이 잔고로 자동 기록됩니다.</p>
+            </div>
+            <div class="flex items-center gap-2 text-xs">
+              <select id="rr-env" class="input text-xs" style="padding:6px 8px;"><option value="paper">모의투자(paper)</option><option value="real">실전(real)</option></select>
+              <button id="rr-snapshot" class="btn-secondary text-xs" title="게이트웨이 잔고(총평가액)로 오늘 행을 기록합니다">오늘 스냅샷 기록</button>
+              <button id="rr-reload" class="btn-secondary text-xs">새로고침</button>
+            </div>
+          </div>
+          <div id="rr-kpis" class="rr-kpis"></div>
+          <div id="rr-note" class="text-xs mt-2" style="color:var(--text-mute);"></div>
+        </div>
+
+        <div class="card">
+          <h3 class="font-semibold mb-2 text-sm">📉 평가액 · 일변화 <span class="text-xs" style="color:var(--text-mute);font-weight:400;">· 선 = 평가액, 막대 = 전 관측일 대비 변화(%p), 음영 = 운영 모드</span></h3>
+          <canvas id="rr-chart" aria-label="일별 평가액과 변화율"></canvas>
+          <div id="rr-legend" class="text-xs mt-1" style="color:var(--text-mute);"></div>
+        </div>
+
+        <div class="card">
+          <h3 class="font-semibold mb-2 text-sm">🧭 진단 · 개선 가이드 <span class="text-xs" style="color:var(--text-mute);font-weight:400;">· 근거 → 권고(전략설정 항목) → 기대 효과 → 검증</span></h3>
+          <div id="rr-guide" class="rr-guide"></div>
+        </div>
+
+        <div class="card" style="overflow:auto;">
+          <h3 class="font-semibold mb-2 text-sm">📋 일별 수익률 × 매매 이력 <span class="text-xs" style="color:var(--text-mute);font-weight:400;">· 일변화는 앞 관측일 대비(공백일 포함) · 체결은 KIS 실주문 FILLED, 실현손익은 평균단가법</span></h3>
+          <table class="rr-table" id="rr-table"><thead></thead><tbody></tbody></table>
+        </div>
+
+        <div class="card">
+          <h3 class="font-semibold mb-1 text-sm">📥 KIS 화면 표 붙여넣기 적재</h3>
+          <p class="text-xs mb-2" style="color:var(--text-mute);">KIS 일별 손익 표를 그대로 붙여넣으세요. 열 순서: <code>날짜 누적수익률 누적손익 원금 평가액 [건수]</code> (탭·공백 구분, 예: <code>2026.10.12 -6.66% -6,661,763 100,000,000 93,338,237 4021</code>). 같은 날짜는 덮어씁니다. 6번째 열(건수)은 의미 확인 전까지 원본으로만 보관합니다.</p>
+          <textarea id="rr-paste" class="input" placeholder="2026.10.12	-6.66%	-6,661,763	100,000,000	93,338,237	4021"></textarea>
+          <div class="flex items-center gap-2 mt-2 text-xs">
+            <input id="rr-paste-note" class="input text-xs" style="padding:6px 8px;flex:1;" maxlength="200" placeholder="메모(선택) 예: KIS Testbed 화면 10/13 적재">
+            <button id="rr-import" class="btn-primary text-xs">적재</button>
+          </div>
         </div>
       </div>
     </div>

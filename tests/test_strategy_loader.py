@@ -42,3 +42,39 @@ def test_list_and_get_with_cache():
     assert hits["n"] == 1  # 캐시 적중
     assert asyncio.run(sl.get_strategy("ma_cross"))["universe"] == ["005930"]
     assert asyncio.run(sl.get_strategy("missing")) is None
+
+
+def test_list_versions_and_revalidate_clear_cache():
+    calls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append((request.method, request.url.path))
+        if request.url.path == "/backtests/strategies/ma_cross/versions":
+            return httpx.Response(200, json={"strategy_id": "ma_cross", "latest_passed_version": 2, "versions": [{"version": 1, "passed": False}, {"version": 2, "passed": True}]})
+        if request.url.path == "/backtests/strategies/ma_cross/revalidate" and request.method == "POST":
+            import json
+            assert json.loads(request.content) == {"end_date": "2026-10-13"}
+            return httpx.Response(201, json={"strategy_id": "ma_cross", "version": 3})
+        return httpx.Response(404, json={"detail": "nf"})
+
+    sl.set_transport(httpx.MockTransport(handler))
+    v = asyncio.run(sl.list_versions("ma_cross"))
+    assert v["latest_passed_version"] == 2 and len(v["versions"]) == 2
+    asyncio.run(sl.list_versions("ma_cross"))                 # 캐시 → 호출 수 그대로
+    assert len(calls) == 1
+    status, body = asyncio.run(sl.revalidate("ma_cross", end_date="2026-10-13"))
+    assert status == 201 and body["version"] == 3
+    asyncio.run(sl.list_versions("ma_cross"))                 # 재검증이 캐시를 비웠으므로 다시 호출
+    assert len(calls) == 3
+    assert asyncio.run(sl.list_versions("")) is None
+    assert sl.public_url().startswith("https://")
+
+
+def test_revalidate_unconfigured_and_network_error(monkeypatch):
+    monkeypatch.setattr(settings, "DOMAIN_RAG_LAB_BASE_URL", "")
+    assert asyncio.run(sl.revalidate("x"))[0] == 0
+    monkeypatch.setattr(settings, "DOMAIN_RAG_LAB_BASE_URL", "https://rag.test")
+    def boom(request): raise httpx.ConnectError("down")
+    sl.set_transport(httpx.MockTransport(boom))
+    status, body = asyncio.run(sl.revalidate("x"))
+    assert status == 0 and "연결 실패" in body["detail"]

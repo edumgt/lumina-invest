@@ -154,3 +154,26 @@ def quant_confirm_fills() -> dict:
     result = asyncio.run(_async())
     logger.info("[beat] quant_confirm_fills 완료: %s", result)
     return result
+
+
+@celery_app.task(name="quant.equity_snapshot", time_limit=120)
+def quant_equity_snapshot() -> dict:
+    """장 마감 후(15:40 KST) 게이트웨이 잔고의 총평가액을 kis_equity_snapshots 에 하루 1행 기록한다 (수익율검증)."""
+
+    async def _async() -> dict:
+        from app.database.postgres import connect_postgres, close_postgres, get_session_factory
+        from app.lib.redis_cache import connect_redis, close_redis
+        from app.services import return_review
+
+        await connect_redis()
+        await connect_postgres()
+        try:
+            async with get_session_factory()() as db:
+                return await return_review.record_gateway_snapshot(db)
+        finally:
+            await close_redis()
+            await close_postgres()
+
+    result = asyncio.run(_async())
+    logger.info("[beat] quant_equity_snapshot 완료: %s", result)
+    return result

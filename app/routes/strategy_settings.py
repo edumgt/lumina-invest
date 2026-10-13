@@ -4,6 +4,8 @@ GET  /api/quant/strategy/settings     설정 레지스트리(설명·범위) + �
 POST /api/quant/strategy/settings     저장: env 덮어쓰기(data_cache) + 배치 행(broker_settings) 갱신 → 즉시 settings 반영, 프로필 기록
 POST /api/quant/strategy/settings/reset  env 덮어쓰기 해제(서버 기본값). 배치 행 값은 유지
 GET  /api/quant/strategy/performance  프로필별 성과(가상 QUANT 주문·KIS 실주문 FILLED 실현손익, 승률, 평가액 변화, 최근 사이클 수)
+GET  /api/quant/strategy/spec         선택한 전략 스펙 상세 + 전체 버전 + 상태 점검(백테스트 기반 규칙 카드) — ?strategy_id=&version=
+POST /api/quant/strategy/revalidate   pr 에 재검증(최근 기간 백테스트 → 새 버전) 요청을 중계. 201 합격 / 422 불합격(failed[])
 
 인증 필수. 대상은 항상 배치(시스템 사용자) 행이다 — 로그인 사용자 개인 설정은 「증권사 API 설정」(/api/quant/settings) 그대로.
 """
@@ -22,9 +24,10 @@ from app.database.postgres import get_pg_session
 from app.lib.session import get_current_user
 from app.models import BrokerSettings, LiveOrder, Order
 from app.models.base import SYSTEM_USER_ID
-from app.services import strategy_loader, strategy_settings as ss
+from app.services import signal_mode, strategy_loader, strategy_settings as ss
 from app.services.audit import audit
 from app.services.data_cache import cache_get
+from app.services.stock import QUANT_STOCKS
 
 router = APIRouter(prefix="/api/quant/strategy", tags=["strategy-settings"])
 
@@ -32,6 +35,39 @@ router = APIRouter(prefix="/api/quant/strategy", tags=["strategy-settings"])
 class SaveBody(BaseModel):
     values: dict[str, Any] = {}      # env 덮어쓰기 + 배치 행 값을 한 dict 로 (키로 구분)
     label: str = ""                  # 프로필 메모(선택) — 성과 표에 표시
+
+
+class RevalidateBody(BaseModel):
+    strategy_id: str
+    ticker: str | None = None        # 비우면 스펙 universe 첫 종목
+    start_date: str | None = None    # 비우면 스펙의 백테스트 시작일
+    end_date: str | None = None      # 비우면 스펙의 백테스트 종료일 (화면은 오늘을 보낸다)
+
+
+def _manual_symbols() -> list[str] | None:
+    raw = (getattr(settings, "KIS_PAPER_BATCH_SYMBOLS", "") or "").strip()
+    return [x.strip() for x in raw.split(",") if x.strip()] or None
+
+
+async def _spec_bundle(strategy_id: str, version: int | None, strategies: list[dict] | None = None) -> dict[str, Any]:
+    """스펙 상세 + 버전 목록 + 최신 합격 버전 + 상태 점검. 로더 실패는 None 으로 흡수한다."""
+    spec = versions = None
+    if strategy_id:
+        try:
+            spec = await strategy_loader.get_strategy(strategy_id, version or None)
+            versions = await strategy_loader.list_versions(strategy_id)
+        except Exception:   # pragma: no cover - 로더는 자체적으로 예외를 삼키지만 방어
+            spec = versions = None
+    if strategies is None:
+        try:
+            strategies = await strategy_loader.list_strategies()
+        except Exception:
+            strategies = []
+    latest = next((int(x.get("version") or 0) for x in strategies if x.get("strategy_id") == strategy_id), None)
+    if latest is None and versions:
+        latest = versions.get("latest_passed_version")
+    return {"spec": spec, "versions": versions, "latest_version": latest,
+            "health": ss.spec_health(spec, latest, version or (spec or {}).get("version"), _manual_symbols()) if strategy_id else []}
 
 
 async def _system_row(db: AsyncSession, create: bool = False) -> BrokerSettings | None:
@@ -72,13 +108,24 @@ async def get_settings(user=Depends(get_current_user), db: AsyncSession = Depend
     except Exception:
         strategies = []
     prof = ss.current_profile(doc)
+    row_vals = _row_values(row)
+    sid = row_vals.get("strategy_id") or ""
+    applied_version = int(row_vals.get("strategy_version") or 0)
+    bundle = await _spec_bundle(sid, applied_version, strategies)
     return {
-        "groups": [{"name": g, "help": ss.GROUP_HELP[g]} for g in ss.GROUP_ORDER],
+        "groups": ss.describe_groups(),
         "fields": ss.describe_fields(),
+        "signal_mode": signal_mode.resolve(sid),
+        "signal_mode_explicit": signal_mode.explicit(),
+        "signal_modes": [{"value": m, "label": signal_mode.LABELS[m], "description": signal_mode.DESCRIPTIONS[m]} for m in signal_mode.MODES],
+        "hp_help": ss.HP_HELP,
+        "spec": bundle["spec"], "spec_versions": bundle["versions"], "spec_latest_version": bundle["latest_version"], "spec_health": bundle["health"],
+        "strategy_public_url": strategy_loader.public_url(),
+        "stock_names": {str(x["symbol"])[:6]: x["name"] for x in QUANT_STOCKS},
         "effective": ss.effective_env(),
         "overrides": doc.get("values") or {},
         "defaults": ss.ENV_DEFAULTS,
-        "row": _row_values(row),
+        "row": row_vals,
         "row_exists": row is not None,
         "batch_running": bool(row and row.quant_auto_enabled),
         "kill_switch": bool(row and row.risk_kill_switch),
@@ -105,6 +152,11 @@ async def save_settings(body: SaveBody, user=Depends(get_current_user), db: Asyn
     merged_env = {k: v for k, v in merged_env.items() if v != ss.ENV_DEFAULTS.get(k)}
 
     row = await _system_row(db, create=True)
+    # 운영 모드 ② 백테스트 기반 규칙은 합격 전략 없이는 저장할 수 없다 (사이클이 매수를 보류하므로 미리 막는다)
+    next_sid = row_values.get("strategy_id", row.quant_strategy_id or "") if "strategy_id" in row_values else (row.quant_strategy_id or "")
+    next_mode = merged_env.get("QUANT_SIGNAL_MODE") or ss.ENV_DEFAULTS.get("QUANT_SIGNAL_MODE") or ""
+    if next_mode == signal_mode.BACKTEST and not next_sid:
+        raise HTTPException(422, "운영 모드 ② 백테스트 기반 규칙은 합격한 전략 스펙을 선택해야 저장할 수 있습니다.")
     strategy_version = 0
     if "strategy_id" in row_values:
         sid = row_values["strategy_id"]
@@ -137,6 +189,41 @@ async def reset_settings(user=Depends(get_current_user), db: AsyncSession = Depe
     result = await ss.reset(str(user["id"]), _row_values(row), equity_start=equity_start)
     await audit(str(user["id"]), "", "quant.strategy_settings.reset", {"profile": (result["created"] or {}).get("id")})
     return {"ok": True, "effective": ss.effective_env(), "overrides": {}, "profile": ss.current_profile(result["doc"])}
+
+
+@router.get("/spec")
+async def get_spec(strategy_id: str = "", version: int | None = None, user=Depends(get_current_user)):
+    """백테스트 기반 규칙 카드: 드롭다운에서 전략을 바꿀 때 스펙 상세·버전·상태 점검을 다시 받는다."""
+    await ss.load_and_apply()
+    sid = (strategy_id or "").strip().lower()
+    if not sid:
+        return {"spec": None, "versions": None, "latest_version": None, "health": ss.spec_health(None)}
+    bundle = await _spec_bundle(sid, version)
+    if bundle["spec"] is None:
+        raise HTTPException(404, f"domain-rag-lab 에 합격한 전략이 없습니다: {sid}")
+    return bundle
+
+
+@router.post("/revalidate")
+async def revalidate(body: RevalidateBody, user=Depends(get_current_user)):
+    """pr 에 재검증을 중계한다. 수십 초~수 분(LEAN 실행) 걸린다. 201 이면 새 합격 버전 — 「최신 버전 적용」 으로 바꾼다."""
+    sid = (body.strategy_id or "").strip().lower()
+    if not sid:
+        raise HTTPException(422, "strategy_id 가 필요합니다.")
+    if not strategy_loader.is_configured():
+        raise HTTPException(503, "domain-rag-lab 이 설정되지 않았습니다(DOMAIN_RAG_LAB_BASE_URL).")
+    status, data = await strategy_loader.revalidate(sid, ticker=body.ticker, start_date=body.start_date, end_date=body.end_date)
+    await audit(str(user["id"]), "", "quant.strategy.revalidate", {"strategy_id": sid, "status": status, "end_date": body.end_date})
+    if status == 201:
+        return {"ok": True, "spec": data, "note": f"재검증 합격 — v{(data or {}).get('version')} 저장됨. 「최신 버전 적용」 을 누르면 다음 사이클부터 이 버전을 씁니다."}
+    detail = (data or {}).get("detail") if isinstance(data, dict) else None
+    if isinstance(detail, dict):   # pr 불합격 응답 {message, failed[], spec} → 화면 토스트용 한 줄
+        detail = f"{detail.get('message') or '재검증 불합격'} · 미달: {'; '.join(detail.get('failed') or []) or '-'}"
+    if status == 422:
+        raise HTTPException(422, detail or "재검증 불합격")
+    if status == 404:
+        raise HTTPException(404, detail or "합격한 전략 스펙이 없습니다.")
+    raise HTTPException(502, detail or f"pr 재검증 호출 실패 (status {status})")
 
 
 @router.get("/performance")
