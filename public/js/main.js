@@ -19,14 +19,12 @@ import { loadBrokerStatus, loadOrderHistory, loadPortfolio, loadStockChart } fro
 import { initTradingViewView, onTradingViewViewActivated } from "/js/tradingview.js";
 import { initFormulaView, onFormulaViewActivated } from "/js/formula.js";
 import { loadUsChart, loadUsDashboard, loadUsPortfolio, renderUsOrders } from "/js/us.js";
-import { initCompletionIndicator } from "/js/completion.js";
 
 import { loadDashboard } from "/js/dashboard.js";
 
 // ── Boot ──────────────────────────────────────────────────────────
 async function boot() {
   try {
-    initCompletionIndicator();
     const { user } = await getMe();
     document.getElementById("user-name").textContent = user.name;
     const avatar = document.getElementById("user-avatar");

@@ -1628,3 +1628,9 @@ st 공개 조회 계약(`rows[].trade_date`, `nextOffset`)은 라이브 응답�
 
 **배포 (미완)**: `deploy/fd-strategy-settings.sh` — 사용자가 직접 실행(에이전트 배포 명령은 분류기에 막힘). Python 모듈 변경이라 app·worker·beat 모두 재시작.
 배포 후 `#strategy-settings` 가 404/빈 화면이면 `app.html` 이 이미지에 구워진 복사본과 다른지(`docker cp` 반영 여부) 확인.
+
+### 6-48. 2026-10-13 각 화면 우측 하단 「기능 완성도」 작은 모달 제거 (사용자 요청)
+
+- `public/js/completion.js`·`public/css/completion.css` 삭제(git rm, 2026-09-29 감사 결과 정적 표). `app.html`·`login.html`·`register.html` 의 CSS 링크와
+  `initCompletionIndicator()` 호출(`main.js` boot, 로그인·가입 페이지 인라인 모듈) 제거. 남은 참조 없음(`grep -rn completion public/`).
+- 배포: `deploy/fd-strategy-settings.sh` 에 합침(login/register.html 복사 + 컨테이너·호스트에서 두 파일 rm). 사용자가 실행.
