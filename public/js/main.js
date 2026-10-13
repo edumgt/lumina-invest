@@ -11,6 +11,7 @@ import { loadAutoTradeStatus, loadQuantDashboard } from "/js/quant.js";
 import { initRebalanceView, onRebalanceViewActivated } from "/js/rebalance.js";
 import { loadPatternAnalysis, loadRoboDecision, renderScreenIdle } from "/js/robo.js";
 import { loadKisMonitor } from "/js/kis_monitor.js";
+import { initBatchControl } from "/js/kis_batch_ctl.js";
 import { loadNotificationSettings, loadSettings } from "/js/settings.js";
 import { loadAuditLog, loadSystemDashboard } from "/js/sysadmin.js";
 import { loadBrokerStatus, loadOrderHistory, loadPortfolio, loadStockChart } from "/js/trading.js";
@@ -32,6 +33,7 @@ async function boot() {
     loadMarketTicker();
     loadSyncStatus();
     setInterval(loadSyncStatus, 60_000);   // refresh sync badge every minute
+    initBatchControl();                     // GNB KIS 자동매매 배지 + 시작/비상 정지 (60초 갱신)
     initPaperViews();                      // 모의투자 · LEAN 백테스트 버튼 바인딩 (js/paper.js)
     initRebalanceView();                   // 리밸런싱 엔진 버튼 바인딩 (js/rebalance.js)
     initTradingViewView();                 // TradingView 연동 (js/tradingview.js)

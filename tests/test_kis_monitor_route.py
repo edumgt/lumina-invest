@@ -170,3 +170,10 @@ def test_batch_control_bad_action_is_400(ctl_client):
     with patch.object(kis_batch, "control", AsyncMock(side_effect=kis_batch.BatchControlBlocked("bad_action", "알 수 없는 동작: pause"))):
         r = ctl_client.post("/api/quant/kis/batch/control", json={"action": "pause"})
     assert r.status_code == 400
+
+
+def test_batch_status_returns_system_status(ctl_client):
+    status = {"enabled": True, "running": True, "kill_switch": False, "kill_reason": "", "symbol_source": "ai", "user_id": str(SYSTEM_USER_ID)}
+    with patch.object(kis_batch, "system_status", AsyncMock(return_value=status)):
+        r = ctl_client.get("/api/quant/kis/batch/status")
+    assert r.status_code == 200 and r.json() == status

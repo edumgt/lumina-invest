@@ -1589,3 +1589,9 @@ st 공개 조회 계약(`rows[].trade_date`, `nextOffset`)은 라이브 응답�
 **배포 (미완)**: 에이전트의 fd 서버 배포 명령이 자동 모드 분류기(Production Deploy)에 막혀 **사용자가 직접 실행**해야 한다. Python 변경이라
 `fin-ai-app` 재시작 필요(worker/beat 는 `control` 을 안 부르므로 재시작 불필요, 소스 동기화만). 명령은 `deploy/fd-kis-batch-control.sh` 참고.
 배포 후 `#kis-monitor` 상단 배지가 🛑 로 보이면 `▶ 자동매매 시작` → confirm 으로 해제+시작.
+
+**정정(같은 날, 사용자 피드백 "GNB 버튼 안 보임")**: 요청 위치는 kis-monitor 카드가 아니라 **모든 화면 공통 상단 GNB**(탭 "투자 인디케이터" 와 시세 티커 사이)였다.
+- `public/app.html` `#gnb .gnb-right` 맨 앞에 `#gnb-kis-ctl`(배지 `#gnb-kis-badge` + `▶ 자동매매 시작` / `🛑 비상 정지` / `해제`) 추가, kis-monitor 카드의 버튼은 제거(원복).
+- `public/js/kis_batch_ctl.js` 신규(`initBatchControl` · `loadBatchState` · `renderBatchState`), `main.js` boot 에서 초기화 + 60초 폴링. `kis_monitor.js` 는 /monitor 응답의 `batch` 로 같은 배지를 갱신.
+- `GET /api/quant/kis/batch/status` 신규(system_status 만, /monitor 조립 없이 가볍게). `public/css/app.css` `#gnb-kis-ctl` 스타일, 900px 이하에서 버튼 숨김(배지만).
+- 테스트 36 passed. 배포 파일에 `app.css`·`main.js`·`kis_batch_ctl.js` 추가(`deploy/fd-kis-batch-control.sh`).

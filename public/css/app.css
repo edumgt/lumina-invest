@@ -139,6 +139,17 @@
       flex-shrink: 0;
     }
 
+    /* ── KIS 배치 제어 (GNB 공통, js/kis_batch_ctl.js) ── */
+    #gnb-kis-ctl { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+    .gnb-kis-badge {
+      font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 20px;
+      border: 1px solid var(--border); color: var(--text-mute); white-space: nowrap;
+    }
+    .gnb-kis-badge.run  { color: var(--green); border-color: var(--green); }
+    .gnb-kis-badge.halt { color: var(--red);   border-color: var(--red); }
+    #gnb-kis-ctl .gnb-kis-btn { padding: 4px 8px; font-size: 11px; line-height: 1.2; }
+    @media (max-width: 900px) { #gnb-kis-ctl .gnb-kis-btn { display: none !important; } }
+
     /* ── Market Ticker ───────────────────────────────── */
     #market-ticker {
       display: flex;

@@ -1,5 +1,6 @@
 /* KIS 모의투자결과 — 로보 어드바이저 > KIS 모의투자결과 (data-view="kis-monitor"). 데이터: GET /api/quant/kis/monitor */
-import { api, escHtml, fmt, setToast } from "/js/common.js";
+import { api, escHtml, fmt } from "/js/common.js";
+import { renderBatchState } from "/js/kis_batch_ctl.js";
 
 let _timer = null;
 let _loading = false;
@@ -46,55 +47,8 @@ const timeColumn = (field) => textColumn(field, "시각 (KST)", {
   comparator: (a, b) => (kisDate(a)?.getTime() ?? 0) - (kisDate(b)?.getTime() ?? 0),
 });
 
-/** 헤더 우측 실행 상태 배지 + 버튼 활성화. batch = GET /api/quant/kis/monitor 의 batch (system_status) */
-function renderRunState(b) {
-  const badge = document.getElementById("kism-run-badge"); if (!badge) return;
-  b = b || {};
-  let text, color;
-  if (b.kill_switch) { text = `🛑 비상 정지${b.kill_reason ? ` · ${b.kill_reason}` : ""}`; color = "var(--up, #e5484d)"; }
-  else if (b.running) { text = "🟢 자동매매 실행 중"; color = "var(--ok, #16a34a)"; }
-  else if (b.enabled) { text = "⭕ 자동매매 대기 (다음 사이클에 시작)"; color = "var(--text-dim)"; }
-  else { text = "⭕ 자동매매 정지 (서버 배치 OFF)"; color = "var(--text-dim)"; }
-  badge.textContent = text; badge.style.color = color; badge.style.fontWeight = "600";
-  badge.title = `배치 스위치 ${b.enabled ? "ON" : "OFF"} · 실행 ${b.running ? "중" : "아님"} · 비상 정지 ${b.kill_switch ? "ON" : "OFF"}`;
-  const start = document.getElementById("kism-batch-start"), kill = document.getElementById("kism-batch-kill"), rel = document.getElementById("kism-batch-release");
-  if (start) start.disabled = !!b.running;
-  if (kill) kill.disabled = !!b.kill_switch;
-  if (rel) rel.classList.toggle("hidden", !b.kill_switch);
-}
-
-async function batchControl(action, reason) {
-  const btns = ["kism-batch-start", "kism-batch-kill", "kism-batch-release"].map(id => document.getElementById(id)).filter(Boolean);
-  btns.forEach(b => b.disabled = true);
-  try {
-    const r = await api("/api/quant/kis/batch/control", { method: "POST", body: { action, reason: reason || "" } });
-    renderRunState(r);
-    return r;
-  } finally { btns.forEach(b => b.disabled = false); loadKisMonitor(); }
-}
-
-document.getElementById("kism-batch-start")?.addEventListener("click", async () => {
-  const badge = document.getElementById("kism-run-badge");
-  const killed = (badge?.textContent || "").startsWith("🛑");
-  if (killed && !confirm("비상 정지 상태입니다. 해제하고 자동매매를 시작할까요?")) return;
-  try {
-    if (killed) await batchControl("kill_off");
-    const r = await batchControl("start");
-    setToast(r.running ? "KIS 모의투자 배치 시작" : "배치가 대기 상태입니다. 다음 사이클에 시작됩니다.", "ok");
-  } catch (e) { setToast(e.message, "error"); }
-});
-document.getElementById("kism-batch-kill")?.addEventListener("click", async () => {
-  if (!confirm("KIS 모의투자 배치를 즉시 중지하고 비상 정지 상태로 전환합니다. 해제 전까지 재가동되지 않습니다. 계속할까요?")) return;
-  try { await batchControl("kill_on", "사용자 수동 비상 정지"); setToast("비상 정지 ON — 배치가 중지되었습니다.", "ok"); }
-  catch (e) { setToast(e.message, "error"); }
-});
-document.getElementById("kism-batch-release")?.addEventListener("click", async () => {
-  try { await batchControl("kill_off"); setToast("비상 정지를 해제했습니다. 다음 사이클에 자동 재가동됩니다.", "ok"); }
-  catch (e) { setToast(e.message, "error"); }
-});
-
 function renderBadges(d) {
-  renderRunState(d.batch);
+  renderBatchState(d.batch);   // GNB 공통 배지도 같은 응답으로 갱신
   const el = document.getElementById("kism-badges"); if (!el) return;
   const b = d.batch || {}, ag = d.aggressive || {};
   const hb = d.heartbeat_age_sec;

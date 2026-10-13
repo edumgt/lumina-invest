@@ -289,6 +289,12 @@ class BatchControlBody(BaseModel):
     reason: str = ""
 
 
+@router.get("/batch/status")
+async def batch_status(user=Depends(get_current_user), db: AsyncSession = Depends(get_pg_session)):
+    """GNB 공통 배지용 가벼운 상태(배치 ON/실행/비상 정지). /monitor 전체 조립 없이 system_status 만 돌려준다."""
+    return await kis_batch.system_status(db)
+
+
 @router.post("/batch/control")
 async def batch_control(body: BatchControlBody, user=Depends(get_current_user), db: AsyncSession = Depends(get_pg_session)):
     """KIS 모의투자 배치(시스템 사용자 행) 시작 / 비상 정지 / 비상 정지 해제. 로그인 사용자 본인 행이 아니라 **배치 행**을 제어한다."""
