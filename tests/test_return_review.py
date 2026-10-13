@@ -176,18 +176,28 @@ def client():
             SimpleNamespace(created_at=_t(8, 10), symbol="005930", side="SELL", status="FILLED", filled_quantity=10, avg_filled_price=90.0),
             SimpleNamespace(created_at=_t(8, 11), symbol="000660", side="BUY", status="CANCELLED", filled_quantity=0, avg_filled_price=0.0)]
     orders = [SimpleNamespace(created_at=_t(7, 10), order_type="buy", status="filled")]
-    broker = SimpleNamespace(risk_daily_loss_limit_pct=3.0, risk_max_position_pct=20.0)
+    broker = SimpleNamespace(risk_daily_loss_limit_pct=3.0, risk_max_position_pct=20.0, risk_cooldown_min=30, risk_max_orders_per_day=10,
+                             quant_strategy_id="", quant_strategy_version=0, quant_buy_ratio=1.0, quant_sell_ratio=0.5)
     db = FakeDb(snaps, live, orders, broker)
+    store: dict = {}
+    async def cget(key, max_age_hours=24):
+        if key.startswith("quant:cycle_log:"):
+            return {"cycles": [{"time": "2026-10-08 10:00", "settings": {"profile_id": "p9"}, "trades": [{"status": "filled"}], "risk": {"skipped": [{}]}}]}
+        return store.get(key)
+    async def cset(key, data): store[key] = data
     app = FastAPI(); app.include_router(route.router)
     app.dependency_overrides[get_current_user] = lambda: {"id": str(UID), "email": "t@t"}
     app.dependency_overrides[get_pg_session] = lambda: db
     async def load_and_apply(): return {"values": {}, "profiles": [{"id": "p1", "seq": 1, "applied_at": "2026-10-06T00:00:00+00:00", "values": {"QUANT_AGGRESSIVE_MODE": True}, "row": {}}]}
-    with patch.object(ss, "load_and_apply", load_and_apply), patch.object(route, "audit", AsyncMock()):
-        yield TestClient(app), db
+    with patch.object(ss, "load_and_apply", load_and_apply), patch.object(route, "audit", AsyncMock()), \
+         patch.object(route, "cache_get", cget), patch.object(route, "cache_set", cset), \
+         patch.object(route.strategy_loader, "list_strategies", AsyncMock(return_value=[])), \
+         patch.object(route.signal_mode, "resolve", lambda sid="": "aggressive"):
+        yield TestClient(app), db, store
 
 
 def test_get_review_joins_rows_trading_and_modes(client):
-    c, db = client
+    c, db, _ = client
     r = c.get("/api/quant/return-review"); assert r.status_code == 200, r.text
     d = r.json()
     assert [x["snap_date"] for x in d["rows"]] == ["2026-10-06", "2026-10-07", "2026-10-08"]
@@ -196,10 +206,13 @@ def test_get_review_joins_rows_trading_and_modes(client):
     assert d["rows"][1]["trading"]["virtual_buys"] == 1 and r8["mode"]["mode"] == "aggressive" and r8["mode"]["profile"] == "p1"
     assert d["summary"]["cum_return_pct"] == pytest.approx(-2.0444, abs=1e-3) and d["trade_stats"]["round_trips"] == 1
     assert {f["id"] for f in d["guide"]} >= {"overview", "mode", "expectancy", "roadmap"} and d["limits"]["daily_loss_limit_pct"] == 3.0
+    assert d["plans"]["recommended"] in ("A", "B") and [p["id"] for p in d["plans"]["plans"]] == ["A", "B", "C"]
+    assert d["plans"]["plans"][2]["applicable"] is False and "합격" in d["plans"]["plans"][2]["blocker"]
+    assert d["applied_plans"] == [] and d["progress_log"] == []
 
 
 def test_post_rows_upserts_and_delete(client):
-    c, db = client
+    c, db, _ = client
     r = c.post("/api/quant/return-review/rows", json={"text": "2026.10.08 -2.04% -2,044,366 100,000,000 97,955,634 3443\n2026.10.12 -6.66% -6,661,763 100,000,000 93,338,237 4021", "note": "KIS 화면"})
     assert r.status_code == 200, r.text
     assert r.json()["inserted"] == 1 and r.json()["updated"] == 1 and db.committed == 1
@@ -212,7 +225,7 @@ def test_post_rows_upserts_and_delete(client):
 
 
 def test_snapshot_uses_gateway_balance_and_last_principal(client):
-    c, db = client
+    c, db, _ = client
     from app.services.brokers import stock_coin_trade_gateway as gw
     with patch.object(gw, "is_configured", lambda: True), patch.object(gw, "environment", lambda: "paper"), \
          patch.object(gw, "get_balance", AsyncMock(return_value={"totalEvalAmount": 93_000_000})):
@@ -222,3 +235,82 @@ def test_snapshot_uses_gateway_balance_and_last_principal(client):
     assert row["principal"] == 100_000_000 and row["equity"] == 93_000_000 and row["cum_return_pct"] == -7.0 and r.json()["inserted"] == 1
     with patch.object(gw, "is_configured", lambda: False):
         assert c.post("/api/quant/return-review/snapshot", json={}).status_code == 502
+
+
+# ── 방안·승인·진행 로그 ───────────────────────────────────────────────────────
+
+def test_build_plans_recommendation_and_changes():
+    rows = rr.enrich(rr.SEED_ROWS); s = rr.summary(rows); t = rr.trade_stats({})
+    eff = {"QUANT_AGGRESSIVE_TAKE_PROFIT_PCT": 1.5, "QUANT_AGGRESSIVE_STOP_LOSS_PCT": 1.0, "QUANT_AGGRESSIVE_MAX_BUYS_PER_CYCLE": 2, "QUANT_AGGRESSIVE_FORCE_BUY": True,
+           "QUANT_AGGRESSIVE_CANDLE_INTERVAL": "5m", "QUANT_AGGRESSIVE_WEAK_SELL_SCORE": -1, "QUANT_AGGRESSIVE_COOLDOWN_MIN": 3, "QUANT_AGGRESSIVE_MAX_ORDERS_PER_DAY": 300,
+           "QUANT_CUSTOM_BUY_SCORE": 1, "QUANT_CUSTOM_SELL_SCORE": -1, "QUANT_CUSTOM_TREND_FILTER": False, "QUANT_BASE_TAKE_PROFIT_PCT": 0, "QUANT_BASE_STOP_LOSS_PCT": 0,
+           "STOCK_COIN_TRADE_ORDER_TYPE": "LIMIT", "KIS_PAPER_BATCH_AI_TOP_N": 3, "QUANT_SPEC_UNIVERSE_STRICT": False, "KIS_PAPER_BATCH_SYMBOLS": ""}
+    row = {"risk_daily_loss_limit_pct": 3.0, "risk_cooldown_min": 30, "risk_max_orders_per_day": 10, "strategy_id": ""}
+    p = rr.build_plans(s, t, {"acceleration", "overtrading"}, eff, row, [], ["005930.KS", "069500.KS"], "aggressive")
+    assert p["recommended"] == "B" and [x["recommended"] for x in p["plans"]] == [False, True, False]
+    a = {c["key"]: c["to"] for c in p["plans"][0]["changes"]}
+    assert a["QUANT_AGGRESSIVE_MAX_BUYS_PER_CYCLE"] == 0 and a["QUANT_AGGRESSIVE_TAKE_PROFIT_PCT"] == 2.0 and a["risk_daily_loss_limit_pct"] == 2.0 and "QUANT_SIGNAL_MODE" not in a
+    b = {c["key"]: c["to"] for c in p["plans"][1]["changes"]}
+    assert b["QUANT_SIGNAL_MODE"] == "custom" and b["QUANT_CUSTOM_BUY_SCORE"] == 3 and b["QUANT_CUSTOM_TREND_FILTER"] is True and b["risk_cooldown_min"] == 60
+    assert p["plans"][2]["applicable"] is False and p["plans"][2]["changes"] == []
+    # 합격 전략이 있으면 C 권장 + 스펙 universe ∩ 거래 유니버스를 수동 종목으로
+    strat = [{"strategy_id": "sample_x", "version": 1, "universe": ["005930"], "backtest_result": {"engine": "sample", "sharpe_ratio": 9}},
+             {"strategy_id": "ma_cross_kospi200", "version": 2, "name": "MA 20/60", "universe": ["069500", "000660"],
+              "backtest_result": {"annualized_return_pct": 9, "max_drawdown_pct": -12, "sharpe_ratio": 0.8, "trade_count": 40, "engine": "lean"}}]
+    p = rr.build_plans(s, t, set(), eff, row, strat, ["005930.KS", "069500.KS"], "aggressive")
+    assert p["recommended"] == "C"
+    c = {x["key"]: x["to"] for x in p["plans"][2]["changes"]}
+    assert c["QUANT_SIGNAL_MODE"] == "backtest" and c["strategy_id"] == "ma_cross_kospi200" and c["QUANT_SPEC_UNIVERSE_STRICT"] is True and c["KIS_PAPER_BATCH_SYMBOLS"] == "069500.KS"
+    assert rr.pick_strategy(strat)["strategy_id"] == "ma_cross_kospi200"          # 샘플 제외
+    # 변화 없는 값은 변경 항목에서 빠진다
+    p = rr.build_plans(s, t, set(), {**eff, "QUANT_AGGRESSIVE_FORCE_BUY": False, "QUANT_AGGRESSIVE_CANDLE_INTERVAL": "15m"}, row, [], [], "aggressive")
+    assert not any(ch["key"] in ("QUANT_AGGRESSIVE_FORCE_BUY", "QUANT_AGGRESSIVE_CANDLE_INTERVAL") for ch in p["plans"][0]["changes"])
+
+
+def test_evaluate_applied_verdicts_and_escalation():
+    rows = rr.enrich(rr.SEED_ROWS)
+    base = {"equity": 100_074_154, "avg_daily_change_pct": 0.05}
+    ev = rr.evaluate_applied([{"plan_id": "A", "applied_at": "2026-10-06T07:00:00+00:00", "baseline": base}], rows, {"2026-10-07": {"fills": 20}})
+    assert ev[0]["verdict"] == "not_improved" and ev[0]["next_plan"] == "B" and ev[0]["observed_days"] == 3 and ev[0]["fills_per_day_after"] == 6.7
+    ev = rr.evaluate_applied([{"plan_id": "B", "applied_at": "2026-10-08T07:00:00+00:00", "baseline": base}], rows, {})
+    assert ev[0]["verdict"] == "observing" and ev[0]["observed_days"] == 1 and ev[0]["next_plan"] is None
+    up = rr.enrich([{"snap_date": "2026-10-01", "principal": 100, "equity": 100, "cum_return_pct": 0, "cum_pnl": 0},
+                    {"snap_date": "2026-10-02", "principal": 100, "equity": 101, "cum_return_pct": 1, "cum_pnl": 1},
+                    {"snap_date": "2026-10-03", "principal": 100, "equity": 102, "cum_return_pct": 2, "cum_pnl": 2},
+                    {"snap_date": "2026-10-04", "principal": 100, "equity": 102.5, "cum_return_pct": 2.5, "cum_pnl": 2.5}])
+    ev = rr.evaluate_applied([{"plan_id": "C", "applied_at": "2026-10-01T07:00:00+00:00", "baseline": {"equity": 100, "avg_daily_change_pct": -1.0}}], up, {})
+    assert ev[0]["verdict"] == "improved" and ev[0]["cum_change_after_pct"] == 2.5
+
+
+def test_apply_plan_saves_settings_and_logs_progress(client):
+    c, db, store = client
+    fake_result = {"ok": True, "effective": {"QUANT_SIGNAL_MODE": "custom"}, "row": {"strategy_id": ""}, "profile": {"id": "p9"}, "note": "다음 사이클부터 적용됩니다."}
+    with patch.object(route.ss_route, "save_settings", AsyncMock(return_value=fake_result)) as save:
+        r = c.post("/api/quant/return-review/plans/b/apply", json={"note": "손실 차단"})
+        assert r.status_code == 200, r.text
+        body = save.await_args.args[0]
+        assert body.values["QUANT_SIGNAL_MODE"] == "custom" and body.values["QUANT_CUSTOM_BUY_SCORE"] == 3 and body.values["risk_daily_loss_limit_pct"] == 2.0
+        assert body.label.startswith("수익율검증 방안 B 승인") and "손실 차단" in body.label
+    d = r.json()
+    assert d["plan_id"] == "B" and d["applied"]["profile_id"] == "p9" and d["applied"]["baseline"]["cum_return_pct"] == pytest.approx(-2.0444, abs=1e-3)
+    assert [x["event"] for x in store[route.PROGRESS_LOG_KEY]["items"]] == ["approve", "apply"]
+    assert store[rr.APPLIED_PLANS_KEY]["items"][0]["plan_id"] == "B"
+    # GET: 적용 이력 + 프로필별 진행(사이클 캐시) + 로그(최신순)
+    g = c.get("/api/quant/return-review").json()
+    ap = g["applied_plans"][0]
+    assert ap["verdict"] == "observing" and ap["progress"] == {"cycles": 1, "virtual_fills": 1, "risk_skipped": 1, "halted_cycles": 0, "first_cycle": "2026-10-08 10:00", "last_cycle": "2026-10-08 10:00", "last_note": ""}
+    assert g["progress_log"][0]["event"] == "apply" and g["progress_log"][1]["event"] == "approve"
+    # 적용 불가 방안(C: 합격 전략 없음) → 422 + error 로그
+    r = c.post("/api/quant/return-review/plans/C/apply", json={})
+    assert r.status_code == 422 and "합격" in r.json()["detail"]
+    assert store[route.PROGRESS_LOG_KEY]["items"][-1]["event"] == "error"
+    assert c.post("/api/quant/return-review/plans/Z/apply", json={}).status_code == 404
+    # 평가 판정이 바뀌면 evaluate 로그가 1회 남는다
+    store[rr.APPLIED_PLANS_KEY]["items"][0]["applied_at"] = "2026-10-05T00:00:00+00:00"   # 이후 관측일 2일(10/07·10/08, 둘 다 하락)
+    with patch.object(rr, "OBSERVE_DAYS", 2):
+        g = c.get("/api/quant/return-review").json()
+        assert g["applied_plans"][0]["verdict"] == "not_improved" and g["applied_plans"][0]["next_plan"] == "C" and g["applied_plans"][0]["observed_days"] == 2
+        assert g["progress_log"][0]["event"] == "evaluate" and g["progress_log"][0]["next_plan"] == "C"
+        n = len(store[route.PROGRESS_LOG_KEY]["items"])
+        c.get("/api/quant/return-review")
+        assert len(store[route.PROGRESS_LOG_KEY]["items"]) == n        # 같은 판정은 다시 기록하지 않음

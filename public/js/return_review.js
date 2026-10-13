@@ -85,6 +85,68 @@ function goField(field, view) {
   setTimeout(tick, 200);
 }
 
+const PLAN_LV = { observing: "관찰 중", improved: "개선", not_improved: "미개선" };
+function fmtTo(v) { return v === true ? "ON" : v === false ? "OFF" : v === "" || v == null ? "(비움)" : String(v); }
+
+function renderPlans() {
+  const P = _data.plans || {}; const el = $("rr-plans"); if (!el) return;
+  $("rr-plans-reason").innerHTML = P.recommended ? `권장: <b>방안 ${escHtml(P.recommended)}</b> — ${escHtml(P.reason || "")}` : "";
+  $("rr-algo").innerHTML = (P.algorithm || []).map(a => `<li>${escHtml(a)}</li>`).join("");
+  el.innerHTML = (P.plans || []).map(p => `<div class="rr-plan ${p.recommended ? "rec" : ""} ${p.applicable ? "" : "na"}">
+      <h4>${p.recommended ? `<span class="rr-rec">권장</span>` : ""}${escHtml(p.title)}</h4>
+      <div class="rr-stage">단계: ${escHtml(p.stage)} · 전제: ${escHtml(p.prereq || "-")}</div>
+      <p>${escHtml(p.summary)}</p>
+      ${p.changes?.length ? `<div class="rr-sec">전략설정 변경 ${p.changes.length}건 (현재 → 제안)</div><table><tbody>${p.changes.map(c => `<tr><td title="${escHtml(c.key)}">${escHtml(c.label)}</td><td style="color:var(--text-mute);">${escHtml(fmtTo(c.from))}</td><td class="to">→ ${escHtml(fmtTo(c.to))}</td><td style="color:var(--text-mute);">${escHtml(c.why || "")}</td></tr>`).join("")}</tbody></table>` : ""}
+      ${p.expected?.length ? `<div class="rr-sec">기대 효과</div><ul>${p.expected.map(e => `<li>${escHtml(e)}</li>`).join("")}</ul>` : ""}
+      ${p.risks?.length ? `<div class="rr-sec">리스크</div><ul>${p.risks.map(e => `<li>${escHtml(e)}</li>`).join("")}</ul>` : ""}
+      ${p.blocker ? `<div class="rr-sec">적용 불가</div><div class="rr-blocker">${escHtml(p.blocker)}</div>` : ""}
+      <div class="rr-approve">${p.applicable && p.changes?.length
+        ? `<button class="btn-primary text-xs" data-plan="${p.id}">✔ 승인 · 전략설정에 적용 (${p.changes.length}건)</button>`
+        : p.applicable ? `<span class="text-xs" style="color:var(--text-mute);">현재 설정과 같아 바꿀 값이 없습니다.</span>`
+        : `<button class="btn-secondary text-xs" data-plan-ext="1">↗ pr 에서 합격 전략 만들기</button>`}</div>
+    </div>`).join("") || `<span class="text-xs" style="color:var(--text-mute);">데이터가 쌓이면 방안이 생성됩니다.</span>`;
+  el.querySelectorAll("button[data-plan]").forEach(b => b.addEventListener("click", () => approvePlan(b.dataset.plan)));
+  el.querySelectorAll("button[data-plan-ext]").forEach(b => b.addEventListener("click", () => goField(null, "external:pr")));
+}
+
+async function approvePlan(id) {
+  const p = (_data.plans?.plans || []).find(x => x.id === id); if (!p) return;
+  const lines = p.changes.map(c => `  · ${c.label}: ${fmtTo(c.from)} → ${fmtTo(c.to)}`).join("\n");
+  const note = prompt(`방안 ${id} 를 승인합니다. 아래 ${p.changes.length}건이 전략설정에 저장되어 다음 사이클부터 전 시스템(배치·자동매매 사이클)에 적용됩니다.\n\n${lines}\n\n프로필 메모(선택):`, "");
+  if (note === null) return;
+  try {
+    const r = await api(`/api/quant/return-review/plans/${id}/apply`, { method: "POST", body: { note, environment: env() } });
+    setToast(r.note || `방안 ${id} 적용 완료`, "ok");
+    await loadReturnReview();
+  } catch (e) { setToast(`승인 실패: ${e?.message || e}`, "error"); }
+}
+
+function renderApplied() {
+  const el = $("rr-applied"); const aps = [...(_data.applied_plans || [])].reverse();
+  el.innerHTML = aps.map(a => {
+    const pr = a.progress || {}, b = a.baseline || {};
+    return `<div class="rr-ap ${a.verdict || "observing"}">
+      <b class="t">${escHtml(a.title || a.plan_id)}</b> <span style="color:var(--text-mute);">· 승인 ${new Date(a.applied_at).toLocaleString("ko-KR")} · 프로필 ${escHtml(a.profile_id || "-")}${a.effective_mode ? ` · 모드 ${escHtml(a.effective_mode)}` : ""}${a.strategy_id ? ` · 전략 ${escHtml(a.strategy_id)}` : ""}${a.note ? ` · ${escHtml(a.note)}` : ""}</span><br/>
+      <b>판정: ${escHtml(a.verdict_text || PLAN_LV[a.verdict] || "-")}</b>${a.next_plan ? ` → <button class="btn-secondary text-xs" data-next="${a.next_plan}">방안 ${a.next_plan} 승인</button>` : ""}<br/>
+      기준(승인 시점): 누적 ${pct(b.cum_return_pct)} · 평균 일변화 ${pp(b.avg_daily_change_pct)} · 일 체결 ${b.fills_per_day ?? "-"}건 · 기대값 ${b.expectancy == null ? "-" : won(b.expectancy)}<br/>
+      적용 후: ${a.observed_days}관측일 · 평균 일변화 ${pp(a.avg_daily_change_after_pct)} · 누적 변화 ${pct(a.cum_change_after_pct)} · 일 체결 ${a.fills_per_day_after ?? "-"}건<br/>
+      진행(최근 사이클 캐시): 사이클 ${pr.cycles ?? 0}회 · 가상 체결 ${pr.virtual_fills ?? 0}건 · 위험관리 생략 ${pr.risk_skipped ?? 0}건 · 비상 정지 ${pr.halted_cycles ?? 0}회${pr.last_cycle ? ` · 마지막 ${escHtml(pr.last_cycle)}` : ""}${pr.last_note ? ` · ${escHtml(pr.last_note)}` : ""}<br/>
+      <details><summary class="text-xs" style="cursor:pointer;color:var(--text-mute);">적용한 변경 ${a.changes?.length ?? 0}건</summary><ul style="margin:4px 0 0 16px;">${(a.changes || []).map(c => `<li>${escHtml(c.label)}: ${escHtml(fmtTo(c.from))} → <b>${escHtml(fmtTo(c.to))}</b></li>`).join("")}</ul></details>
+    </div>`;
+  }).join("") || `<span class="text-xs" style="color:var(--text-mute);">승인된 방안이 없습니다. 위 방안 카드에서 「승인」 을 누르면 여기에 진행과 평가가 쌓입니다.</span>`;
+  el.querySelectorAll("button[data-next]").forEach(b => b.addEventListener("click", () => approvePlan(b.dataset.next)));
+  const log = _data.progress_log || [];
+  const EV = { approve: "승인", apply: "적용", evaluate: "평가", error: "오류" };
+  $("rr-log").querySelector("thead").innerHTML = `<tr><th class="l">시각</th><th class="l">이벤트</th><th class="l">방안</th><th class="l">내용</th></tr>`;
+  $("rr-log").querySelector("tbody").innerHTML = log.map(e => {
+    const detail = e.event === "approve" ? `${(e.changes || []).length}건 변경 승인${e.note ? ` · ${e.note}` : ""} · 기준 누적 ${pct(e.baseline?.cum_return_pct)}`
+      : e.event === "apply" ? `프로필 ${e.profile_id || "-"} · 모드 ${e.effective_mode || "-"}${e.strategy_id ? ` · 전략 ${e.strategy_id}` : ""} · ${(e.applied_keys || []).join(", ")}`
+      : e.event === "evaluate" ? `${e.verdict_text || e.verdict} · ${e.observed_days}관측일 · 평균 일변화 ${pp(e.avg_daily_change_after_pct)}${e.next_plan ? ` · 다음 ${e.next_plan}` : ""}`
+      : e.reason || "";
+    return `<tr><td class="l">${new Date(e.time).toLocaleString("ko-KR")}</td><td class="l">${EV[e.event] || e.event}${e.by && e.by !== "system" ? ` <span style="color:var(--text-mute);">${escHtml(String(e.by).slice(0, 8))}</span>` : ""}</td><td class="l">${escHtml(e.plan_id || "-")}</td><td class="l" style="white-space:normal;">${escHtml(detail)}</td></tr>`;
+  }).join("") || `<tr><td colspan="4" class="l" style="color:var(--text-mute);">진행 로그가 없습니다.</td></tr>`;
+}
+
 function renderGuide() {
   const el = $("rr-guide"); const g = _data.guide || [];
   const LV = { bad: "조치 필요", warn: "주의", ok: "양호", info: "참고" };
@@ -132,7 +194,7 @@ function renderTable() {
 export async function loadReturnReview() {
   try {
     _data = await api(`/api/quant/return-review?environment=${env()}`);
-    renderKpis(); drawChart(); renderGuide(); renderTable();
+    renderKpis(); drawChart(); renderPlans(); renderApplied(); renderGuide(); renderTable();
   } catch (e) { $("rr-note").textContent = `불러오기 실패: ${e?.message || e}`; setToast(e?.message || String(e), "error"); }
 }
 

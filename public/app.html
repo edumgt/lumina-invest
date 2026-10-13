@@ -1893,6 +1893,26 @@
         .rr-table .rr-del{opacity:.5;cursor:pointer}.rr-table .rr-del:hover{opacity:1;color:#e5484d}
         #rr-paste{width:100%;min-height:110px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
         .ss-field.rr-flash{animation:rrflash 2.4s ease-out}
+        .rr-plans{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:10px}
+        .rr-plan{display:flex;flex-direction:column;padding:12px 14px;border:1px solid var(--border);border-radius:10px;background:var(--surf2)}
+        .rr-plan.rec{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
+        .rr-plan.na{opacity:.75}
+        .rr-plan h4{margin:0 0 4px;font-size:13px;font-weight:700}
+        .rr-plan .rr-rec{display:inline-block;margin-right:6px;padding:0 7px;border-radius:999px;font-size:10px;font-weight:700;background:var(--accent);color:#fff;vertical-align:middle}
+        .rr-plan .rr-stage{font-size:11px;color:var(--text-mute)}
+        .rr-plan p{font-size:12px;color:var(--text-dim);line-height:1.5;margin:4px 0}
+        .rr-plan table{width:100%;font-size:11.5px;border-collapse:collapse;margin:6px 0}
+        .rr-plan td{padding:3px 4px;border-bottom:1px dashed var(--border);vertical-align:top}
+        .rr-plan td:first-child{white-space:nowrap;font-weight:600}
+        .rr-plan td.to{white-space:nowrap;font-weight:700;color:var(--accent)}
+        .rr-plan ul{margin:2px 0 0 16px;padding:0;font-size:11.5px;color:var(--text-dim);line-height:1.5}
+        .rr-plan .rr-sec{margin-top:6px;font-size:11px;color:var(--text-mute);font-weight:600}
+        .rr-plan .rr-approve{margin-top:auto;padding-top:8px}
+        .rr-plan .rr-blocker{font-size:11.5px;color:#e5484d;line-height:1.5}
+        .rr-applied{display:grid;gap:8px}
+        .rr-ap{padding:10px 12px;border:1px solid var(--border);border-left-width:5px;border-radius:8px;background:var(--surf2);font-size:12px;line-height:1.55}
+        .rr-ap.observing{border-left-color:#f5a524}.rr-ap.improved{border-left-color:#17c964}.rr-ap.not_improved{border-left-color:#e5484d}
+        .rr-ap b.t{font-size:13px}
         @keyframes rrflash{0%{background:rgba(245,165,36,.45)}100%{background:transparent}}
       </style>
       <div class="space-y-4">
@@ -1916,6 +1936,19 @@
           <h3 class="font-semibold mb-2 text-sm">📉 평가액 · 일변화 <span class="text-xs" style="color:var(--text-mute);font-weight:400;">· 선 = 평가액, 막대 = 전 관측일 대비 변화(%p), 음영 = 운영 모드</span></h3>
           <canvas id="rr-chart" aria-label="일별 평가액과 변화율"></canvas>
           <div id="rr-legend" class="text-xs mt-1" style="color:var(--text-mute);"></div>
+        </div>
+
+        <div class="card">
+          <h3 class="font-semibold mb-1 text-sm">💡 수익률 증대 방안 <span class="text-xs" style="color:var(--text-mute);font-weight:400;">· 승인하면 전략설정 값으로 즉시 저장되어 다음 사이클부터 전 시스템에 적용됩니다</span></h3>
+          <p id="rr-plans-reason" class="text-xs mb-2" style="color:var(--text-dim);"></p>
+          <div id="rr-plans" class="rr-plans"></div>
+          <details class="mt-2"><summary class="text-xs" style="cursor:pointer;color:var(--text-mute);">승인 후 처리 알고리즘</summary><ol id="rr-algo" class="text-xs" style="margin:6px 0 0 18px;color:var(--text-dim);line-height:1.6;"></ol></details>
+        </div>
+
+        <div class="card">
+          <h3 class="font-semibold mb-2 text-sm">🧾 승인된 방안 · 진행 로그 <span class="text-xs" style="color:var(--text-mute);font-weight:400;">· 적용 프로필별 사이클 진행과 사후 평가, 승인·적용·평가 이벤트 타임라인</span></h3>
+          <div id="rr-applied" class="rr-applied"></div>
+          <table class="rr-table mt-2" id="rr-log"><thead></thead><tbody></tbody></table>
         </div>
 
         <div class="card">

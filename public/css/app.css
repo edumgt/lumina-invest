@@ -98,19 +98,24 @@
       letter-spacing: 0.12em;
       text-transform: uppercase;
     }
+    /* 탭은 절대 잘리지 않게(4번째 「수익율검증」 이 우측 영역에 밀려 보이지 않던 문제, 2026-10-13) —
+       탭 폭은 내용대로 고정하고 남는 폭은 .gnb-right 가 줄어들며 흡수한다. 아주 좁은 화면에서만 가로 스크롤. */
     .gnb-tabs {
       display: flex;
       align-items: stretch;
-      flex: 1;
+      flex: 0 0 auto;
+      min-width: 0;
       overflow-x: auto;
       scrollbar-width: none;
     }
     .gnb-tabs::-webkit-scrollbar { display: none; }
+    @media (max-width: 760px) { .gnb-tabs { flex: 1 1 auto; } }
     .gnb-item {
       display: inline-flex;
       align-items: center;
       gap: 6px;
-      padding: 0 16px;
+      padding: 0 14px;
+      flex-shrink: 0;
       font-size: 15px;
       font-weight: 500;
       color: var(--text-dim);
@@ -133,11 +138,15 @@
     .gnb-right {
       display: flex;
       align-items: center;
+      justify-content: flex-end;
       gap: 12px;
       padding: 0 14px;
       border-left: 1px solid var(--border);
-      flex-shrink: 0;
+      flex: 1 1 auto;
+      min-width: 0;
+      overflow: hidden;
     }
+    @media (max-width: 1180px) { #market-ticker { display: none; } }
 
     /* ── KIS 배치 제어 (GNB 공통, js/kis_batch_ctl.js) ── */
     #gnb-kis-ctl { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
@@ -156,6 +165,9 @@
       gap: 16px;
       font-size: 12px;
       align-items: center;
+      min-width: 0;
+      overflow: hidden;
+      flex-shrink: 1;
     }
     .ticker-item { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.2; }
     .ticker-name { color: var(--text-mute); font-size: 11px; letter-spacing: .05em; }
