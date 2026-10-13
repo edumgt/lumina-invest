@@ -12,8 +12,23 @@ const COMPANIES = [
   { code:"105560", name:"KB금융",        sector:"금융",         market:"KOSPI" },
 ];
 
-// 대시보드 기본 종목. 비교 화면은 서버의 KIS 분석 후보 목록을 사용한다.
-let dashboardStocks = COMPANIES.map(c => ({ symbol: `${c.code}.KS`, name: c.name }));
+// 대시보드 기본 종목(고정, × 없음). 비교 화면은 서버의 KIS 분석 후보 목록을 사용한다.
+const DEFAULT_DASHBOARD_STOCKS = COMPANIES.map(c => ({ symbol: `${c.code}.KS`, name: c.name }));
+// 「종목 검색」으로 추가한 종목은 브라우저 localStorage 에 남겨 다음 방문에도 탭에 보인다(6-51). 마우스 오버 시 × 로 제거.
+const EXTRA_TABS_KEY = "company-dashboard-extra-tabs";
+const EXTRA_TABS_MAX = 20;
+function loadExtraTabs() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(EXTRA_TABS_KEY) || "[]");
+    return Array.isArray(raw) ? raw.filter(c => c && typeof c.symbol === "string" && c.symbol).slice(0, EXTRA_TABS_MAX)
+      .map(c => ({ symbol: c.symbol, name: String(c.name || c.symbol) })) : [];
+  } catch { return []; }
+}
+function saveExtraTabs() {
+  try { localStorage.setItem(EXTRA_TABS_KEY, JSON.stringify(extraDashboardStocks)); } catch { /* 사생활 모드 등 — 세션 동안만 유지 */ }
+}
+let extraDashboardStocks = loadExtraTabs().filter(c => !DEFAULT_DASHBOARD_STOCKS.some(d => d.symbol === c.symbol));
+let dashboardStocks = [...DEFAULT_DASHBOARD_STOCKS, ...extraDashboardStocks];
 let selectedCompanySymbol = dashboardStocks[0].symbol;
 const companyFundCache = {};
 
@@ -23,15 +38,24 @@ function loadCompanyDashboard() {
   fetchAndRenderCompany(selectedCompanySymbol);
 }
 
+function isDefaultTab(symbol) { return DEFAULT_DASHBOARD_STOCKS.some(d => d.symbol === symbol); }
+
 function renderCompanyTabs() {
   const el = document.getElementById("company-tabs");
   if (!el) return;
-  el.innerHTML = dashboardStocks.map(c => `
-    <button onclick="selectCompany('${c.symbol}')"
-      style="padding:5px 14px; border-radius:20px; font-size:12px; font-weight:600; cursor:pointer; border:1px solid ${selectedCompanySymbol===c.symbol?"var(--accent)":"var(--border)"}; background:${selectedCompanySymbol===c.symbol?"var(--accent)":"var(--surf)"}; color:${selectedCompanySymbol===c.symbol?"#fff":"var(--text-dim)"}; transition:all .15s;">
-      ${escHtml(c.name)}
-    </button>
-  `).join("");
+  dashboardStocks = [...DEFAULT_DASHBOARD_STOCKS, ...extraDashboardStocks];
+  el.innerHTML = dashboardStocks.map(c => {
+    const active = selectedCompanySymbol === c.symbol, removable = !isDefaultTab(c.symbol);
+    return `<span class="co-tab ${active ? "active" : ""} ${removable ? "removable" : ""}" data-symbol="${escHtml(c.symbol)}" role="tab" aria-selected="${active}" title="${escHtml(c.symbol)}${removable ? " · 검색으로 추가한 종목 (×로 제거)" : ""}">
+      <button type="button" class="co-tab-btn" data-action="select">${escHtml(c.name)}</button>
+      ${removable ? `<button type="button" class="co-tab-x" data-action="remove" aria-label="${escHtml(c.name)} 탭 제거" title="탭에서 제거">×</button>` : ""}
+    </span>`;
+  }).join("");
+  el.querySelectorAll(".co-tab").forEach(tab => {
+    const symbol = tab.dataset.symbol;
+    tab.querySelector('[data-action="select"]')?.addEventListener("click", () => selectCompany(symbol));
+    tab.querySelector('[data-action="remove"]')?.addEventListener("click", e => { e.stopPropagation(); removeCompanyTab(symbol); });
+  });
 }
 
 function selectCompany(symbol) {
@@ -43,9 +67,27 @@ window.selectCompany = selectCompany;
 
 function addAndSelectCompany(symbol, name) {
   if (!dashboardStocks.some(c => c.symbol === symbol)) {
-    dashboardStocks.push({ symbol, name });
+    extraDashboardStocks.push({ symbol, name: name || symbol });
+    if (extraDashboardStocks.length > EXTRA_TABS_MAX) extraDashboardStocks.shift();   // 가장 오래된 추가 탭부터 밀어낸다
+    saveExtraTabs();
   }
   selectCompany(symbol);
+}
+
+function removeCompanyTab(symbol) {
+  if (isDefaultTab(symbol)) return;
+  const idx = extraDashboardStocks.findIndex(c => c.symbol === symbol);
+  if (idx < 0) return;
+  extraDashboardStocks.splice(idx, 1);
+  saveExtraTabs();
+  if (selectedCompanySymbol === symbol) {
+    // 제거한 탭이 선택 중이면 바로 왼쪽 탭(없으면 첫 탭)으로
+    const all = [...DEFAULT_DASHBOARD_STOCKS, ...extraDashboardStocks];
+    const next = all[Math.min(DEFAULT_DASHBOARD_STOCKS.length + idx, all.length) - 1] || all[0];
+    selectCompany(next.symbol);
+    return;
+  }
+  renderCompanyTabs();
 }
 
 // 종목 펀더멘털 조회 → 대시보드 렌더. 커밋 c66fa00(통화 단위 처리) 에서 실수로 삭제돼 ReferenceError 가 났던 함수(6-50 복원).
@@ -120,6 +162,25 @@ function dartOpTable(d) {
   </div>`;
 }
 
+// EPS·BPS·PER·PBR 근거(6-52). DART 계산값이 우선이고 Yahoo 는 폴백 — 어느 쪽인지 카드 라벨과 밸류에이션 아래 줄에 밝힌다.
+function valuationTag(d) {
+  if (!d.valuationSource) return "";
+  return d.valuationSource.startsWith("DART") ? " · DART 계산" : " · Yahoo";
+}
+function valuationBasisLine(d) {
+  const notes = (d.valuationNotes || []).map(n => `<div>· ${escHtml(n)}</div>`).join("");
+  if (!d.valuationSource) {
+    return `<div class="text-xs mt-2" style="color:var(--text-mute);">EPS·BPS·PER·PBR: DART 재무제표(국내 상장사)로 계산하고, 없으면 Yahoo 값을 씁니다. 이 종목은 두 출처 모두 값이 없습니다.${notes}</div>`;
+  }
+  const dart = d.valuationSource.startsWith("DART");
+  return `<div class="text-xs mt-2" style="color:var(--text-mute);line-height:1.5;">
+    <div><b>근거</b>: ${escHtml(d.valuationSource)}${dart ? " · PER·PBR 은 현재가 ÷ EPS·BPS" : " (trailing/forward)"}</div>
+    ${d.valuationShares ? `<div>· ${escHtml(d.valuationShares)}</div>` : ""}
+    ${dart && d.yahooValuation && (d.yahooValuation.per != null || d.yahooValuation.pbr != null) ? `<div>· 참고 Yahoo: PER ${d.yahooValuation.per != null ? d.yahooValuation.per.toFixed(2) + "x" : "N/A"}${d.yahooValuation.perBasis === "forward" ? "(전망)" : ""} · PBR ${d.yahooValuation.pbr != null ? d.yahooValuation.pbr.toFixed(2) + "x" : "N/A"}</div>` : ""}
+    ${notes}
+  </div>`;
+}
+
 function renderCompanyData(d) {
   const pctColor = (d.chg ?? 0) >= 0 ? "var(--green)" : "var(--red)";
   const sign = (d.chg ?? 0) >= 0 ? "+" : "";
@@ -128,8 +189,8 @@ function renderCompanyData(d) {
   document.getElementById("co-overview").innerHTML = [
     { label:"현재가", value:nfmt(d.price, priceUnit(d)), sub:d.chg!=null?`${sign}${d.chg}%`:"", subColor:pctColor },
     { label:"시가총액", value:capBig(d), sub:d.name||"" },
-    { label:"EPS", value:nfmt(d.eps, priceUnit(d)), sub:`PER ${d.per!=null?d.per.toFixed(1)+"x":"N/A"}` },
-    { label:"BPS", value:nfmt(d.bps, priceUnit(d)), sub:`PBR ${d.pbr!=null?d.pbr.toFixed(2)+"x":"N/A"}` },
+    { label:`EPS${valuationTag(d)}`, value:nfmt(d.eps, priceUnit(d)), sub:`PER ${d.per!=null?d.per.toFixed(1)+"x":"N/A"}${d.perBasis==="forward"?" (전망)":""}` },
+    { label:`BPS${valuationTag(d)}`, value:nfmt(d.bps, priceUnit(d)), sub:`PBR ${d.pbr!=null?d.pbr.toFixed(2)+"x":"N/A"}` },
   ].map(c => `
     <div class="card" style="padding:16px;">
       <div class="text-xs" style="color:var(--text-mute);">${c.label}</div>
@@ -150,7 +211,7 @@ function renderCompanyData(d) {
       <span style="font-size:12px; color:var(--text-dim);">${k}</span>
       <span style="font-size:13px; font-weight:600;">${v}</span>
     </div>
-  `).join("");
+  `).join("") + valuationBasisLine(d);
 
   // 수익성
   const profRows = [

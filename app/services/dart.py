@@ -58,6 +58,11 @@ _BS_TARGETS = {
     "assets": ("자산총계",),
     "liabilities": ("부채총계",),
     "equity": ("자본총계",),
+    # BPS 는 지배기업 소유주 귀속 자본으로 계산한다(비지배지분 제외). 없으면 자본총계로 폴백하고 라벨에 밝힌다.
+    # 실측 표기(2026 반기, CFS): 아모레 "지배기업의 소유주에게 귀속되는 자본", SK하이닉스 "지배기업의 소유지분",
+    # NAVER "지배기업 소유주지분", 현대차 "지배기업소유주지분". _norm 이 공백을 떼므로 공백 없는 형태로 적는다.
+    "equityOwners": ("지배기업의소유주에게귀속되는자본", "지배기업소유주지분", "지배기업의소유주지분", "지배기업의소유지분", "지배기업소유지분",
+                     "지배기업소유주귀속자본", "지배주주지분", "지배기업의소유주에게귀속되는자본합계", "지배기업소유주에게귀속되는자본"),
     "cash": ("현금및현금성자산", "현금및현금성자산등"),
 }
 _IS_TARGETS = {
@@ -94,6 +99,30 @@ def stock_code_of(symbol: str) -> str | None:
             s = s[: -len(suffix)]
             break
     return s if re.fullmatch(r"\d{6}", s) else None
+
+
+def base_stock_code(code: str) -> tuple[str, bool]:
+    """우선주 코드 → 보통주 코드. KRX 보통주는 끝자리 0, 우선주는 5·7·9 등(005935 삼성전자우, 005937 삼성전자2우B).
+    DART 고유번호는 회사(보통주) 단위라 우선주 코드는 매핑에 없다. (보통주 코드, 우선주 여부) 를 돌려준다."""
+    c = str(code or "")
+    if re.fullmatch(r"\d{6}", c) and c[-1] != "0":
+        return c[:5] + "0", True
+    return c, False
+
+
+async def resolve_corp(symbol: str) -> tuple[str, str, bool] | None:
+    """symbol → (DART 고유번호, 조회에 쓴 종목코드, 우선주 여부). 우선주면 보통주 코드로 회사를 찾는다. 없으면 None."""
+    code = stock_code_of(symbol)
+    if not code or not is_enabled():
+        return None
+    mapping = await corp_code_map()
+    corp = mapping.get(code)
+    if corp:
+        return corp, code, False
+    base, preferred = base_stock_code(code)
+    if preferred and mapping.get(base):
+        return mapping[base], base, True
+    return None
 
 
 def _norm(name: str) -> str:
@@ -179,7 +208,8 @@ def _parse_statements(rows: list[dict], reprt_code: str = "") -> dict:
     """
     annual = reprt_code == "11011"
     out: dict[str, int | None] = {k: None for k in (*_BS_TARGETS, *_IS_TARGETS)}
-    extra: dict[str, object] = {"opBasis": None, "opCumulative": None, "periodName": None}
+    extra: dict[str, object] = {"opBasis": None, "opCumulative": None, "periodName": None,
+                                "netCumulative": None, "netPrevCumulative": None}   # EPS(TTM) 계산용 — 당기 누적 · 전기 동기간 누적
     for row in rows:
         div = str(row.get("sj_div") or "").upper()
         name = _norm(row.get("account_nm"))
@@ -200,17 +230,19 @@ def _parse_statements(rows: list[dict], reprt_code: str = "") -> dict:
                         extra["opBasis"] = basis
                         extra["opCumulative"] = _amount(row, "thstrm_add_amount")
                         extra["periodName"] = str(row.get("thstrm_nm") or "").strip() or None
+                    if key == "netIncome" and value is not None:
+                        # 사업보고서는 thstrm_amount 가 연간이라 누적 칸이 비어 있다 → 연간 금액을 누적으로 쓴다
+                        extra["netCumulative"] = value if annual else _amount(row, "thstrm_add_amount")
+                        extra["netPrevCumulative"] = _amount(row, "frmtrm_amount") if annual else _amount(row, "frmtrm_add_amount")
     return {**out, **extra}
 
 
 async def fetch_financials(symbol: str, year: int, quarter: int) -> dict | None:
     """한 보고서의 재무상태표·영업이익. 연결(CFS)을 먼저 보고 없으면 별도(OFS)."""
-    code = stock_code_of(symbol)
-    if not code or not is_enabled():
+    resolved = await resolve_corp(symbol)
+    if not resolved:
         return None
-    corp = (await corp_code_map()).get(code)
-    if not corp:
-        return None
+    corp, code, preferred = resolved
     reprt = REPRT_CODES[quarter]
     for fs_div in ("CFS", "OFS"):
         try:
@@ -226,7 +258,7 @@ async def fetch_financials(symbol: str, year: int, quarter: int) -> dict | None:
             continue
         return {
             **parsed,
-            "corpCode": corp, "stockCode": code,
+            "corpCode": corp, "stockCode": code, "isPreferred": preferred,
             "year": year, "quarter": quarter,
             "reportName": _REPRT_NAME.get(reprt, reprt),
             "fsDiv": "연결" if fs_div == "CFS" else "별도",
@@ -245,7 +277,8 @@ async def latest_financials(symbol: str, lookback: int = 5) -> dict | None:
     code = stock_code_of(symbol)
     if not code:
         return None
-    cache_key = f"dart:fin:v1:{code}"
+    code = base_stock_code(code)[0]          # 우선주는 보통주(회사) 캐시를 공유
+    cache_key = f"dart:fin:v2:{code}"
     cached = await cache_get(cache_key, max_age_hours=FIN_TTL_HOURS)
     if cached is not None:
         return cached or None
@@ -290,6 +323,7 @@ async def quarterly_operating_income(symbol: str, periods: int = 4) -> list[dict
     code = stock_code_of(symbol)
     if not code:
         return None
+    code = base_stock_code(code)[0]
     cache_key = f"dart:opseries:v1:{code}:{periods}"
     cached = await cache_get(cache_key, max_age_hours=FIN_TTL_HOURS)
     if cached is not None:
@@ -344,3 +378,116 @@ async def quarterly_operating_income(symbol: str, periods: int = 4) -> list[dict
     series.reverse()                         # 과거 → 최근
     await cache_set(cache_key, {"series": series})
     return series or None
+
+
+# ── 발행주식수 · 주당 지표 (EPS·BPS, 6-52) ─────────────────────────────────────
+# Yahoo quoteSummary 는 국내 종목(특히 우선주)의 trailingEps/bookValue/priceToBook 을 비워 보낸다(2026-10-13 아모레퍼시픽·우 실측).
+# DART 원문으로 직접 계산한다: EPS = 최근 4개 분기 순이익 합(TTM) ÷ 발행주식 총수(보통주+종류주),
+# BPS = 지배기업 소유주 귀속 자본(없으면 자본총계) ÷ 발행주식 총수. PER·PBR 은 호출 시점 현재가로 나눈다.
+# 우선주는 회사(보통주) 실적을 그대로 쓰므로 라벨에 "보통주 기준 회사 실적 ÷ 전체 주식수" 를 밝힌다.
+_SE_KIND = {"보통주": "common", "종류주": "preferred", "우선주": "preferred", "합계": "total"}
+
+
+def _parse_shares(rows: list[dict]) -> dict | None:
+    """stockTotqySttus 행 → {common, preferred, total}. 발행주식 총수(istc_totqy) 기준. 합계가 없으면 보통+종류주."""
+    out: dict[str, int] = {}
+    for row in rows:
+        kind = _SE_KIND.get(_norm(row.get("se")))
+        if not kind:
+            continue
+        value = _amount(row, "istc_totqy")
+        if value is not None and kind not in out:
+            out[kind] = value
+    if "total" not in out and ("common" in out or "preferred" in out):
+        out["total"] = out.get("common", 0) + out.get("preferred", 0)
+    return out if out.get("total") else None
+
+
+async def shares_outstanding(symbol: str, year: int, quarter: int) -> dict | None:
+    """보고서 기준 발행주식수(DART stockTotqySttus). 같은 보고서가 없으면 None — 다른 기간 값으로 메우지 않는다."""
+    resolved = await resolve_corp(symbol)
+    if not resolved:
+        return None
+    corp, code, _ = resolved
+    cache_key = f"dart:shares:v1:{code}:{year}Q{quarter}"
+    cached = await cache_get(cache_key, max_age_hours=FIN_TTL_HOURS * 30)
+    if cached is not None:
+        return cached or None
+    try:
+        body = await _get_json("stockTotqySttus.json", {"corp_code": corp, "bsns_year": str(year), "reprt_code": REPRT_CODES[quarter]})
+    except DartError as exc:
+        if exc.status == "013":
+            await cache_set(cache_key, {})
+            return None
+        raise
+    parsed = _parse_shares(body.get("list") or [])
+    result = {**parsed, "year": year, "quarter": quarter, "reportName": _REPRT_NAME[REPRT_CODES[quarter]],
+              "source": "금융감독원 전자공시(DART) stockTotqySttus"} if parsed else {}
+    await cache_set(cache_key, result)
+    return result or None
+
+
+def ttm_net_income(latest: dict, prev_annual: dict | None) -> tuple[int | None, str]:
+    """최근 4개 분기 순이익. 사업보고서면 연간 그대로, 분·반기면 당기 누적 + 전기 연간 − 전기 동기간 누적.
+    셋 중 하나라도 없으면 (None, 사유) — 연환산 같은 추정은 하지 않는다."""
+    if latest.get("quarter") == 4:
+        ni = latest.get("netIncome")
+        return (ni, "연간") if ni is not None else (None, "순이익 없음")
+    cum, prev_cum = latest.get("netCumulative"), latest.get("netPrevCumulative")
+    prev_year = (prev_annual or {}).get("netIncome")
+    if cum is None:
+        return None, "당기 누적 순이익 없음"
+    if prev_year is None or prev_cum is None:
+        return None, "전기 사업보고서 또는 전기 동기간 누적 없음"
+    return cum + prev_year - prev_cum, "최근 4개 분기 합산(TTM)"
+
+
+async def per_share_metrics(symbol: str) -> dict | None:
+    """EPS·BPS 와 근거 라벨(가격 무관 → 캐시). 호출자가 현재가로 PER·PBR 을 만든다.
+    반환 {eps, bps, epsBasis, bpsBasis, shares, sharesBasis, period, fsDiv, isPreferred, source, notes[]} 또는 None."""
+    if not is_enabled() or not is_krx(symbol):
+        return None
+    code = stock_code_of(symbol)
+    if not code:
+        return None
+    base, preferred = base_stock_code(code)
+    cache_key = f"dart:pershare:v1:{base}"
+    cached = await cache_get(cache_key, max_age_hours=FIN_TTL_HOURS)
+    if cached is not None:
+        return ({**cached, "isPreferred": preferred} if cached else None)
+    try:
+        latest = await latest_financials(symbol)
+        if not latest:
+            await cache_set(cache_key, {})
+            return None
+        year, quarter = int(latest["year"]), int(latest["quarter"])
+        prev_annual = None if quarter == 4 else await fetch_financials(symbol, year - 1, 4)
+        shares = await shares_outstanding(symbol, year, quarter)
+    except (DartError, httpx.HTTPError) as exc:
+        logger.warning("DART 주당 지표 조회 실패 %s: %s", symbol, exc)
+        return None
+    notes: list[str] = []
+    if not shares:
+        await cache_set(cache_key, {})
+        return None
+    total = int(shares["total"])
+    ni, ni_basis = ttm_net_income(latest, prev_annual)
+    eps = round(ni / total, 2) if ni is not None and total > 0 else None
+    if eps is None:
+        notes.append(f"EPS 계산 불가: {ni_basis}")
+    equity = latest.get("equityOwners")
+    bps_basis = "지배기업 소유주 귀속 자본"
+    if equity is None:
+        equity, bps_basis = latest.get("equity"), "자본총계(비지배지분 포함)"
+    bps = round(equity / total, 2) if equity is not None and total > 0 else None
+    if bps is None:
+        notes.append("BPS 계산 불가: 자본 항목 없음")
+    period = f"{latest['year']} {latest['reportName']}"
+    shares_basis = f"발행주식 총수 {total:,}주 (보통주 {shares.get('common', 0):,} + 종류주 {shares.get('preferred', 0):,}, {shares['reportName']} 기준)"
+    result = {
+        "eps": eps, "bps": bps, "epsBasis": ni_basis, "bpsBasis": bps_basis, "shares": total, "sharesBasis": shares_basis,
+        "period": period, "fsDiv": latest.get("fsDiv"), "stockCode": latest.get("stockCode"), "notes": notes,
+        "source": "DART 계산 · fnlttSinglAcntAll + stockTotqySttus",
+    }
+    await cache_set(cache_key, result)
+    return {**result, "isPreferred": preferred}

@@ -182,7 +182,7 @@ async def get_fundamentals(symbol: str) -> dict:
     """
     # v4: 통화 필드(currency/priceUnit/...)와 DART 블록(assets/dartOpSeries/...)이 추가돼
     # 예전 캐시는 그 값이 없다. 키를 올려 구버전 캐시가 그대로 표시되는 일을 막는다.
-    cache_key = f"fundamentals:v4:{symbol}"
+    cache_key = f"fundamentals:v5:{symbol}"   # v5: DART 계산 EPS·BPS·PER·PBR(valuationSource) 추가(6-52)
     cached = await cache_get(cache_key, max_age_hours=6)
     if cached is not None:
         return cached
@@ -329,6 +329,36 @@ async def get_fundamentals(symbol: str) -> dict:
     return fundamentals
 
 
+def _apply_dart_valuation(fundamentals: dict, ps: dict | None) -> None:
+    """EPS·BPS·PER·PBR 은 DART 계산값을 **우선**하고 Yahoo 값은 폴백으로만 쓴다(6-52, 사용자 결정).
+    Yahoo 값은 yahooValuation 에 보존해 화면이 '어느 값을 썼는지' 밝힐 수 있게 한다."""
+    yahoo = {k: fundamentals.get(k) for k in ("eps", "bps", "per", "pbr")}
+    fundamentals["yahooValuation"] = {**yahoo, "perBasis": fundamentals.get("perBasis")}
+    price = fundamentals.get("price")
+    if not ps or (ps.get("eps") is None and ps.get("bps") is None):
+        fundamentals["valuationSource"] = ("Yahoo Finance quoteSummary" if any(v is not None for v in yahoo.values()) else None)
+        fundamentals["valuationNotes"] = list((ps or {}).get("notes") or [])
+        return
+    eps, bps = ps.get("eps"), ps.get("bps")
+    per = round(float(price) / eps, 2) if price and eps and eps > 0 else None
+    pbr = round(float(price) / bps, 2) if price and bps and bps > 0 else None
+    notes = list(ps.get("notes") or [])
+    if eps is not None and eps <= 0:
+        notes.append("순이익이 0 이하(적자)라 PER 을 계산하지 않습니다")
+    if ps.get("isPreferred"):
+        notes.append(f"우선주: 보통주({ps.get('stockCode')}) 기준 회사 실적 ÷ 전체 주식수로 계산한 값이라 보통주 PER·PBR 과 의미가 다릅니다")
+    # 항목별로 DART 값이 있으면 DART(PER·PBR 도 DART 기준으로 다시 계산), 없으면 그 항목만 Yahoo 폴백
+    fundamentals.update({
+        "eps": eps if eps is not None else yahoo["eps"],
+        "per": per if eps is not None else yahoo["per"],      # DART EPS 가 적자면 per=None(의도)
+        "bps": bps if bps is not None else yahoo["bps"],
+        "pbr": pbr if bps is not None else yahoo["pbr"],
+        "perBasis": "dart_ttm" if eps is not None else fundamentals.get("perBasis"),
+        "valuationSource": f"DART 계산 · {ps.get('period')} {ps.get('fsDiv') or ''} · EPS {ps.get('epsBasis')} ÷ 발행주식수 · BPS {ps.get('bpsBasis')} ÷ 발행주식수",
+        "valuationShares": ps.get("sharesBasis"), "valuationNotes": notes, "isPreferred": bool(ps.get("isPreferred")),
+    })
+
+
 async def _overlay_dart(fundamentals: dict, symbol: str, eok, fin_cur: str | None) -> None:
     """DART 재무제표를 fundamentals 에 덮어쓴다. 실패는 조용히 무시한다(화면을 막지 않는다)."""
     from app.services import dart
@@ -339,20 +369,28 @@ async def _overlay_dart(fundamentals: dict, symbol: str, eok, fin_cur: str | Non
     except Exception as exc:                      # 외부 의존이므로 화면을 막지 않는다
         logger.warning("DART 보강 실패 %s: %s", symbol, exc)
         return
+    # 주당 지표는 보고서 유무와 별개로 시도한다(실패해도 Yahoo 폴백)
+    try:
+        ps = await dart.per_share_metrics(symbol)
+    except Exception as exc:
+        logger.warning("DART 주당 지표 실패 %s: %s", symbol, exc)
+        ps = None
+    _apply_dart_valuation(fundamentals, ps)
     if not d:
         return
     period = f"{d['year']} {d['reportName']}"
+    pref = f" · 보통주({d.get('stockCode')}) 기준 회사 재무제표" if d.get("isPreferred") else ""
     if d.get("assets") is not None:
         fundamentals.update({
             "assets": eok(d.get("assets")), "equity": eok(d.get("equity")),
             "liabilities": eok(d.get("liabilities")), "cash": eok(d.get("cash")),
-            "balanceSource": f"DART {d['fsDiv']} · {period}",
+            "balanceSource": f"DART {d['fsDiv']} · {period}{pref}",
         })
     if d.get("operatingIncome") is not None:
         fundamentals.update({
             "dartOperatingIncome": eok(d.get("operatingIncome")),
             "opSource": f"DART {d['fsDiv']} · {period}"
-                       + (f" · {d['opBasis']}" if d.get("opBasis") else ""),
+                       + (f" · {d['opBasis']}" if d.get("opBasis") else "") + pref,
         })
     # 분기 영업이익 시계열 — Yahoo 가 비워 보내는 op 행을 DART 3개월 금액으로 채운다.
     try:

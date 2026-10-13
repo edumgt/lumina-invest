@@ -525,6 +525,16 @@
     }
     .ssm-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
     .ssm-results { max-height: 340px; overflow-y: auto; }
+    /* #company-dashboard 종목 탭 (6-51): 추가 종목은 마우스 오버 시 × 로 제거 */
+    .co-tab { position: relative; display: inline-flex; align-items: center; border-radius: 20px; border: 1px solid var(--border); background: var(--surf); color: var(--text-dim); transition: all .15s; }
+    .co-tab.active { border-color: var(--accent); background: var(--accent); color: #fff; }
+    .co-tab-btn { padding: 5px 14px; border: 0; background: transparent; color: inherit; font-size: 12px; font-weight: 600; cursor: pointer; border-radius: 20px; }
+    .co-tab.removable .co-tab-btn { padding-right: 22px; }
+    .co-tab-x { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); width: 16px; height: 16px; line-height: 14px; border-radius: 50%; border: 0; background: transparent; color: inherit; font-size: 13px; cursor: pointer; opacity: 0; transition: opacity .15s, background .15s; padding: 0; }
+    .co-tab:hover .co-tab-x, .co-tab:focus-within .co-tab-x { opacity: .75; }
+    .co-tab-x:hover { opacity: 1 !important; background: rgba(0,0,0,.12); }
+    .co-tab.active .co-tab-x:hover { background: rgba(255,255,255,.25); }
+    @media (hover: none) { .co-tab .co-tab-x { opacity: .6; } }   /* 터치 기기는 항상 표시 */
     .ssm-item {
       display: flex;
       align-items: center;

@@ -1641,3 +1641,28 @@ st 공개 조회 계약(`rows[].trade_date`, `nextOffset`)은 라이브 응답�
   `selectCompany`) 은 남아 있었다. 화면 진입·종목 탭 클릭·종목 검색 선택이 모두 실패(개요 카드 비어 있음).
 - 조치: `addAndSelectCompany` 아래에 함수 복원. 비교 화면과 같은 `companyFundCache` 사용, `data_status != complete` 는 캐시 안 함, 실패 시 개요 카드에 오류 문구 + 하위 섹션 비움,
   응답 도착 전에 다른 종목을 고르면 렌더 생략. 배포는 `deploy/fd-strategy-settings.sh` FE 목록에 `company.js` 추가(사용자 실행).
+
+### 6-51. 2026-10-13 #company-dashboard 종목 탭 — 검색 추가 종목 유지 + 마우스 오버 × 제거 (사용자 요청)
+
+- `public/js/company.js`: 기본 5종목(`DEFAULT_DASHBOARD_STOCKS`, × 없음) + 추가 종목(`extraDashboardStocks`, localStorage `company-dashboard-extra-tabs`, 최대 20개,
+  초과 시 가장 오래된 것부터 제거). 탭은 `<span class="co-tab">` 안에 선택 버튼 + `× 버튼(.co-tab-x)`. 제거한 탭이 선택 중이면 왼쪽 탭(없으면 첫 탭)으로 이동.
+  `public/css/app.css` `.co-tab*` — 호버/포커스 시 × 표시, 터치 기기는 항상 표시.
+
+### 6-52. 2026-10-13 EPS·BPS·PER·PBR 을 Yahoo 대신 DART 재무제표로 계산(우선), Yahoo 는 항목별 폴백 (사용자 결정)
+
+**배경**: 아모레퍼시픽우(090435) 화면의 EPS·BPS·PER·PBR N/A 는 DART 지연이 아니라 Yahoo quoteSummary 가 국내 우선주(보통주도 상당수)의
+`trailingEps/bookValue/priceToBook` 을 비워 보내기 때문이었다. DART 블록도 우선주 코드가 고유번호 매핑(보통주 기준)에 없어 붙지 않았다.
+
+**조치** (`app/services/dart.py`, `app/services/stock.py`, `public/js/company.js`):
+- `base_stock_code`(끝자리≠0 → 보통주 코드) · `resolve_corp`(우선주는 보통주 회사로) — `fetch_financials`/`latest_financials`/`quarterly_operating_income` 이 사용,
+  캐시 키를 회사 코드로 통일(`dart:fin:v2`). 보고서 결과에 `isPreferred`, 화면 출처에 "보통주(코드) 기준 회사 재무제표".
+- `_parse_statements`: `equityOwners`(지배기업 소유주 귀속 자본, 실측 4개사 표기 변형 수록), `netCumulative`/`netPrevCumulative`(당기 누적·전기 동기간 누적; 사업보고서는 연간/전기 연간).
+- `shares_outstanding(symbol, year, quarter)`: DART `stockTotqySttus`(se=보통주/종류주/합계, `istc_totqy`) — 같은 보고서 기준, 30일 캐시.
+- `ttm_net_income`: 사업보고서=연간, 분·반기=당기 누적 + 전기 연간 − 전기 동기간 누적. 셋 중 하나라도 없으면 EPS 미계산(연환산 추정 안 함).
+- `per_share_metrics(symbol)`: EPS=TTM 순이익 ÷ 발행주식 총수(보통+종류), BPS=지배주주 자본(없으면 자본총계, 라벨에 표시) ÷ 발행주식 총수. 가격 무관 → 24h 캐시 `dart:pershare:v1`.
+- `stock._apply_dart_valuation`: DART 값이 있는 항목은 DART(PER·PBR 은 현재가로 재계산, 적자면 PER None), 없는 항목만 Yahoo 폴백. `valuationSource`·`valuationShares`·`valuationNotes`·
+  `yahooValuation`(참고용 보존)·`isPreferred`·`perBasis=dart_ttm`. fundamentals 캐시 키 v4→v5.
+- FE: EPS/BPS 카드 라벨에 "· DART 계산"/"· Yahoo", 밸류에이션 카드 아래 근거 줄(기간·구분·발행주식수·참고 Yahoo 값·우선주 주의).
+- 실측(fd 컨테이너에서 새 모듈로 직접 계산, 2026 반기 연결): 아모레퍼시픽(우 동일) EPS 4,302.55 / BPS 80,709.92, 삼성전자 EPS 22,668.85 / BPS 84,989.40,
+  SK하이닉스 EPS 227,461 / BPS 368,587.56. 이 검증으로 fd data_cache 에 `dart:fin:v2/shares/pershare` 키가 미리 적재됐다.
+- 테스트 `tests/test_dart_per_share.py` 17건. 전체 통과. 배포는 `deploy/fd-strategy-settings.sh`(dart.py·stock.py·company.js·app.css 포함, 사용자 실행).

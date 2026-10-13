@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# 6-47 배포: GNB 「전략설정」 + 6-48 완성도 위젯 제거 + 6-49 실주문 주체(봇/사람) 구분·IP 기록(alembic 0010) + 6-50 company.js fetchAndRenderCompany 복원. lumina-invest 루트에서 실행.
+# 6-47 배포: GNB 「전략설정」 + 6-48 완성도 위젯 제거 + 6-49 실주문 주체(봇/사람) 구분·IP 기록(alembic 0010) + 6-50 company.js 복원 + 6-51 종목 탭 유지/× 제거 + 6-52 DART 계산 EPS·BPS·PER·PBR. lumina-invest 루트에서 실행.
 # 호스트 소스 갱신 + 컨테이너 docker cp + fin-ai-app / celery-worker / celery-beat 재시작 (python 모듈이 바뀌어 워커도 재시작).
 # 사이클 중 재시작을 피하려면 장 마감 후 또는 사이클 직후(beat 로그 "quant_auto_trade_cycle 완료" 직후)에 실행.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 K=fd.edumgt.co.kr.pem; H=ubuntu@43.201.229.188
-PY="app/config.py app/main.py app/services/strategy_settings.py app/services/aggressive_mode.py app/services/auto_trade.py app/routes/strategy_settings.py app/models/trading.py app/lib/request_meta.py app/routes/kis_monitor.py app/routes/stocks.py app/routes/rebalance.py app/services/rebalance.py alembic/versions/0010_live_orders_origin.py"
-FE="public/app.html public/login.html public/register.html public/js/core.js public/js/main.js public/js/kis_monitor.js public/js/strategy_settings.js public/js/company.js"
+PY="app/config.py app/main.py app/services/strategy_settings.py app/services/aggressive_mode.py app/services/auto_trade.py app/routes/strategy_settings.py app/models/trading.py app/lib/request_meta.py app/routes/kis_monitor.py app/routes/stocks.py app/routes/rebalance.py app/services/rebalance.py alembic/versions/0010_live_orders_origin.py app/services/dart.py app/services/stock.py"
+FE="public/app.html public/login.html public/register.html public/js/core.js public/js/main.js public/js/kis_monitor.js public/js/strategy_settings.js public/js/company.js public/css/app.css"
 REMOVED="public/js/completion.js public/css/completion.css"   # 6-48: 완성도 위젯 파일 삭제 (호스트 소스 + 컨테이너)
-TESTS="tests/test_strategy_settings.py tests/test_kis_monitor_route.py tests/test_manual_kis_order.py tests/test_rebalance_kis.py"
+TESTS="tests/test_strategy_settings.py tests/test_kis_monitor_route.py tests/test_manual_kis_order.py tests/test_rebalance_kis.py tests/test_dart_per_share.py tests/test_dart_financials.py"
 tar czf - $PY $FE $TESTS deploy/fd-strategy-settings.sh | ssh -i "$K" -o StrictHostKeyChecking=no "$H" "
   set -e; cd ~/lumina-invest && tar xzf - && echo 'host source updated'
   tar cf - $PY $FE | sudo -n docker cp - fin-ai-app:/app/
