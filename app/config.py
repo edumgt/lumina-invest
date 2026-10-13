@@ -163,6 +163,12 @@ class Settings(BaseSettings):
     QUANT_AGGRESSIVE_TAKE_PROFIT_PCT: float = 1.5     # 보유 평균단가 대비 +N% 면 전량 매도
     QUANT_AGGRESSIVE_STOP_LOSS_PCT: float = 1.0       # 보유 평균단가 대비 -N% 면 전량 매도
     QUANT_AGGRESSIVE_ORDER_TYPE: str = "MARKET"       # 게이트웨이 실주문 유형(체결 우선). 비우면 STOCK_COIN_TRADE_ORDER_TYPE
+    QUANT_AGGRESSIVE_WEAK_SELL_SCORE: int = -1        # 보유분 약세 매도 임계 점수(5분봉 score 가 이 값 이하면 sell_ratio 만큼 매도). -1 은 MA5<MA20 하나로도 매도
+    # ── 기본 모드(일봉) 익절·손절: 0 이면 사용 안 함(스펙 exit 규칙·일손실 한도만). 공격 모드에서는 QUANT_AGGRESSIVE_* 가 쓰인다 ──
+    QUANT_BASE_TAKE_PROFIT_PCT: float = 0.0
+    QUANT_BASE_STOP_LOSS_PCT: float = 0.0
+    # 위 QUANT_*/MARKET_DATA_SOURCE/STOCK_COIN_TRADE_ORDER_TYPE/KIS_PAPER_BATCH_* 는 「전략설정」 화면(app/services/strategy_settings.py)이
+    # data_cache(quant:strategy_settings) 의 값으로 매 사이클 덮어쓴다. env 는 기본값이고 화면 저장값이 우선한다.
 
     # ── KIS 자격증명 (서버 관리 — 사용자는 화면에서 입력하지 않는다, app/services/kis_credentials.py) ──
     # Secrets Manager 시크릿 이름/ARN. JSON: {"app_key","app_secret","account_no","environment": "paper|real"}

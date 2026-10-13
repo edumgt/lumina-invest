@@ -17,6 +17,13 @@ const GNB_MENUS = {
       { key: "kis-monitor",     icon: "fa-solid fa-chart-line",            label: "KIS 모의투자결과" },
     ],
   },
+  strategy: {
+    label: "<i class='fa-solid fa-sliders'></i> 전략설정",
+    items: [
+      { key: "strategy-settings",    icon: "fa-solid fa-sliders",      label: "봇 전략 · 파라미터 설정" },
+      { key: "strategy-performance", icon: "fa-solid fa-ranking-star", label: "설정별 성과" },
+    ],
+  },
   crawl: {
     label: "<i class='fa-solid fa-spider'></i> 크롤링",
     items: [
@@ -175,6 +182,8 @@ const TERMS = {
 // ── 화면별 사용법 가이드 (43개 view 전체) ────────────────────────────
 const VIEW_GUIDES = {
   "agent-chat":      { summary: "금융 지식·데이터를 학습한 AI 로보 어드바이저에게 자유롭게 투자 관련 질문을 합니다.", steps: ["궁금한 내용을 채팅창에 입력 후 전송 버튼(또는 Enter)을 누르세요.", "신용점수, 금융상품, 퀀트 전략 등 여러 주제를 한 대화에서 섞어 물어봐도 됩니다.", "AI 답변은 참고용이며, 실제 투자 결정 전 반드시 스스로 데이터를 검증하세요."], relatedTerms: ["rag", "cb_score"] },
+  "strategy-settings":    { summary: "자동매매 봇의 운영 파라미터(공격 모드·익절/손절·쿨다운·주문 유형·전략 스펙·투자금·위험관리)를 설명과 함께 보고 바꿉니다. 저장 즉시 서버에 반영되어 다음 사이클부터 적용됩니다(재시작 불필요).", steps: ["각 항목의 설명과 서버 기본값(env)을 읽고 값을 바꾸세요. 공격 모드를 끄려면 「기본 모드」 익절·손절과 전략 스펙을 먼저 정합니다.", "「저장·적용」을 누르면 설정 프로필이 새로 기록됩니다. 메모를 적어 두면 성과 표에서 구분하기 쉽습니다.", "「서버 기본값으로 초기화」는 env 덮어쓰기를 지웁니다(배치 행 값은 유지).", "헤더 배지로 배치 실행·비상 정지 상태를 확인하고, 변경 후에는 「설정별 성과」에서 결과를 비교하세요."], relatedTerms: ["ma", "rsi", "mdd", "win_rate", "position_sizing"] },
+  "strategy-performance": { summary: "설정 프로필(저장 시점)별로 봇의 가상 체결·KIS 실체결 실현손익, 승률, 거래 수, 평가액 변화를 비교합니다. 매도 시각에 적용 중이던 프로필에 손익을 귀속합니다.", steps: ["표의 한 행이 설정 프로필 하나(적용 기간)입니다. ★ 가 현재 적용 중.", "실현손익(KIS)은 FILLED 실주문 기준, 가상은 가상계좌 체결 기준입니다. 평가액 변화는 프로필 시작·종료 시점 사이클 로그의 평가액 차이입니다.", "행을 클릭하면 그 프로필의 설정값 전체를 볼 수 있습니다.", "프로필 적용 시간이 짧으면 통계가 불안정하니 최소 며칠 단위로 비교하세요."], relatedTerms: ["win_rate", "mdd", "sharpe", "cost_bps"] },
   "kis-monitor":     { summary: "KIS 모의투자(Testbed) 자동매매만 모아서 봅니다 — 배치 상태, 계좌 잔고·보유, 봇 실주문·체결률·실현손익, 3분 사이클 이력, 로그와 실거래의 정합성.", steps: ["상단 배지에서 배치 실행·공격 모드·heartbeat(beat 생존)·환경(paper) 을 확인하세요.", "「봇 실주문」 표의 상태가 FILLED 면 KIS 에 체결된 것이고 UNKNOWN/LOST/ERROR 는 응답 미수신·실패입니다.", "「정합성」 패널에 불일치가 있으면 가상 장부와 KIS 실제 보유가 다른 것이니 사유를 확인하세요.", "60초 자동 새로고침을 켜 두면 사이클(3분)마다 새 거래가 반영됩니다."], relatedTerms: ["auto_trade_cycle", "slippage", "mdd"] },
   "robo-portfolio":  { summary: "위험 성향·투자기간·투자금액을 입력하면 AI가 자산배분 비중과 추천 종목을 계산합니다.", steps: ["위험 성향(안정/중립/공격)과 투자 기간, 투자금액을 선택하세요.", "'배분 계산' 버튼을 누르면 자산군별 비중과 추천 종목이 표시됩니다.", "기대수익률·MDD는 과거 데이터 기반 추정치이며 미래 수익을 보장하지 않습니다."], relatedTerms: ["covariance_opt", "mvo", "risk_parity", "mdd", "sharpe"] },
   "robo-screening":  { summary: "패턴 인식 모델로 대표 종목들을 매수/매도/관망으로 스크리닝합니다.", steps: ["모델(RSI/이동평균/볼린저/앙상블)과 신호 필터, 최소 신뢰도를 선택하세요.", "결과 카드에서 종목별 신호·점수·근거를 확인하세요.", "신뢰도가 높다고 100% 적중을 의미하지 않으니 다른 지표와 함께 판단하세요."], relatedTerms: ["signal", "lightgbm", "rsi", "golden_cross"] },
@@ -523,7 +532,7 @@ function renderLnb(gnbKey) {
   trigger.setAttribute("aria-controls", panel.id);
   trigger.setAttribute("aria-expanded", "false");
   panel.inert = true;
-  nav.innerHTML = Object.entries(GNB_MENUS).filter(([key]) => !["agent", "company"].includes(key)).map(([key, menu]) => `
+  nav.innerHTML = Object.entries(GNB_MENUS).filter(([key]) => !["agent", "company", "strategy"].includes(key)).map(([key, menu]) => `
     <details class="offcanvas-group" data-menu-group="${key}">
       <summary class="lnb-item">${menu.label}<i class="fa-solid fa-chevron-down offcanvas-chevron"></i></summary>
       <div class="offcanvas-submenu">${menu.items.map(it => `<button type="button" class="lnb-item" data-menu-view="${it.key}"><i class="${it.icon}"></i><span>${it.label}</span></button>`).join("")}</div>
@@ -588,7 +597,7 @@ function navigate(viewKey) {
     if (active) el.setAttribute("aria-current", "page");
     else el.removeAttribute("aria-current");
   });
-  document.getElementById("gnb-more-btn").classList.toggle("active", !["agent", "company"].includes(currentGnb));
+  document.getElementById("gnb-more-btn").classList.toggle("active", !["agent", "company", "strategy"].includes(currentGnb));
 
   // Update LNB
   renderLnb(currentGnb);

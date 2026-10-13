@@ -1595,3 +1595,36 @@ st 공개 조회 계약(`rows[].trade_date`, `nextOffset`)은 라이브 응답�
 - `public/js/kis_batch_ctl.js` 신규(`initBatchControl` · `loadBatchState` · `renderBatchState`), `main.js` boot 에서 초기화 + 60초 폴링. `kis_monitor.js` 는 /monitor 응답의 `batch` 로 같은 배지를 갱신.
 - `GET /api/quant/kis/batch/status` 신규(system_status 만, /monitor 조립 없이 가볍게). `public/css/app.css` `#gnb-kis-ctl` 스타일, 900px 이하에서 버튼 숨김(배지만).
 - 테스트 36 passed. 배포 파일에 `app.css`·`main.js`·`kis_batch_ctl.js` 추가(`deploy/fd-kis-batch-control.sh`).
+
+### 6-47. 2026-10-13 GNB 「전략설정」 — 봇 파라미터 화면 설정(재시작 없이 반영) + 설정 프로필별 성과 (사용자 요청)
+
+**배경**: 삼성전자 230,000원 매도(13:57:07) 조사 → 공격 모드가 `MA5 < MA20` 하나(score -1)로도 보유분을 파는 구조였고, 둔화·전략 전환에 필요한
+값이 env(`QUANT_AGGRESSIVE_*`, 컨테이너 재시작 필요)와 배치 행(`broker_settings`, 전략·비율·위험관리) 두 곳에 흩어져 있었다. 또 공격 모드 ON 이면
+전략 스펙은 사유 문자열만 보태고 매매는 분봉 plan 이 강제한다(`auto_trade.py` forced_action). 설정을 바꾼 뒤 효과를 비교할 화면도 없었다.
+
+**조치**:
+- `app/services/strategy_settings.py` 신규. `FIELDS` 레지스트리(키·설명·범위·저장 위치 env/row, 5그룹: 운영 모드 / 공격 모드 / 기본 모드·전략 스펙 /
+  종목·투자금 / 위험관리). data_cache `quant:strategy_settings` = `{values(env 덮어쓰기), profiles[], last_run_at}`. `load_and_apply()` 가
+  `settings` 속성을 setattr 로 덮어써 워커·API 가 **재시작 없이** 다음 사이클부터 따른다(`_overridden` 집합으로 건드린 키만 복원 — 테스트 monkeypatch 보호).
+  값이 바뀔 때마다 프로필(`p1, p2…`, 적용 시각, 전체 스냅샷, 시작 시점 가상·KIS 평가액) 기록. `should_skip_cycle` — 화면 사이클 주기가 beat(env 180초)보다
+  길면 틱을 건너뛰는 방식(짧게는 불가). `attribute_trades`/`build_performance` — 가상 QUANT 주문·KIS FILLED 실주문을 시간순 평균단가법으로 처리해
+  **매도 시각의 프로필**에 실현손익·승패 귀속, 프로필 기간 평가액 변화, 최근 50 사이클 내 사이클 수.
+- `app/routes/strategy_settings.py` `GET/POST /api/quant/strategy/settings`, `POST …/reset`, `GET …/performance`. 대상은 배치(시스템) 행.
+  전략 스펙은 domain-rag-lab 합격 목록에서만 선택(422). 저장 시 감사 `quant.strategy_settings.save`.
+- `app/config.py` 신규 env: `QUANT_AGGRESSIVE_WEAK_SELL_SCORE=-1`(약세 매도 임계; `aggressive_mode.plan` 이 사용), `QUANT_BASE_TAKE_PROFIT_PCT`/
+  `QUANT_BASE_STOP_LOSS_PCT=0`(기본 모드 익절·손절 — `auto_trade._run_quant_cycle` 이 공격 모드 OFF 일 때 보유분을 전량 청산, `cycle_log.base_exits`).
+- `auto_trade.py`: `run_cycle_for_enabled_users` 가 사이클 앞에서 `load_and_apply` → 게이트 → `mark_cycle_run`; `_run_quant_cycle` 도 읽어
+  `cycle_log.settings.profile_id` 기록. forced_action 이 두 모드 모두에 적용되게 분기 정리(동작 동일).
+- FE: `core.js` GNB 그룹 `strategy`(「봇 전략 · 파라미터 설정」 `#strategy-settings`, 「설정별 성과」 `#strategy-performance`) + 헤더 탭 버튼
+  (`app.html` `data-gnb="strategy"`, 더보기에서 제외) + VIEW_GUIDES. `public/js/strategy_settings.js` 신규: 그룹별 카드에 항목 설명·서버 기본값·
+  덮어쓰기 표시·변경 표시, 공격 모드 ON/OFF 에 따라 비활성 그룹 흐림, 저장(confirm, 공격 모드 OFF 전환 경고)·초기화, 성과 표(프로필별 가상/KIS
+  매수·매도 수, 실현손익, 승률, 평가액 변화) + 행 클릭 시 설정 스냅샷. `kis_monitor.js` 사이클 그리드 비고에 **매도 사유** 표시(부수 개선).
+- 테스트: `tests/test_strategy_settings.py` 17건(검증·런타임 반영·게이트·프로필·귀속·라우트). 전체 `pytest tests --ignore=tests/e2e` 393 passed.
+  로컬에 node 가 없어 JS 는 구문 검사 못 함 — 배포 후 브라우저 콘솔 확인 필요.
+
+**둔화·전략 전환 권장 순서(화면에서)**: ① 강제 로테이션 매수 OFF, 사이클당 매수 1·매도 1, 약세 임계 -2, 쿨다운 30, 일 주문 30, 분봉 15m → 저장(메모 "둔화 1단계").
+② domain-rag-lab 에 합격 전략 등록(현재 샘플 1개뿐, universe 3·거래 0건) → 기본 모드 익절/손절·실주문 유형 MARKET 또는 시세 kis 설정 → 공격 모드 OFF + 전략 선택 저장.
+③ 「설정별 성과」에서 프로필 p1/p2 비교(최소 며칠).
+
+**배포 (미완)**: `deploy/fd-strategy-settings.sh` — 사용자가 직접 실행(에이전트 배포 명령은 분류기에 막힘). Python 모듈 변경이라 app·worker·beat 모두 재시작.
+배포 후 `#strategy-settings` 가 404/빈 화면이면 `app.html` 이 이미지에 구워진 복사본과 다른지(`docker cp` 반영 여부) 확인.

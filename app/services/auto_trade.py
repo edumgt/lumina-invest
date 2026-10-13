@@ -32,6 +32,7 @@ from app.services import kis_credentials
 from app.services.brokers import stock_coin_trade_gateway as gateway
 from app.services.data_cache import cache_get, cache_set
 from app.services import aggressive_mode
+from app.services import strategy_settings
 
 logger = logging.getLogger(__name__)
 
@@ -761,6 +762,9 @@ async def _run_quant_cycle(user_id: str = "quant_system") -> None:
         return  # PostgreSQL 미연결 시 스킵
 
     uid = _resolve_user_id(user_id)
+    # 전략설정 화면 값(data_cache) 을 settings 에 반영 — 워커 재시작 없이 다음 사이클부터 적용된다
+    settings_doc = await strategy_settings.load_and_apply()
+    profile = strategy_settings.current_profile(settings_doc) or {}
 
     async with session_factory() as db:
         # 가상계좌 idempotent 초기화
@@ -898,9 +902,32 @@ async def _run_quant_cycle(user_id: str = "quant_system") -> None:
                                        "take_profit_pct": app_settings.QUANT_AGGRESSIVE_TAKE_PROFIT_PCT,
                                        "stop_loss_pct": app_settings.QUANT_AGGRESSIVE_STOP_LOSS_PCT}
 
+        # ── 기본 모드 익절·손절(전략설정 QUANT_BASE_*): 공격 모드 OFF 일 때 보유분을 시그널과 무관하게 전량 청산 ──
+        if not aggressive:
+            base_tp = float(getattr(app_settings, "QUANT_BASE_TAKE_PROFIT_PCT", 0) or 0)
+            base_sl = float(getattr(app_settings, "QUANT_BASE_STOP_LOSS_PCT", 0) or 0)
+            if base_tp > 0 or base_sl > 0:
+                base_exits: dict[str, str] = {}
+                for p in (await db.execute(select(Portfolio).where(Portfolio.user_id == uid, Portfolio.book == PORTFOLIO_BOOK_QUANT))).scalars().all():
+                    price_now, avg = price_map.get(p.symbol), float(p.avg_price or 0)
+                    if p.quantity <= 0 or not price_now or not avg:
+                        continue
+                    pnl = (price_now / avg - 1) * 100
+                    if base_tp > 0 and pnl >= base_tp:
+                        base_exits[p.symbol] = f"기본 모드 익절 {pnl:+.2f}% ≥ +{base_tp:g}%"
+                    elif base_sl > 0 and pnl <= -base_sl:
+                        base_exits[p.symbol] = f"기본 모드 손절 {pnl:+.2f}% ≤ -{base_sl:g}%"
+                for sym, note in base_exits.items():
+                    forced_action[sym] = {"action": "매도", "ratio": 1.0, "note": note}
+                    if sym not in target_symbols and sym in stock_map:
+                        target_symbols.append(sym)
+                if base_exits:
+                    cycle_log["base_exits"] = base_exits
+
         cycle_log["settings"] = {
             "mode": mode,
             "aggressive": aggressive,
+            "profile_id": profile.get("id") or "",
             "symbol_source": symbol_source,
             "strategy": strategy_log,
             "symbols": target_symbols,
@@ -986,15 +1013,14 @@ async def _run_quant_cycle(user_id: str = "quant_system") -> None:
             reasons = signal.get("reasons", [])
             score = signal.get("score", 0)
             sell_ratio_here = sell_ratio
-            if aggressive:
-                forced = forced_action.get(symbol)
-                if forced:
-                    action = forced["action"]
-                    reasons = [forced["note"], *reasons]
-                    if forced["ratio"] is not None:
-                        sell_ratio_here = float(forced["ratio"])
-                else:
-                    action = "관망"   # 공격 모드에서는 plan 이 정한 종목만 거래한다(사이클당 매수·매도 수 한도)
+            forced = forced_action.get(symbol)
+            if forced:
+                action = forced["action"]
+                reasons = [forced["note"], *reasons]
+                if forced["ratio"] is not None:
+                    sell_ratio_here = float(forced["ratio"])
+            elif aggressive:
+                action = "관망"   # 공격 모드에서는 plan 이 정한 종목만 거래한다(사이클당 매수·매도 수 한도)
             cycle_log["signals"].append({
                 "symbol": stock["symbol"], "name": stock["name"],
                 "price": price, "action": action, "score": score,
@@ -1179,6 +1205,14 @@ async def run_cycle_for_enabled_users() -> dict:
     그래서 KIS_PAPER_BATCH_ENABLED=true 이면 로그인·대시보드 조작 없이도 사이클이 돈다.
     """
     from app.services import kis_batch  # 지연 import (kis_batch → kis_quickstart → auto_trade 순환 방지)
+
+    # 전략설정(화면) 을 먼저 반영 — ensure_system_batch._sync_env 가 투자금·종목 수를 유효값으로 맞추게
+    settings_doc = await strategy_settings.load_and_apply()
+    skip, why = strategy_settings.should_skip_cycle(settings_doc)
+    if skip:
+        logger.info("자동매매 사이클 건너뜀: %s", why)
+        return {"enabled_users": 0, "ran": 0, "failed": 0, "skipped": why}
+    await strategy_settings.mark_cycle_run(settings_doc)
 
     session_factory = get_session_factory()
     async with session_factory() as db:

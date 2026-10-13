@@ -150,6 +150,7 @@ def plan(indicator_map: dict[str, dict], target_symbols: list[str], holdings: di
     sl = float(settings.QUANT_AGGRESSIVE_STOP_LOSS_PCT)
     max_buys = max(0, int(settings.QUANT_AGGRESSIVE_MAX_BUYS_PER_CYCLE))
     max_sells = max(0, int(settings.QUANT_AGGRESSIVE_MAX_SELLS_PER_CYCLE))
+    weak_sell = min(-1, int(getattr(settings, "QUANT_AGGRESSIVE_WEAK_SELL_SCORE", -1) or -1))   # 약세 매도 임계(≤ -1)
     notes: list[str] = []
 
     def sig(sym: str) -> dict:
@@ -170,7 +171,7 @@ def plan(indicator_map: dict[str, dict], target_symbols: list[str], holdings: di
             exits.append((1000 + pnl, sym, {"ratio": 1.0, "reason": f"익절 {pnl:+.2f}% ≥ +{tp}%"}))
         elif pnl <= -sl:
             exits.append((900 - pnl, sym, {"ratio": 1.0, "reason": f"손절 {pnl:+.2f}% ≤ -{sl}%"}))
-        elif int(s.get("score", 0)) <= -1:
+        elif int(s.get("score", 0)) <= weak_sell:
             exits.append((float(-s.get("score", 0)), sym, {"ratio": None, "reason": f"5분 약세 시그널 (score {s.get('score')}): " + ", ".join(s.get("reasons", []))}))
     exits.sort(key=lambda t: t[0], reverse=True)
     for _, sym, info in exits[:max_sells]:

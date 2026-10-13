@@ -37,6 +37,7 @@
   <div class="gnb-tabs">
     <button class="gnb-item" data-gnb="agent"><i class="fa-solid fa-robot"></i> 로보 어드바이저</button>
     <button class="gnb-item" data-gnb="company"><i class="fa-solid fa-chart-pie"></i> 투자 인디케이터</button>
+    <button class="gnb-item" data-gnb="strategy"><i class="fa-solid fa-sliders"></i> 전략설정</button>
   </div>
 
   <!-- 우측: 시세 + 사용자 -->
@@ -1743,6 +1744,86 @@
         <div class="card">
           <h3 class="font-semibold mb-2 text-sm">🔁 3분 사이클 이력 (배치) <span id="kism-cycles-note" class="text-xs" style="color:var(--text-mute);"></span></h3>
           <div id="kism-cycles" class="kism-data-grid" aria-label="KIS 배치 사이클"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ 전략설정 (GNB 전략설정) — 데이터: /api/quant/strategy/* (js/strategy_settings.js) ══ -->
+    <div class="view" data-view="strategy-settings">
+      <style>
+        .ss-field{display:grid;grid-template-columns:minmax(180px,220px) minmax(140px,180px) 1fr;gap:12px;align-items:start;padding:10px 0;border-top:1px solid var(--border)}
+        .ss-field:first-child{border-top:0}
+        .ss-field .ss-label{font-weight:600;font-size:13px}
+        .ss-field .ss-desc{font-size:12px;color:var(--text-dim);line-height:1.5}
+        .ss-field .ss-meta{font-size:11px;color:var(--text-mute);margin-top:4px}
+        .ss-field.changed .ss-label::after{content:" ●";color:var(--accent)}
+        .ss-field.overridden .ss-meta b{color:var(--accent)}
+        .ss-toggle{display:inline-flex;align-items:center;gap:8px;font-size:13px}
+        .ss-toggle input{width:18px;height:18px}
+        @media (max-width:720px){.ss-field{grid-template-columns:1fr}}
+        .ss-perf-row{cursor:pointer}
+        .ss-perf-row.active td:first-child::before{content:"★ ";color:var(--accent)}
+        .ss-table{width:100%;font-size:12px;border-collapse:collapse}
+        .ss-table th,.ss-table td{padding:6px 8px;border-bottom:1px solid var(--border);text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+        .ss-table th:first-child,.ss-table td:first-child,.ss-table th:nth-child(2),.ss-table td:nth-child(2){text-align:left}
+        .ss-table tbody tr:hover{background:var(--surf2)}
+        .ss-kv{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:4px 16px;font-size:12px}
+        .ss-kv div{display:flex;justify-content:space-between;gap:8px;padding:3px 0;border-bottom:1px dashed var(--border)}
+        .ss-kv span:last-child{font-variant-numeric:tabular-nums}
+      </style>
+      <div class="space-y-4">
+        <div class="card">
+          <div class="flex items-center justify-between mb-2 flex-wrap gap-2">
+            <div>
+              <h2 class="text-lg font-semibold">🎛️ 봇 전략 · 파라미터 설정</h2>
+              <p class="text-xs mt-1" style="color:var(--text-mute);">KIS 모의투자 배치(시스템 사용자)의 시그널 엔진·청산 규칙·주문 유형·전략 스펙·투자금·위험관리를 한 곳에서 바꿉니다. 저장하면 서버 env 를 덮어써 <b>다음 사이클부터</b> 적용되고(재시작 불필요), 저장 시점마다 「설정 프로필」이 기록되어 <a href="#strategy-performance" style="color:var(--accent);">설정별 성과</a>에서 비교할 수 있습니다.</p>
+            </div>
+            <div class="flex items-center gap-2 text-xs">
+              <button id="ss-reload" class="btn-secondary text-xs">다시 불러오기</button>
+            </div>
+          </div>
+          <div id="ss-badges" class="flex flex-wrap gap-2 text-xs mb-2"></div>
+          <div id="ss-status" class="text-xs" style="color:var(--text-mute);"></div>
+        </div>
+
+        <div id="ss-groups" class="space-y-4"></div>
+
+        <div class="card" style="position:sticky;bottom:8px;z-index:5;">
+          <div class="flex items-center justify-between flex-wrap gap-2">
+            <label class="flex items-center gap-2 text-xs" style="min-width:260px;flex:1;">
+              <span style="color:var(--text-mute);white-space:nowrap;">프로필 메모</span>
+              <input id="ss-label" class="input text-xs" style="padding:6px 8px;flex:1;" maxlength="80" placeholder="예: 공격 모드 둔화 1단계 (강제매수 OFF, 약세 -2)">
+            </label>
+            <div class="flex items-center gap-2">
+              <span id="ss-dirty" class="text-xs" style="color:var(--text-mute);"></span>
+              <button id="ss-reset" class="btn-secondary text-xs" title="env 덮어쓰기를 모두 지우고 서버 기본값으로 돌립니다. 배치 행 값(전략·비율·위험관리)은 유지됩니다.">서버 기본값으로 초기화</button>
+              <button id="ss-save" class="btn-primary text-xs">저장 · 적용</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="view" data-view="strategy-performance">
+      <div class="space-y-4">
+        <div class="card">
+          <div class="flex items-center justify-between mb-2 flex-wrap gap-2">
+            <div>
+              <h2 class="text-lg font-semibold">🏁 설정별 성과</h2>
+              <p class="text-xs mt-1" style="color:var(--text-mute);">설정 프로필(저장 시점)별로 봇의 실현손익·승률·거래 수·평가액 변화를 비교합니다. 매도 시각에 적용 중이던 프로필에 손익을 귀속하고, 평균단가는 프로필 경계와 무관하게 이어집니다. <b>KIS 실현손익</b>은 FILLED 실주문, <b>가상</b>은 가상계좌 체결 기준입니다.</p>
+            </div>
+            <button id="sp-reload" class="btn-secondary text-xs">새로고침</button>
+          </div>
+          <div id="sp-kpis" class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-2"></div>
+          <div id="sp-note" class="text-xs" style="color:var(--text-mute);"></div>
+        </div>
+        <div class="card" style="overflow:auto;">
+          <h3 class="font-semibold mb-2 text-sm">📋 프로필별 성과 <span class="text-xs" style="color:var(--text-mute);">· 행을 클릭하면 설정값을 펼칩니다</span></h3>
+          <table class="ss-table" id="sp-table"><thead></thead><tbody></tbody></table>
+        </div>
+        <div class="card" id="sp-detail" style="display:none;">
+          <h3 class="font-semibold mb-2 text-sm" id="sp-detail-title"></h3>
+          <div class="ss-kv" id="sp-detail-body"></div>
         </div>
       </div>
     </div>

@@ -238,14 +238,14 @@ function renderCycles(d) {
     symbol_count: (cy.symbols || []).length, buy_count: (cy.buy || []).length, sell_count: Object.keys(cy.sell || {}).length,
     halt_status: cy.halted ? `비상 정지: ${cy.halt_reason || ""}` : "정상",
     trade_details: (cy.trades || []).map(t => `${t.action === "buy" ? "매수" : "매도"} ${t.name || t.symbol} ${fmt(t.quantity)}주 @${fmt(t.price)} · 실주문 ${t.live || "없음"}${t.live_reason ? ` (${t.live_reason})` : ""}`).join(" · ") || "거래 없음",
-    note_text: (cy.notes || []).join(" · "),
+    note_text: [...Object.entries(cy.sell || {}).map(([sym, why]) => `매도계획 ${sym}: ${why}`), ...(cy.notes || [])].join(" · "),
   }));
   if (note) note.textContent = `· 누적 ${c.count ?? 0} · 최근 ${rows.length}건 표시 · 페이지당 10건 · 마지막 ${ts(c.last_time)} (KST)${d.last_beat_run ? ` · beat ${ts(d.last_beat_run.time)} (KST) (실행 ${d.last_beat_run.ran}, 실패 ${d.last_beat_run.failed})` : ""}`;
   updateGrid("kism-cycles", [
     timeColumn("time"),
     numericColumn("symbol_count", "대상 종목 수"), numericColumn("buy_count", "매수계획"), numericColumn("sell_count", "매도계획"), numericColumn("skipped", "생략"),
     textColumn("halt_status", "실행 상태", { width: 200 }), numericColumn("equity", "가상 평가 (원)"),
-    textColumn("trade_details", "거래 내역", { width: 420 }), textColumn("note_text", "비고", { width: 350 }),
+    textColumn("trade_details", "거래 내역", { width: 420 }), textColumn("note_text", "비고 · 매도 사유", { width: 420 }),
   ], rows, "사이클 기록이 없습니다.");
 }
 

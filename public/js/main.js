@@ -11,6 +11,7 @@ import { loadAutoTradeStatus, loadQuantDashboard } from "/js/quant.js";
 import { initRebalanceView, onRebalanceViewActivated } from "/js/rebalance.js";
 import { loadPatternAnalysis, loadRoboDecision, renderScreenIdle } from "/js/robo.js";
 import { loadKisMonitor } from "/js/kis_monitor.js";
+import { loadStrategyPerformance, loadStrategySettings } from "/js/strategy_settings.js";
 import { initBatchControl } from "/js/kis_batch_ctl.js";
 import { loadNotificationSettings, loadSettings } from "/js/settings.js";
 import { loadAuditLog, loadSystemDashboard } from "/js/sysadmin.js";
@@ -80,6 +81,8 @@ function onViewActivated(view) {
   if (view === "robo-screening") renderScreenIdle();   // 자동 실행 안 함 — 「스크리닝 실행」 클릭 시에만 (2026-10-06)
   if (view === "robo-decision")  loadRoboDecision();
   if (view === "kis-monitor")    loadKisMonitor();
+  if (view === "strategy-settings")    loadStrategySettings();      // 전략설정 (js/strategy_settings.js)
+  if (view === "strategy-performance") loadStrategyPerformance();
   if (view === "robo-patterns")  { if (!document.getElementById("pt-mtf").innerHTML) loadPatternAnalysis(); }
   // 투자 인디케이터 신규 뷰
   if (view === "indicator-custom") loadSavedIndicators();
