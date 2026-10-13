@@ -1688,7 +1688,13 @@
               <h2 class="text-lg font-semibold">📈 KIS 모의투자결과</h2>
               <p class="text-xs mt-1" style="color:var(--text-mute);">한국투자증권 Testbed 자동매매(백그라운드 배치)만 모니터링합니다. 계좌·실주문·사이클·정합성을 한 화면에서 봅니다. 각 데이터 그리드는 페이지당 10건을 표시합니다.</p>
             </div>
-            <div class="flex items-center gap-2 text-xs">
+            <div class="flex items-center gap-2 text-xs flex-wrap">
+              <!-- 배치 제어: POST /api/quant/kis/batch/control (start | kill_on | kill_off). 로그인 사용자 행이 아니라 배치(시스템) 행을 제어한다 -->
+              <span id="kism-run-badge" class="text-xs" style="padding:2px 8px;border-radius:999px;background:var(--surf2);border:1px solid var(--border);">상태 확인 중…</span>
+              <button id="kism-batch-start" class="btn-green text-xs" title="KIS 모의투자 배치를 즉시 켭니다 (비상 정지 상태면 먼저 해제)">▶ 자동매매 시작</button>
+              <button id="kism-batch-kill" class="btn-red text-xs" title="배치를 즉시 중지하고 비상 정지 상태로 전환합니다. 해제 전까지 재가동되지 않습니다">🛑 비상 정지</button>
+              <button id="kism-batch-release" class="btn-secondary text-xs hidden" title="비상 정지를 해제합니다. 서버 배치 스위치가 켜져 있으면 다음 사이클에 자동 재가동됩니다">비상 정지 해제</button>
+              <span style="color:var(--border);">|</span>
               <label class="flex items-center gap-1" style="color:var(--text-dim);"><input type="checkbox" id="kism-auto" checked> 60초 자동 새로고침</label>
               <button id="kism-refresh" class="btn-secondary text-xs">새로고침</button>
             </div>

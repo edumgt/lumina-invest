@@ -140,3 +140,33 @@ def test_orders_search_date_range_kst(client):
     assert client.get("/api/quant/kis/orders?date_from=2026/10/07").status_code == 400
     assert client.get(f"/api/quant/kis/orders?date_from={tomorrow}&date_to={kst_today}").status_code == 400
     assert client.get("/api/quant/kis/orders?owner=nobody").status_code == 422
+
+
+# ── POST /api/quant/kis/batch/control ────────────────────────────────────────────────────
+
+@pytest.fixture
+def ctl_client():
+    app = FastAPI(); app.include_router(km.router)
+    app.dependency_overrides[get_current_user] = lambda: {"id": str(UID), "email": "t@t"}
+    app.dependency_overrides[get_pg_session] = lambda: object()
+    return TestClient(app)
+
+
+def test_batch_control_passes_action_and_actor(ctl_client):
+    status = {"enabled": True, "running": False, "kill_switch": True, "kill_reason": "사용자 수동 비상 정지", "action": "kill_on"}
+    with patch.object(kis_batch, "control", AsyncMock(return_value=status)) as ctl:
+        r = ctl_client.post("/api/quant/kis/batch/control", json={"action": "kill_on", "reason": "사용자 수동 비상 정지"})
+    assert r.status_code == 200 and r.json() == status
+    assert ctl.await_args.args[1] == "kill_on" and ctl.await_args.kwargs == {"actor": str(UID), "reason": "사용자 수동 비상 정지"}
+
+
+def test_batch_control_blocked_is_409(ctl_client):
+    with patch.object(kis_batch, "control", AsyncMock(side_effect=kis_batch.BatchControlBlocked("kill_switch", "비상 정지 상태입니다."))):
+        r = ctl_client.post("/api/quant/kis/batch/control", json={"action": "start"})
+    assert r.status_code == 409 and r.json()["detail"] == "비상 정지 상태입니다."
+
+
+def test_batch_control_bad_action_is_400(ctl_client):
+    with patch.object(kis_batch, "control", AsyncMock(side_effect=kis_batch.BatchControlBlocked("bad_action", "알 수 없는 동작: pause"))):
+        r = ctl_client.post("/api/quant/kis/batch/control", json={"action": "pause"})
+    assert r.status_code == 400

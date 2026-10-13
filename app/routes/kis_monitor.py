@@ -10,6 +10,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -279,3 +280,19 @@ async def kis_orders(
         "statuses": list(ORDER_STATUSES), "owner_labels": OWNER_LABEL,
         "rows": [_order_dict(r) for r in page],
     }
+
+
+# ── 배치 제어 (화면 상단 버튼) ─────────────────────────────────────────────────────────────
+
+class BatchControlBody(BaseModel):
+    action: str            # start | kill_on | kill_off
+    reason: str = ""
+
+
+@router.post("/batch/control")
+async def batch_control(body: BatchControlBody, user=Depends(get_current_user), db: AsyncSession = Depends(get_pg_session)):
+    """KIS 모의투자 배치(시스템 사용자 행) 시작 / 비상 정지 / 비상 정지 해제. 로그인 사용자 본인 행이 아니라 **배치 행**을 제어한다."""
+    try:
+        return await kis_batch.control(db, body.action, actor=str(user["id"]), reason=body.reason)
+    except kis_batch.BatchControlBlocked as e:
+        raise HTTPException(409 if e.code != "bad_action" else 400, e.message)

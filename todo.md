@@ -1568,3 +1568,24 @@ st 공개 조회 계약(`rows[].trade_date`, `nextOffset`)은 라이브 응답�
 **조치**: URL 을 npm 경로(`https://cdn.jsdelivr.net/npm/pretendard@1.3.9/dist/web/variable/woff2/PretendardVariable.woff2`)로 교체 →
 `shared-css/deploy.sh`(사전 감사 오류 0건·경고 6건, 기존과 동일) → S3 `www.edumgt.co.kr/css/common.css` 업로드(200, max-age=300).
 네 사이트가 같은 파일을 쓰므로 한 번에 반영된다(최대 5분 전파). HTML 의 `?v=` 는 공통 CSS 에는 불필요(deploy.sh 주석).
+
+### 6-46. 2026-10-13 #kis-monitor 헤더에 자동매매 실행 상태 배지 + 시작/비상 정지/해제 버튼 (사용자 요청)
+
+**배경**: 10-12 14:24 KST 배치 행(시스템 사용자 `0000…0001`)이 일손실 한도(-3.06% ≤ -3.0%)로 비상 정지된 뒤 해제되지 않아 10-13 장중에도
+`auto_trade_cycle` 이 매 3분 `reason: kill_switch` 로 0.1초 만에 끝나고 있었다(마지막 주문 10-12 14:33). `#quant-auto` 의 시작/비상 정지 버튼은
+**로그인 사용자 본인 행**(`/api/auto-trade/*`, `/api/quant/risk/kill-switch`)만 제어해 배치 행을 풀 수 없었다 — 배치 제어 API 자체가 없었다.
+
+**조치**:
+- `app/services/kis_batch.py` `control(db, action, actor, reason)` + `BatchControlBlocked(code, message)`.
+  `start`(비상 정지면 409 `kill_switch`, env OFF 면 409 `disabled`, 아니면 `ensure_system_batch` 로 즉시 ON, 켜지지 않으면 사유로 409) ·
+  `kill_on`(스위치 ON + 자동매매 OFF + 감사 + `notify_risk_halt`, 알림 실패는 삼킴) · `kill_off`(스위치·사유만 비움, 재가동은 다음 사이클의
+  `ensure_system_batch` 몫, 행 없으면 409 `no_row`). 결과는 `system_status()` + `action`.
+- `app/routes/kis_monitor.py` `POST /api/quant/kis/batch/control {action, reason}` → 409/400 으로 변환. 로그인 필수.
+- `public/app.html` kis-monitor 헤더 우측: `#kism-run-badge`(🟢 실행 중 / ⭕ 대기·정지 / 🛑 비상 정지·사유) + `▶ 자동매매 시작` · `🛑 비상 정지` ·
+  `비상 정지 해제`(비상 정지일 때만 표시). `public/js/kis_monitor.js` `renderRunState`(monitor 응답의 `batch` 로 60초마다 갱신) + `batchControl`.
+  시작 버튼은 비상 정지 상태면 confirm 후 `kill_off` → `start` 를 연달아 보낸다.
+- 테스트: `tests/test_kis_batch.py` control 9건, `tests/test_kis_monitor_route.py` 라우트 3건 (`.venv/bin/python -m pytest tests/test_kis_batch.py tests/test_kis_monitor_route.py` 35 passed).
+
+**배포 (미완)**: 에이전트의 fd 서버 배포 명령이 자동 모드 분류기(Production Deploy)에 막혀 **사용자가 직접 실행**해야 한다. Python 변경이라
+`fin-ai-app` 재시작 필요(worker/beat 는 `control` 을 안 부르므로 재시작 불필요, 소스 동기화만). 명령은 `deploy/fd-kis-batch-control.sh` 참고.
+배포 후 `#kis-monitor` 상단 배지가 🛑 로 보이면 `▶ 자동매매 시작` → confirm 으로 해제+시작.

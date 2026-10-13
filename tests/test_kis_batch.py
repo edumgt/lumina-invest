@@ -242,3 +242,76 @@ def test_run_cycle_survives_batch_check_failure(monkeypatch):
     with patch.object(kb, "ensure_system_batch", AsyncMock(side_effect=RuntimeError("db down"))):
         out = asyncio.run(auto_trade.run_cycle_for_enabled_users())
     assert out["ran"] == 0 and out["kis_batch"]["error"] == "db down"
+
+
+# ── 화면 제어(control): 시작 / 비상 정지 / 해제 ──────────────────────────────────────────
+
+def ctl(db, action, reason=""): return asyncio.run(kb.control(db, action, actor="tester", reason=reason))
+
+
+def test_control_kill_on_stops_batch_and_sets_reason():
+    db = FakeDb(row(quant_auto_enabled=True))
+    with patch("app.services.notification.notify_risk_halt", AsyncMock()) as notify:
+        out = ctl(db, "kill_on", reason="수동 테스트")
+    assert db.row.risk_kill_switch is True and db.row.quant_auto_enabled is False
+    assert db.row.risk_halt_reason == "수동 테스트" and db.commits == 1
+    assert out["running"] is False and out["kill_switch"] is True and out["kill_reason"] == "수동 테스트" and out["action"] == "kill_on"
+    notify.assert_awaited_once()
+
+
+def test_control_kill_on_default_reason_and_notify_failure_is_swallowed():
+    db = FakeDb(row())
+    with patch("app.services.notification.notify_risk_halt", AsyncMock(side_effect=RuntimeError("smtp down"))):
+        out = ctl(db, "kill_on")
+    assert db.row.risk_halt_reason == "사용자 수동 비상 정지" and out["kill_switch"] is True
+
+
+def test_control_kill_off_clears_only_the_switch():
+    db = FakeDb(row(risk_kill_switch=True, risk_halt_reason="일손실 한도 초과: 당일 -3.06% ≤ -3.0%"))
+    out = ctl(db, "kill_off")
+    assert db.row.risk_kill_switch is False and db.row.risk_halt_reason == ""
+    assert db.row.quant_auto_enabled is False            # 재가동은 다음 사이클의 ensure_system_batch 몫
+    assert out["kill_switch"] is False and out["running"] is False and out["enabled"] is True
+
+
+def test_control_kill_off_without_row_is_blocked():
+    with pytest.raises(kb.BatchControlBlocked) as ei:
+        ctl(FakeDb(None), "kill_off")
+    assert ei.value.code == "no_row"
+
+
+def test_control_start_blocked_by_kill_switch():
+    db = FakeDb(row(risk_kill_switch=True, risk_halt_reason="수동 정지"))
+    with pytest.raises(kb.BatchControlBlocked) as ei:
+        ctl(db, "start")
+    assert ei.value.code == "kill_switch" and "수동 정지" in ei.value.message and db.row.quant_auto_enabled is False
+
+
+def test_control_start_blocked_when_env_disabled(monkeypatch):
+    monkeypatch.setattr(settings, "KIS_PAPER_BATCH_ENABLED", False)
+    with pytest.raises(kb.BatchControlBlocked) as ei:
+        ctl(FakeDb(row()), "start")
+    assert ei.value.code == "disabled"
+
+
+def test_control_start_turns_batch_on_immediately():
+    db = FakeDb(row())
+    route = SimpleNamespace(configured=True, environment="paper", via="gateway", detail="ok")
+    with patch.object(qs, "resolve_route", AsyncMock(return_value=route)):
+        out = ctl(db, "start")
+    assert db.row.quant_auto_enabled is True and out["running"] is True and out["action"] == "start" and out["detail"]["started"] is True
+
+
+def test_control_start_reports_route_failure():
+    db = FakeDb(row())
+    route = SimpleNamespace(configured=False, environment="paper", via="", detail="게이트웨이 미설정")
+    with patch.object(qs, "resolve_route", AsyncMock(return_value=route)):
+        with pytest.raises(kb.BatchControlBlocked) as ei:
+            ctl(db, "start")
+    assert ei.value.code == "not_connected" and "게이트웨이 미설정" in ei.value.message
+
+
+def test_control_rejects_unknown_action():
+    with pytest.raises(kb.BatchControlBlocked) as ei:
+        ctl(FakeDb(row()), "pause")
+    assert ei.value.code == "bad_action"

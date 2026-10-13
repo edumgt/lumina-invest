@@ -196,3 +196,72 @@ async def ensure_system_batch(db: AsyncSession) -> dict:
     return {"enabled": True, "running": True, "created": created, "started": started, "synced": synced,
             "route": route.via, "environment": route.environment, "symbol_source": row.quant_symbol_source,
             "exclusive_disabled_users": disabled_users}
+
+
+# ── 화면 제어 (KIS 모의투자결과 화면의 시작 / 비상 정지 / 해제 버튼) ─────────────────────────────
+
+class BatchControlBlocked(Exception):
+    """제어 요청을 받을 수 없는 상태(409 로 변환). ``code`` 는 화면 분기용."""
+
+    def __init__(self, code: str, message: str):
+        super().__init__(message)
+        self.code, self.message = code, message
+
+
+async def control(db: AsyncSession, action: str, actor: str, reason: str = "") -> dict:
+    """배치 행을 화면에서 제어한다. 결과는 :func:`system_status` 형식에 ``action`` 을 더한 dict.
+
+    - ``start``   : 비상 정지면 409. env 스위치가 꺼져 있으면 409. 아니면 :func:`ensure_system_batch` 로 즉시 켠다.
+    - ``kill_on`` : 비상 정지 ON + 자동매매 OFF. 다음 사이클부터 재가동하지 않는다(사람이 해제해야 함). 알림 발송.
+    - ``kill_off``: 비상 정지 해제만 한다. env 스위치가 켜져 있으면 다음 사이클(QUANT_CYCLE_SEC)에 자동 재가동된다.
+    """
+    if action not in ("start", "kill_on", "kill_off"):
+        raise BatchControlBlocked("bad_action", f"알 수 없는 동작: {action}")
+
+    row = await _row(db)
+
+    if action == "start":
+        if not is_configured():
+            raise BatchControlBlocked("disabled", "서버 설정(KIS_PAPER_BATCH_ENABLED)이 꺼져 있어 배치를 시작할 수 없습니다.")
+        if row is not None and row.risk_kill_switch:
+            raise BatchControlBlocked("kill_switch", f"비상 정지 상태입니다. 해제 후 시작하세요. (사유: {row.risk_halt_reason or '수동 정지'})")
+        result = await ensure_system_batch(db)
+        await audit(actor, "", "quant.kis_batch.control", {"action": action, "result": {k: result.get(k) for k in ("running", "reason", "started")}})
+        status = await system_status(db)
+        status.update({"action": action, "detail": result})
+        if not result.get("running"):
+            why = result.get("reason") or "unknown"
+            raise BatchControlBlocked(why, f"배치를 시작하지 못했습니다 ({why}). {result.get('route_detail') or ''}".strip())
+        return status
+
+    if row is None:
+        if action == "kill_off":
+            raise BatchControlBlocked("no_row", "배치 행이 아직 없습니다. 해제할 비상 정지가 없습니다.")
+        row = BrokerSettings(user_id=SYSTEM_USER_ID, broker="kis", quant_mode="live", paper=False,
+                             app_key="", app_secret="", account_no="", quant_auto_enabled=False)
+        db.add(row)
+
+    if action == "kill_on":
+        row.risk_kill_switch = True
+        row.risk_halt_reason = (reason or "사용자 수동 비상 정지")[:300]
+        was_running = bool(row.quant_auto_enabled)
+        row.quant_auto_enabled = False
+        await db.commit()
+        await audit(actor, "", "quant.kis_batch.control", {"action": action, "reason": row.risk_halt_reason, "was_running": was_running})
+        logger.warning("KIS 모의투자 배치 비상 정지 ON (by %s): %s", actor, row.risk_halt_reason)
+        try:
+            from app.services import notification
+            await notification.notify_risk_halt(f"[배치] {row.risk_halt_reason}", user_id=actor)
+        except Exception as exc:  # 알림 실패가 정지 자체를 막으면 안 된다
+            logger.warning("배치 비상 정지 알림 실패: %s", exc)
+    else:  # kill_off
+        prev = row.risk_halt_reason or ""
+        row.risk_kill_switch = False
+        row.risk_halt_reason = ""
+        await db.commit()
+        await audit(actor, "", "quant.kis_batch.control", {"action": action, "cleared_reason": prev})
+        logger.info("KIS 모의투자 배치 비상 정지 해제 (by %s): %s", actor, prev or "-")
+
+    status = await system_status(db)
+    status["action"] = action
+    return status
