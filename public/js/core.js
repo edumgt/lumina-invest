@@ -539,7 +539,7 @@ function renderLnb(gnbKey) {
   trigger.setAttribute("aria-controls", panel.id);
   trigger.setAttribute("aria-expanded", "false");
   panel.inert = true;
-  nav.innerHTML = Object.entries(GNB_MENUS).filter(([key]) => !["agent", "company", "strategy"].includes(key)).map(([key, menu]) => `
+  nav.innerHTML = Object.entries(GNB_MENUS).filter(([key]) => !["agent", "company", "strategy", "review"].includes(key)).map(([key, menu]) => `
     <details class="offcanvas-group" data-menu-group="${key}">
       <summary class="lnb-item">${menu.label}<i class="fa-solid fa-chevron-down offcanvas-chevron"></i></summary>
       <div class="offcanvas-submenu">${menu.items.map(it => `<button type="button" class="lnb-item" data-menu-view="${it.key}"><i class="${it.icon}"></i><span>${it.label}</span></button>`).join("")}</div>
@@ -604,7 +604,7 @@ function navigate(viewKey) {
     if (active) el.setAttribute("aria-current", "page");
     else el.removeAttribute("aria-current");
   });
-  document.getElementById("gnb-more-btn").classList.toggle("active", !["agent", "company", "strategy"].includes(currentGnb));
+  document.getElementById("gnb-more-btn").classList.toggle("active", !["agent", "company", "strategy", "review"].includes(currentGnb));
 
   // Update LNB
   renderLnb(currentGnb);
