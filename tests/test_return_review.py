@@ -314,3 +314,60 @@ def test_apply_plan_saves_settings_and_logs_progress(client):
         n = len(store[route.PROGRESS_LOG_KEY]["items"])
         c.get("/api/quant/return-review")
         assert len(store[route.PROGRESS_LOG_KEY]["items"]) == n        # 같은 판정은 다시 기록하지 않음
+
+
+# ── 장중 실시간 평가액 (6-58) ─────────────────────────────────────────────────
+def test_market_phase_kst():
+    from datetime import datetime, timedelta, timezone
+    kst = timezone(timedelta(hours=9))
+    assert rr.market_phase(datetime(2026, 10, 14, 12, 0, tzinfo=kst)) == "open"        # 수요일 장중
+    assert rr.market_phase(datetime(2026, 10, 14, 15, 31, tzinfo=kst)) == "closed"
+    assert rr.market_phase(datetime(2026, 10, 14, 8, 59, tzinfo=kst)) == "closed"
+    assert rr.market_phase(datetime(2026, 10, 17, 12, 0, tzinfo=kst)) == "closed"      # 토요일
+    assert rr.market_phase(datetime(2026, 10, 14, 3, 0, tzinfo=timezone.utc)) == "open"  # UTC 03:00 = KST 12:00
+
+
+def test_live_equity_compares_with_last_snapshot_and_never_writes():
+    import asyncio
+    from datetime import datetime, timedelta, timezone
+    from app.services.brokers import stock_coin_trade_gateway as gw
+    kst = timezone(timedelta(hours=9))
+    now = datetime(2026, 10, 14, 12, 0, tzinfo=kst)
+    rows = [{"snap_date": "2026-10-08", "principal": 100_000_000, "equity": 97_955_634}, {"snap_date": "2026-10-12", "principal": 100_000_000, "equity": 93_338_237}]
+    balance = {"totalEvalAmount": 89_412_545, "cashBalance": -31_826_005, "totalProfitLoss": -7_342_552, "holdings": [{}] * 19}
+    with patch.object(gw, "is_configured", lambda: True), patch.object(gw, "environment", lambda: "paper"), \
+         patch.object(gw, "get_balance", AsyncMock(return_value=balance)) as gb:
+        live = asyncio.run(rr.live_equity(rows, now=now))
+    gb.assert_awaited_once_with("paper")
+    assert live["ok"] and live["market"] == "open" and live["equity"] == 89_412_545 and live["holdings"] == 19
+    assert live["last_snap_date"] == "2026-10-12" and live["change_pnl"] == 89_412_545 - 93_338_237
+    assert live["change_pct"] == pytest.approx((89_412_545 / 93_338_237 - 1) * 100, abs=1e-3)
+    assert live["cum_return_pct"] == pytest.approx(-10.5875, abs=1e-3) and live["today_recorded"] is False
+    with patch.object(gw, "is_configured", lambda: True), patch.object(gw, "environment", lambda: "paper"), \
+         patch.object(gw, "get_balance", AsyncMock(return_value=balance)):
+        today = asyncio.run(rr.live_equity(rows + [{"snap_date": "2026-10-14", "principal": 100_000_000, "equity": 90_000_000}], now=now))
+    assert today["today_recorded"] is True and today["last_snap_date"] == "2026-10-14"
+    with patch.object(gw, "is_configured", lambda: False), patch.object(gw, "environment", lambda: "paper"):
+        off = asyncio.run(rr.live_equity(rows, now=now))
+    assert off["ok"] is False and "게이트웨이" in off["error"] and off["market"] == "open"
+    with patch.object(gw, "is_configured", lambda: True), patch.object(gw, "environment", lambda: "paper"), \
+         patch.object(gw, "get_balance", AsyncMock(side_effect=gw.GatewayError("timeout", code="E_TIMEOUT"))):
+        err = asyncio.run(rr.live_equity(rows, now=now))
+    assert err["ok"] is False and err["error"].startswith("[E_TIMEOUT]")
+    with patch.object(gw, "is_configured", lambda: True), patch.object(gw, "environment", lambda: "paper"), \
+         patch.object(gw, "get_balance", AsyncMock(return_value=balance)):
+        none = asyncio.run(rr.live_equity([], now=now))
+    assert none["ok"] and none["principal"] == rr.DEFAULT_PRINCIPAL and none["last_snap_date"] is None and none["change_pnl"] is None
+
+
+def test_get_review_includes_live_block(client):
+    c, db, _ = client
+    from app.services.brokers import stock_coin_trade_gateway as gw
+    with patch.object(gw, "is_configured", lambda: True), patch.object(gw, "environment", lambda: "paper"), \
+         patch.object(gw, "get_balance", AsyncMock(return_value={"totalEvalAmount": 95_000_000, "holdings": []})):
+        d = c.get("/api/quant/return-review").json()
+    assert d["live"]["ok"] and d["live"]["equity"] == 95_000_000 and d["live"]["last_snap_date"] == "2026-10-08"
+    assert d["live"]["change_pnl"] == 95_000_000 - 97_955_634 and len(d["rows"]) == 3            # DB 행은 늘지 않는다
+    with patch.object(gw, "is_configured", lambda: False), patch.object(gw, "environment", lambda: "paper"):
+        d2 = c.get("/api/quant/return-review").json()
+    assert d2["live"]["ok"] is False and d2["rows"] and d2["summary"]["days"] == 3                 # 실패해도 화면 데이터는 그대로

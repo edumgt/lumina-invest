@@ -1744,3 +1744,18 @@ st 공개 조회 계약(`rows[].trade_date`, `nextOffset`)은 라이브 응답�
 
 **검증**: DART·stock 관련 테스트 126개 통과(`tests/test_dart_*.py test_company_fundamentals_resilience.py test_sector_indicators.py …`). 새 `dart.py` 를 fd 컨테이너 안에서 파일을 건드리지 않고 실행(stdin exec)해 실측: 아모텍 EPS -237.13(TTM, 적자 → PER N/A 가 맞음), ROE -2.16% · ROA -0.94% · 영업이익률 0.14% · 부채비율 128.96%, DPS 0(현금배당 없음). 삼성전자 ROE 26.67% · 영업이익률 36.88% · DPS 1,668원(우선주 1,669원 · 공시 수익률 1.5/1.9%). 브라우저 미실행.
 **배포(미완, 사용자)**: `deploy/fd-dart-profitability.sh`(app·worker·beat 재시작, DB 변경 없음). 로컬 작업 트리에 다른 세션의 미커밋 변경(`app.html`·`core.js`·`formula.js`·`formula-guide.js`)이 있으나 이 배포 파일 목록에는 포함되지 않는다.
+
+### 6-58. 2026-10-14 수익율검증 — 장중 실시간 평가액 표시 + 15:40 자동 스냅샷 첫 실행 확인 (사용자 요청)
+
+**배경**: `kis_equity_snapshots` 는 2026-10-14 현재 `source=paste` 9행(0011 시드)뿐. 게이트웨이 잔고(KIS inquire-balance, 모의 VTTC8434R)로 행을 만드는 `record_gateway_snapshot` 과 비트 `quant.equity_snapshot`(평일 15:40 KST, `timezone="Asia/Seoul"`) 은 있으나 beat 가 2026-10-14 11:56 KST 재시작돼 아직 한 번도 안 돌았다. 12:00 KST 실측: 총평가액 89,412,545원(-10.59%), 평가손익 -7,342,552원, 보유 19종목, 예수금 -31,826,005원. KIS 모의투자는 기간별 손익 이력 API(TTTC8708R·8715R) 미지원이라 시드 구간은 API 로 되돌릴 수 없다.
+
+| 변경 | 내용 |
+|------|------|
+| `app/services/return_review.py` | `market_phase(now)`(KST 평일 09:00~15:30 → open) · **`live_equity(rows, environment, now)`**: 게이트웨이 잔고를 지금 읽어 `{ok, equity, principal(마지막 행 원금), cum_return_pct, cum_pnl, cash, holdings, total_profit_loss, last_snap_date, change_pnl, change_pct, today_recorded, market, as_of}`. DB 에 쓰지 않음. 미설정·GatewayError·예외는 `{ok: False, error}` 로 돌려 화면을 막지 않음 |
+| `app/routes/return_review.py` | GET 응답에 `live` 추가(요청마다 게이트웨이 1회 호출) |
+| `public/js/return_review.js` | KPI 첫 타일 「지금 평가액 (실시간)」: 금액 · 마지막 스냅샷 대비 ±원(±%p) · 누적 · 장중/장외 HH:MM · 오늘 행 기록 여부(미기록이면 "15:40 자동"). 실패면 사유만 |
+| 테스트 | `tests/test_return_review.py` +3(장 상태 KST, live 계산·오늘 기록 여부·미설정/오류/행 없음, GET 에 live 포함·실패해도 rows 유지) |
+
+**검증**: `tests/test_return_review.py` 전부 통과. 브라우저 미실행.
+**15:40 자동 행 확인**: 세션 내 일회성 스케줄(2026-10-14 15:47 KST)로 서버 DB 의 오늘 `source=gateway` 행과 beat/worker 로그를 읽어 결과를 이 항목 아래에 추가한다(에이전트가 서버를 바꾸지는 않음).
+**배포(미완, 사용자)**: `deploy/fd-return-review-live.sh`(app 만 재시작, worker/beat 는 파일만 복사). DB 변경 없음.

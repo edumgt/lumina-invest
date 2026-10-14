@@ -483,6 +483,50 @@ async def record_gateway_snapshot(db, principal: float | None = None, environmen
     return {"ok": True, "environment": env, "row": {**row, "snap_date": d.isoformat()}, **result}
 
 
+def market_phase(now: datetime | None = None) -> str:
+    """KST 기준 장 상태: open(평일 09:00~15:30) · closed. 휴장일 달력은 없으므로 요일·시각만 본다."""
+    t = (now or datetime.now(KST)).astimezone(KST)
+    if t.weekday() >= 5:
+        return "closed"
+    hm = t.hour * 60 + t.minute
+    return "open" if 9 * 60 <= hm <= 15 * 60 + 30 else "closed"
+
+
+async def live_equity(rows: list[dict[str, Any]], environment: str | None = None, now: datetime | None = None) -> dict[str, Any]:
+    """장중 실시간 평가액 — 게이트웨이 잔고(KIS inquire-balance)를 지금 읽어 마지막 스냅샷과 비교한다. DB 에 쓰지 않는다.
+    실패해도 화면을 막지 않도록 {ok: False, error} 로 돌려준다. 원금은 마지막 행의 원금(없으면 기본 1억)."""
+    from app.services.brokers import stock_coin_trade_gateway as gateway
+    t = (now or datetime.now(KST)).astimezone(KST)
+    env = environment or gateway.environment()
+    base = {"ok": False, "environment": env, "as_of": t.isoformat(), "market": market_phase(t), "source": "게이트웨이 잔고 · KIS inquire-balance"}
+    if not gateway.is_configured():
+        return {**base, "error": "게이트웨이(STOCK_COIN_TRADE_*) 가 설정되지 않았습니다."}
+    try:
+        balance = await gateway.get_balance(env)
+    except gateway.GatewayError as exc:
+        return {**base, "error": f"[{exc.code}] {exc}"}
+    except Exception as exc:                      # 네트워크 등 — 수익율검증 화면 전체를 막지 않는다
+        return {**base, "error": f"게이트웨이 호출 실패: {exc}"}
+    equity = float(balance.get("totalEvalAmount") or 0) or float(balance.get("cashBalance") or 0)
+    if equity <= 0:
+        return {**base, "error": "게이트웨이 평가액이 0 입니다."}
+    rows = sorted(rows or [], key=lambda r: _d(r["snap_date"]))
+    last = rows[-1] if rows else None
+    principal = float(last["principal"]) if last else DEFAULT_PRINCIPAL
+    last_equity = float(last["equity"]) if last else None
+    holdings = balance.get("holdings") or balance.get("positions") or []
+    return {
+        **base, "ok": True, "equity": equity, "principal": principal,
+        "cum_return_pct": round((equity / principal - 1) * 100, 4), "cum_pnl": round(equity - principal, 0),
+        "cash": float(balance.get("cashBalance") or 0), "holdings": len(holdings) if isinstance(holdings, list) else None,
+        "total_profit_loss": float(balance["totalProfitLoss"]) if balance.get("totalProfitLoss") not in (None, "") else None,
+        "last_snap_date": _d(last["snap_date"]).isoformat() if last else None,
+        "change_pnl": round(equity - last_equity, 0) if last_equity else None,
+        "change_pct": round((equity / last_equity - 1) * 100, 3) if last_equity else None,
+        "today_recorded": bool(last and _d(last["snap_date"]) == t.date()),
+    }
+
+
 # ── 7. 수익률 증대 방안 (승인 → 전체 시스템 적용 → 관찰 → 평가 → 다음 방안) ─────────────────────────
 #
 # 알고리즘

@@ -5,6 +5,7 @@ POST   /api/quant/return-review/rows            KIS 화면 표 붙여넣기(text
 POST   /api/quant/return-review/snapshot        게이트웨이 잔고로 오늘 행 기록 (비트 태스크 quant.equity_snapshot 과 같은 함수)
 DELETE /api/quant/return-review/rows/{date}     행 삭제
 GET    /api/quant/return-review                 (추가) plans(수익률 증대 방안 A/B/C, 권장 1개) · applied_plans(승인된 방안의 사후 평가·진행) · progress_log
+GET    /api/quant/return-review                 (추가 6-58) live: 장중 실시간 평가액 — 게이트웨이 잔고를 지금 읽어 마지막 스냅샷과 비교(DB 기록 아님)
 POST   /api/quant/return-review/plans/{id}/apply 「승인」: 서버가 방안을 다시 계산해 전략설정 저장 경로(strategy_settings.save_settings)로 적용
                                                 → env 덮어쓰기(전 사이클 공통) + 배치 행 + 프로필 기록. 기준 수치·진행 로그 저장(data_cache + audit_events)
 
@@ -139,8 +140,9 @@ async def get_review(environment: str = "paper", user=Depends(get_current_user),
     if changed:
         await _save_applied([{k: v for k, v in ap.items() if k not in ("progress",)} for ap in applied])
     log = (await cache_get(PROGRESS_LOG_KEY, max_age_hours=24 * 365 * 5) or {}).get("items") or []
+    live = await rr.live_equity(c["rows"], environment)          # 장중 실시간 평가액(게이트웨이 잔고) — DB 에 쓰지 않는다
     return {
-        "checked_at": datetime.now(timezone.utc).isoformat(), "environment": environment,
+        "checked_at": datetime.now(timezone.utc).isoformat(), "environment": environment, "live": live,
         "rows": c["rows"], "summary": c["summary"], "trade_stats": c["tstats"], "guide": c["guide"],
         "plans": c["plans"], "applied_plans": applied, "progress_log": log[-100:][::-1],
         "limits": c["limits"], "signal_mode": c["eff"].get("QUANT_SIGNAL_MODE") or "", "aggressive": bool(c["eff"].get("QUANT_AGGRESSIVE_MODE")),

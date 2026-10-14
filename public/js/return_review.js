@@ -20,16 +20,28 @@ function kpi(k, v, s = "", c = "") {
   return `<div class="rr-kpi"><div class="k">${escHtml(k)}</div><div class="v" style="${c ? `color:${c};` : ""}">${v}</div>${s ? `<div class="s">${s}</div>` : ""}</div>`;
 }
 
+// 장중 실시간 평가액 타일 — 서버가 GET 마다 게이트웨이 잔고를 읽어 live 에 담는다(DB 기록 아님). 실패면 사유만 보인다.
+function liveTile() {
+  const l = _data.live;
+  if (!l) return "";
+  const at = l.as_of ? new Date(l.as_of).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Seoul" }) : "";
+  const phase = l.market === "open" ? "장중" : "장외";
+  if (!l.ok) return kpi("지금 평가액 (실시간)", "-", `${escHtml(l.error || "조회 실패")} · ${phase} ${at}`);
+  const vs = l.last_snap_date ? `${l.last_snap_date} 스냅샷 대비 ${won(l.change_pnl)} (${pp(l.change_pct)})` : "비교할 스냅샷 없음";
+  const rec = l.today_recorded ? "오늘 행 기록됨" : "오늘 행 미기록(15:40 자동)";
+  return kpi("지금 평가액 (실시간)", `${fmt(Math.round(l.equity))}원`, `${vs} · 누적 ${pct(l.cum_return_pct)} · ${phase} ${at} · ${rec}`, color(l.change_pct));
+}
+
 function renderKpis() {
   const s = _data.summary || {}, t = _data.trade_stats || {};
-  $("rr-kpis").innerHTML = s.days ? [
+  $("rr-kpis").innerHTML = liveTile() + (s.days ? [
     kpi("누적 수익률", pct(s.cum_return_pct), `${won(s.cum_pnl)} · 원금 ${fmt(s.principal)}원`, color(s.cum_return_pct)),
     kpi("최대 낙폭 (MDD)", pct(s.max_drawdown_pct), `최고 평가액 ${fmt(s.peak_equity)}원`, color(s.max_drawdown_pct)),
     kpi("최악 관측일", s.worst_day ? pp(s.worst_day.change_pct) : "-", s.worst_day ? `${s.worst_day.date} · ${won(s.worst_day.pnl)}` : "", color(s.worst_day?.change_pct)),
     kpi("상승 / 하락일", `${s.up_days} / ${s.down_days}`, `${s.days}관측일 · 평균 ${pp(s.avg_daily_change_pct)} · 변동성 ${Number(s.daily_volatility_pct).toFixed(2)}%p`),
     kpi("승률 · 손익비 (KIS 왕복)", t.round_trips ? `${t.win_rate_pct}% · ${t.payoff_ratio ?? "-"}` : "-", t.round_trips ? `왕복 ${t.round_trips}건 · 평균 이익 ${won(t.avg_win)} / 손실 ${won(t.avg_loss)}` : "완결 왕복 없음"),
     kpi("거래당 기대값", t.round_trips ? won(t.expectancy) : "-", t.orders ? `체결 ${t.fills}/주문 ${t.orders}건 · 체결률 ${t.fill_rate_pct ?? "-"}%` : "실주문 기록 없음", color(t.expectancy)),
-  ].join("") : `<div class="text-xs" style="color:var(--text-mute);">일별 평가액 데이터가 없습니다. 아래 「붙여넣기 적재」 또는 「오늘 스냅샷 기록」 으로 시작하세요.</div>`;
+  ].join("") : `<div class="text-xs" style="color:var(--text-mute);">일별 평가액 데이터가 없습니다. 아래 「붙여넣기 적재」 또는 「오늘 스냅샷 기록」 으로 시작하세요.</div>`);
   const modeLabel = _data.signal_mode ? ({ aggressive: "① 공격 모드", backtest: "② 백테스트 기반 규칙", custom: "③ 사용자 설정" })[_data.signal_mode] : (_data.aggressive ? "① 공격 모드(플래그)" : "일봉 모드(추정)");
   $("rr-note").textContent = `집계 ${new Date(_data.checked_at).toLocaleString("ko-KR")} · 환경 ${_data.environment} · 현재 운영 모드 ${modeLabel} · 전략설정 프로필 ${_data.profiles}건 · KIS 실주문 ${_data.live_orders}건(체결 ${_data.live_fills}) · 가상 체결 ${_data.virtual_orders}건 · 일손실 한도 ${_data.limits?.daily_loss_limit_pct ?? "-"}%`;
 }
