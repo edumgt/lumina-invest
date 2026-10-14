@@ -82,6 +82,17 @@ jobs:
             echo "사전 점검 OK: ${APP_DIR} (COMPOSE_FILE=${COMPOSE_FILE})"
           REMOTE
 
+      - name: 필수 종목 마스터 파일 확인
+        run: |
+          python3 - <<'PYTHON'
+          import json
+          from pathlib import Path
+          for name in ("korea-master-layouts.json", "korea-universe.json", "legacy-trading-symbols.json", "legacy-sector-themes.json"):
+              path = Path("app/data") / name
+              json.loads(path.read_text(encoding="utf-8"))
+              print(f"OK: {path}")
+          PYTHON
+
       - name: 코드 동기화 (.env·데이터·볼륨은 서버 것 그대로 유지)
         run: |
           rsync -az --delete \
@@ -89,7 +100,7 @@ jobs:
             --exclude='.env' \
             --exclude='.env.local' \
             --exclude='.env.dev' \
-            --exclude='data/' \
+            --exclude='/data/' \
             --exclude='terraform/.terraform' \
             --exclude='infra/**/.terraform' \
             --exclude='**/__pycache__' \
