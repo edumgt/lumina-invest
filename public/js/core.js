@@ -274,40 +274,68 @@ function tt(label, hint, key) {
 }
 window.tt = tt;
 
-const VIEW_GUIDE_OPEN_KEY = (viewKey) => `vg_open_${viewKey}`;
+let viewGuideDialog;
+let viewGuideTrigger;
+
+function ensureViewGuideDialog() {
+  if (viewGuideDialog) return viewGuideDialog;
+  const dialog = document.createElement("dialog");
+  dialog.id = "view-guide-modal";
+  dialog.className = "view-guide-modal";
+  dialog.setAttribute("aria-labelledby", "view-guide-modal-title");
+  dialog.innerHTML = `<header class="view-guide-modal-head"><h2 id="view-guide-modal-title"></h2><button type="button" class="view-guide-close btn-secondary" aria-label="사용법 닫기" autofocus><i class="fa-solid fa-xmark" aria-hidden="true"></i></button></header><div class="view-guide-modal-content"></div>`;
+  dialog.querySelector(".view-guide-close").addEventListener("click", () => dialog.close());
+  dialog.addEventListener("click", event => {
+    if (event.target !== dialog) return;
+    const rect = dialog.getBoundingClientRect();
+    if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) dialog.close();
+  });
+  dialog.addEventListener("close", () => {
+    if (viewGuideTrigger?.isConnected && viewGuideTrigger.closest(".view.active")) viewGuideTrigger.focus();
+  });
+  document.body.appendChild(dialog);
+  viewGuideDialog = dialog;
+  return dialog;
+}
 
 function renderViewGuide(viewKey) {
+  if (viewGuideDialog?.open) viewGuideDialog.close();
   const viewEl = document.querySelector(`.view[data-view="${viewKey}"]`);
   if (!viewEl) return;
+  viewEl.querySelector(":scope > .view-guide")?.remove();
   const guide = VIEW_GUIDES[viewKey];
-  let mount = viewEl.querySelector(":scope > .view-guide");
-  if (!guide) { if (mount) mount.remove(); return; }
-
-  const wasOpen = localStorage.getItem(VIEW_GUIDE_OPEN_KEY(viewKey)) === "1";
-  const termsHtml = (guide.relatedTerms || []).map(k => termChip(k)).join("");
-  const html = `
-    <button type="button" class="view-guide-toggle">
-      <span class="view-guide-toggle-label"><i class="fa-solid fa-circle-question"></i> 사용법 — ${escHtml(guide.summary)}</span>
-      <i class="fa-solid fa-chevron-right vg-chevron"></i>
-    </button>
-    <div class="view-guide-body">
-      <ol>${guide.steps.map(s => `<li>${escHtml(s)}</li>`).join("")}</ol>
-      ${termsHtml ? `<div class="view-guide-terms">${termsHtml}</div>` : ""}
-    </div>
-  `;
-
-  if (!mount) {
-    mount = document.createElement("div");
-    mount.className = "view-guide";
-    viewEl.insertBefore(mount, viewEl.firstChild);
-    mount.addEventListener("click", (e) => {
-      if (!e.target.closest(".view-guide-toggle")) return;
-      mount.classList.toggle("open");
-      localStorage.setItem(VIEW_GUIDE_OPEN_KEY(viewKey), mount.classList.contains("open") ? "1" : "0");
-    });
+  if (!guide || viewEl.querySelector(".view-guide-help")) return;
+  const heading = viewEl.querySelector("h2, h1, h3");
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "btn-secondary view-guide-help";
+  button.setAttribute("aria-haspopup", "dialog");
+  button.setAttribute("aria-controls", "view-guide-modal");
+  button.innerHTML = '<i class="fa-solid fa-circle-question" aria-hidden="true"></i> 사용법';
+  button.addEventListener("click", () => {
+    const dialog = ensureViewGuideDialog();
+    viewGuideTrigger = button;
+    dialog.querySelector("#view-guide-modal-title").textContent = `${heading?.textContent.trim() || "화면"} 사용법`;
+    const terms = (guide.relatedTerms || []).filter(key => TERMS[key]).map(key => `<details class="view-guide-term"><summary>${escHtml(TERMS[key].title)}</summary><p>${escHtml(TERMS[key].body)}</p></details>`).join("");
+    dialog.querySelector(".view-guide-modal-content").innerHTML = `<p class="view-guide-summary">${escHtml(guide.summary)}</p><ol>${guide.steps.map(step => `<li>${escHtml(step)}</li>`).join("")}</ol>${terms ? `<section class="view-guide-modal-terms"><h3>관련 용어</h3>${terms}</section>` : ""}`;
+    dialog.showModal();
+  });
+  const header = heading?.closest(".flex.items-center.justify-between");
+  if (header) {
+    // Keep the existing screen actions and add help at the right end of their row.
+    const actions = header.lastElementChild;
+    if (actions !== heading && actions?.classList.contains("flex") && !actions.contains(heading)) actions.appendChild(button);
+    else header.appendChild(button);
+  } else if (heading) {
+    const row = document.createElement("div");
+    row.className = "view-title-guide-row";
+    heading.replaceWith(row);
+    row.append(heading, button);
+  } else {
+    const row = document.createElement("div");
+    row.className = "view-title-guide-row";
+    row.appendChild(button); viewEl.prepend(row);
   }
-  mount.innerHTML = html;
-  mount.classList.toggle("open", wasOpen);
 }
 
 // ── 백테스트/모델 비교 트레이 (localStorage, 프론트 전용) ────────────
