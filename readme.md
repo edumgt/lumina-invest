@@ -960,3 +960,57 @@ AI의 Vector DB는 이 수많은 특징들을 가지고 무엇을 할까요? 핵
 - 저장소 간 API 계약: [docs/contracts/kis-autotrade-api.md](docs/contracts/kis-autotrade-api.md) (세 저장소 동일 사본)
 - 게이트웨이 설정: `STOCK_COIN_TRADE_BASE_URL`, `STOCK_COIN_TRADE_API_KEY`, `STOCK_COIN_TRADE_KIS_ENVIRONMENT=paper|real` (app/config.py)
 - 테스트: `.venv/bin/python -m pytest tests/test_live_order_gateway_path.py tests/test_stock_coin_trade_gateway.py tests/test_strategy_loader.py tests/test_strategy_spec_apply.py tests/test_risk_guard.py tests/test_session_auth.py -q`
+
+---
+
+## 사용 Lib.
+
+제시해주신 라이브러리들은 Python 생태계에서 웹 개발, 데이터 분석, 비동기 프로그래밍, 유틸리티 등 다양한 분야에서 널리 사용되는 핵심 패키지들입니다.
+
+주요 성격과 기능별로 그룹화하여 핵심 내용을 소개해 드립니다.
+
+
+## 1. 웹 개발 및 네트워크 통신
+
+* **`uvicorn` / `websockets` / `h11` / `h2` / `httpcore` / `httpcore2` / `httpx-sse` / `httptools` / `hyperframe` / `hpack**`: 비동기 웹 서버(ASGI), WebSocket 프로토콜, HTTP/1.1 및 HTTP/2 파싱, 그리고 현대적인 HTTP 클라이언트 구동을 담당하는 핵심 네트워크 라이브러리들입니다.
+* **`requests` / `urllib3` / `certifi` / `charset_normalizer` / `idna` / `sniffio**`: 동기 방식의 전통적인 HTTP 요청 처리와 SSL/TLS 인증서 관리, 인코딩 변환을 담당하는 필수 네트워킹 도구입니다.
+* **`python-multipart`**: FastAPI 등에서 파일 업로드 및 폼(Form) 데이터를 처리할 때 사용합니다.
+
+## 2. 데이터베이스 및 비동기 드라이버
+
+* **`sqlalchemy`**: 파이썬에서 가장 유명한 SQL 툴킷이자 ORM(Object Relational Mapper)입니다.
+* **`asyncpg` / `redis` / `neo4j**`: 각각 PostgreSQL(비동기), Redis(인메모리 DB), Neo4j(그래프 DB)와 상호작용하기 위한 고성능 드라이버 및 클라이언트입니다.
+
+## 3. 데이터 과학, 머신러닝 및 수치 연산
+
+* **`numpy` / `scipy**`: 파이썬 수치 계산과 과학 기술 연산의 기반이 되는 핵심 라이브러리입니다.
+* **`joblib` / `threadpoolctl**`: 병렬 컴퓨팅 작업 처리와 스레드 풀 제어를 통한 성능 최적화를 지원합니다.
+
+## 4. 데이터 파싱, 직렬화 및 구조화
+
+* **`pydantic-core` / `annotated-types` / `annotated-inspection` / `typing-extensions**`: 데이터 유효성 검사 및 타입 힌트 시스템을 강력하게 확장하고 지원합니다.
+* **`orjson` / `ormsgpack` / `pyyaml` / `jsonpatch` / `jsonpointer` / `protobuf**`: JSON, YAML, Protocol Buffers 등 다양한 데이터 포맷의 고속 직렬화/역직렬화 및 조작을 담당합니다.
+* **`lxml` / `beautifulsoup4`(소개문의 `soupsieve` 연동) / `MarkupSafe**`: HTML 및 XML 문서 파싱과 안전한 문자열 처리를 수행합니다.
+
+## 5. 문서 및 파일 처리
+
+* **`openpyxl` / `XlsxWriter` / `et-xmlfile` / `python-pptx` / `python-docx` / `pypdfium2**`: 마이크로소프트 오피스 문서(Excel, PowerPoint, Word) 및 PDF 파일을 프로그래밍 방식으로 생성, 수정, 읽기 위한 라이브러리들입니다.
+
+## 6. 비동기 및 병렬 처리 코어
+
+* **`uvloop` / `greenlet` / `asyncio` 기반 유틸 (`aiohappyeyeballs`, `frozenlist`, `multidict`, `yarl`)**: 표준 `asyncio`의 성능을 극대화(uvloop)하고, 비동기 웹 프레임워크(Aiohttp 등) 내부에서 데이터 구조를 효율적으로 관리합니다.
+* **`celery` 연관 라이브러리 (`billiard`, `vine`)**: 분산 작업 큐(Task Queue) 처리를 위한 저수준 구성 요소들입니다.
+
+## 7. 유틸리티, 보안 및 개발 지원 도구
+
+* **`click` / `click-plugins` / `click-didyoum` / `prompt_toolkit` / `iniconfig` / `pluggy` / `packaging**`: 커맨드 라인 인터페이스(CLI) 구축, 터미널 UI 제작, 플러그인 시스템 아키텍처 구현에 사용됩니다.
+* **`pydantic-core` 외 유틸**:
+* `pytz` / `tzlocal` / `tzdata` / `python-dateutil`: 타임존 및 날짜/시간 조작.
+* `pygments`: 코드 구문 강조(Syntax Highlighting).
+* `bcrypt` / `rsa` / `ecdsa` / `pyasn1`: 암호화, 해싱 및 보안 인증.
+* `zstandard` / `xxhash`: 고성능 데이터 압축 및 해시 알고리즘.
+* `tenacity`: 함수 재시도(Retry) 로직 구현.
+* `pytest`: 파이썬 표준 테스트 프레임워크.
+* `langchain-protocol`: LLM 애플리케이션 프레임워크 관련 프로토콜 인터페이스.
+
+
