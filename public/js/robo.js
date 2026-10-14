@@ -1,3 +1,4 @@
+import { setIconText } from "/js/icons.js";
 /* 로보 어드바이저: 자산배분 최적화, XAI 블록, 투자성향 설문, 목표 달성 시뮬레이션, 스크리닝, 패턴/멀티타임프레임, 모의 의사결정
  * app.html 인라인 스크립트에서 분리됨. 엔트리는 main.js */
 import { api, getMe, setToast, escHtml, fmt, fmtPct, colorPct } from "/js/common.js";
@@ -49,11 +50,11 @@ function renderXaiBlock(ex, { compact = false } = {}) {
   const sigCls = ex.signal === 1 ? "badge-buy" : ex.signal === -1 ? "badge-sell" : "badge-hold";
   return `<div class="mt-2 rounded-lg p-2" style="background:var(--surf2);border:1px solid var(--border);">
     <div class="flex items-center justify-between mb-1">
-      <span class="text-xs font-semibold">🧠 ${tt("AI 판단 근거 (XAI)", "SHAP 기여도: 각 지표가 모델의 매수/관망/매도 판단을 얼마나 밀어 올렸는지(+)/끌어내렸는지(−)", "shap")}</span>
+      <span class="text-xs font-semibold"><i class="fa-solid fa-brain" aria-hidden="true"></i> ${tt("AI 판단 근거 (XAI)", "SHAP 기여도: 각 지표가 모델의 매수/관망/매도 판단을 얼마나 밀어 올렸는지(+)/끌어내렸는지(−)", "shap")}</span>
       <span class="${sigCls}" style="font-size:11px;">${escHtml(ex.signal_label)} ${ex.probability_pct}%</span>
     </div>
-    ${ex.quality_warning ? `<p class="text-xs mb-1 px-2 py-1 rounded" style="background:rgba(242,54,69,.08);color:var(--red);border:1px solid rgba(242,54,69,.25);">⚠ 모델 성능 기준선 미달 — ${escHtml(ex.quality_warning)}</p>` : ""}
-    <p class="text-xs mb-2" style="color:var(--text-dim);">${escHtml((ex.summary || "").replace(/^⚠ [^ ]*.*?참고용입니다\. /, ""))}</p>
+    ${ex.quality_warning ? `<p class="text-xs mb-1 px-2 py-1 rounded" style="background:rgba(242,54,69,.08);color:var(--red);border:1px solid rgba(242,54,69,.25);"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> 모델 성능 기준선 미달 — ${escHtml(ex.quality_warning)}</p>` : ""}
+    <p class="text-xs mb-2" style="color:var(--text-dim);">${escHtml((ex.summary || ""))}</p>
     <div class="space-y-1">${bars}</div>
     ${compact ? "" : `<p class="text-xs mt-2" style="color:var(--text-mute);">${escHtml(ex.method || "")} · ${escHtml(ex.disclaimer || "")}</p>`}
   </div>`;
@@ -260,11 +261,11 @@ function screenProgressStep(i, total, stock, state, row) {
     li.scrollIntoView({ block: "nearest" });
   } else if (state === "pass") {
     const c = row.signal === "BUY" ? "var(--green)" : row.signal === "SELL" ? "var(--red)" : "var(--text-mute)";
-    li.innerHTML = `✔ <b>${name}</b> <span style="color:${c};font-weight:600;">${row.signal}</span> <span style="color:var(--text-mute);">${row.confidence}%</span>`;
+    li.innerHTML = `<i class="fa-solid fa-check" aria-hidden="true"></i> <b>${name}</b> <span style="color:${c};font-weight:600;">${row.signal}</span> <span style="color:var(--text-mute);">${row.confidence}%</span>`;
   } else if (state === "skip") {
     li.innerHTML = `– <span style="color:var(--text-mute);">${name} 제외${row ? ` (${row.signal} ${row.confidence}%)` : " (데이터 없음)"}</span>`;
   } else if (state === "error") {
-    li.innerHTML = `✖ <span style="color:var(--red);">${name} 오류</span>`;
+    li.innerHTML = `<i class="fa-solid fa-xmark" aria-hidden="true"></i> <span style="color:var(--red);">${name} 오류</span>`;
   } else if (state === "stopped") {
     li.innerHTML = `■ <span style="color:var(--text-mute);">${name} 이후 중지</span>`;
   }
@@ -314,7 +315,7 @@ function stopScreenHourglass(t0, message, isError = false) {
   const status = document.getElementById("screen-status");
   if (status) {
     status.style.color = isError ? "var(--red)" : "var(--text-mute)";
-    status.textContent = `${isError ? "✖" : "✔"} ${message} · 소요 ${fmtSec(performance.now() - t0)}초 · ${new Date().toLocaleTimeString("ko-KR")}`;
+    setIconText(status, `${isError ? "<i class=\"fa-solid fa-xmark\" aria-hidden=\"true\"></i>" : "<i class=\"fa-solid fa-check\" aria-hidden=\"true\"></i>"} ${message} · 소요 ${fmtSec(performance.now() - t0)}초 · ${new Date().toLocaleTimeString("ko-KR")}`);
   }
 }
 
@@ -335,7 +336,7 @@ async function loadRoboScreening() {
   } catch (e) {
     screenRunning = false;
     const status = document.getElementById("screen-status");
-    if (status) { status.style.color = "var(--red)"; status.textContent = `✖ 종목 목록 조회 실패 — ${e?.message || ""}`; }
+    if (status) { status.style.color = "var(--red)"; setIconText(status, `<i class="fa-solid fa-xmark" aria-hidden="true"></i> 종목 목록 조회 실패 — ${e?.message || ""}`); }
     return;
   }
   const total = stocks.length;
@@ -406,8 +407,8 @@ function renderScreenTable(signals) {
         <td style="text-align:right;color:${pct>=0?"var(--green)":"var(--red)"};">${pct>=0?"+":""}${pct.toFixed(2)}%</td>
         <td style="text-align:right;">${s.rsi?.toFixed(1) ?? "--"}</td>
         <td><span class="${sigClass}">${s.signal}</span></td>
-        <td style="font-size:11px;color:var(--text-mute);">${escHtml(s.reason || "계산된 패턴 신호")}${s.xai ? `<div style="color:var(--text-dim);margin-top:2px;">🧠 ${escHtml(s.xai.signal_label)} ${s.xai.probability_pct}% — ${escHtml((s.xai.top_positive?.[0]?.label) || "")}</div>` : ""}</td>
-        <td><button class="btn-secondary text-xs" onclick="showScreenXai('${escHtml(s.symbol)}')" title="LightGBM SHAP 기여도로 판단 근거 설명">🧠 설명</button></td>
+        <td style="font-size:11px;color:var(--text-mute);">${escHtml(s.reason || "계산된 패턴 신호")}${s.xai ? `<div style="color:var(--text-dim);margin-top:2px;"><i class="fa-solid fa-brain" aria-hidden="true"></i> ${escHtml(s.xai.signal_label)} ${s.xai.probability_pct}% — ${escHtml((s.xai.top_positive?.[0]?.label) || "")}</div>` : ""}</td>
+        <td><button class="btn-secondary text-xs" onclick="showScreenXai('${escHtml(s.symbol)}')" title="LightGBM SHAP 기여도로 판단 근거 설명"><i class="fa-solid fa-brain" aria-hidden="true"></i> 설명</button></td>
       </tr>`;
     }).join("")}</tbody>
   </table>`;
@@ -437,7 +438,7 @@ document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeXaiMo
 
 async function showScreenXai(symbol) {
   const t0 = performance.now();
-  openXaiModal(`🧠 ${escHtml(symbol)} — AI 판단 근거`,
+  openXaiModal(`<i class="fa-solid fa-brain" aria-hidden="true"></i> ${escHtml(symbol)} — AI 판단 근거`,
     `<div class="screen-loading" style="margin:0;">
       <span class="hourglass" aria-hidden="true">⏳</span>
       <div style="flex:1;">
@@ -457,7 +458,7 @@ async function showScreenXai(symbol) {
     if (!m || m.hidden) return; // 사용자가 기다리다 닫음
     const pr = r.prediction || {};
     openXaiModal(
-      `🧠 ${escHtml(r.name || symbol)} <span class="text-xs font-mono" style="color:var(--text-mute);">${escHtml(r.symbol || symbol)}</span> — AI 판단 근거`,
+      `<i class="fa-solid fa-brain" aria-hidden="true"></i> ${escHtml(r.name || symbol)} <span class="text-xs font-mono" style="color:var(--text-mute);">${escHtml(r.symbol || symbol)}</span> — AI 판단 근거`,
       `<div class="text-xs mb-3" style="color:var(--text-mute);">5일 예측 ${pr.pred_5d_return_pct ?? "-"}% · 모델 ${escHtml(pr.model || "")} · 신뢰도 ${pr.confidence ?? "-"} · 계산 ${fmtSec(performance.now() - t0)}초</div>
        ${r.explanation ? renderXaiBlock(r.explanation) : `<p class="text-xs" style="color:var(--text-mute);">이 종목은 LightGBM 분류를 학습할 수 없어 설명을 제공하지 못했습니다.</p>`}`
     );
@@ -465,8 +466,8 @@ async function showScreenXai(symbol) {
     clearInterval(timer);
     const m = document.getElementById("xai-modal");
     if (!m || m.hidden) return;
-    openXaiModal(`🧠 ${escHtml(symbol)} — AI 판단 근거`,
-      `<p class="text-xs" style="color:var(--red);">✖ ${escHtml(e?.message || "설명 조회 실패")} · ${fmtSec(performance.now() - t0)}초</p>`);
+    openXaiModal(`<i class="fa-solid fa-brain" aria-hidden="true"></i> ${escHtml(symbol)} — AI 판단 근거`,
+      `<p class="text-xs" style="color:var(--red);"><i class="fa-solid fa-xmark" aria-hidden="true"></i> ${escHtml(e?.message || "설명 조회 실패")} · ${fmtSec(performance.now() - t0)}초</p>`);
   }
 }
 window.showScreenXai = showScreenXai;
@@ -657,12 +658,12 @@ async function renderPatternChart(pat, symbol) {
 
 function renderIchimokuCard(box, ich, dirBadge) {
   if (!ich || ich.error) {
-    box("pt-ichimoku", `<h3 class="font-semibold text-sm mb-2">☁️ 일목균형표</h3><p class="text-sm" style="color:var(--text-mute)">${escHtml(ich?.error || "계산 불가")}</p>`);
+    box("pt-ichimoku", `<h3 class="font-semibold text-sm mb-2"><i class="fa-solid fa-cloud" aria-hidden="true"></i> 일목균형표</h3><p class="text-sm" style="color:var(--text-mute)">${escHtml(ich?.error || "계산 불가")}</p>`);
     return;
   }
   const pos = { above_cloud: ['<span class="badge-buy">구름 위</span>', "상승 추세 영역"], below_cloud: ['<span class="badge-sell">구름 아래</span>', "하락 추세 영역"], in_cloud: ['<span class="badge-hold">구름 안</span>', "방향성 불명"] }[ich.position] || ["", ""];
   const scoreColor = ich.score > 0 ? "var(--green)" : ich.score < 0 ? "var(--red)" : "var(--text-mute)";
-  box("pt-ichimoku", `<h3 class="font-semibold text-sm mb-2">☁️ 일목균형표 · 점수 <span style="color:${scoreColor}">${ich.score > 0 ? "+" : ""}${ich.score}</span> (−5~+5)${ich.three_fold ? ` · <b>${escHtml(ich.three_fold)}</b>` : ""}</h3>
+  box("pt-ichimoku", `<h3 class="font-semibold text-sm mb-2"><i class="fa-solid fa-cloud" aria-hidden="true"></i> 일목균형표 · 점수 <span style="color:${scoreColor}">${ich.score > 0 ? "+" : ""}${ich.score}</span> (−5~+5)${ich.three_fold ? ` · <b>${escHtml(ich.three_fold)}</b>` : ""}</h3>
     <div class="flex flex-wrap gap-2 text-xs mb-2">${pos[0]} <span style="color:var(--text-dim)">${pos[1]}</span> <span class="${ich.cloud_bullish ? "badge-buy" : "badge-sell"}">${ich.cloud_bullish ? "양운" : "음운"}</span> <span class="${ich.lead_cloud_bullish ? "badge-buy" : "badge-sell"}">선행 구름 ${ich.lead_cloud_bullish ? "양운" : "음운"}</span></div>
     <table><tbody>
       <tr><td>전환선(9) / 기준선(26)</td><td style="text-align:right;font-weight:600">${fmt(ich.tenkan)} / ${fmt(ich.kijun)}</td></tr>
@@ -671,13 +672,13 @@ function renderIchimokuCard(box, ich, dirBadge) {
       <tr><td>후행스팬 기준(26봉 전 종가)</td><td style="text-align:right">${ich.chikou_ref != null ? fmt(ich.chikou_ref) : "-"}</td></tr>
     </tbody></table>
     <ul class="text-xs mt-2 space-y-1" style="color:var(--text-dim);line-height:1.6;">${ich.reasons.map(r => `<li>· ${escHtml(r)}</li>`).join("")}</ul>
-    ${ich.events.length ? `<div class="flex flex-wrap gap-2 mt-2">${ich.events.map(e => `<div class="rounded-lg p-2 text-xs" style="background:var(--surf2);border:1px solid var(--border);">${dirBadge(e.direction)} <b>${escHtml(e.name)}</b>${e.confirmed ? ' <span style="color:var(--green)">✔ 확인</span>' : ""}<div style="color:var(--text-dim);margin-top:2px;">${escHtml(e.detail || "")}</div></div>`).join("")}</div>` : ""}
+    ${ich.events.length ? `<div class="flex flex-wrap gap-2 mt-2">${ich.events.map(e => `<div class="rounded-lg p-2 text-xs" style="background:var(--surf2);border:1px solid var(--border);">${dirBadge(e.direction)} <b>${escHtml(e.name)}</b>${e.confirmed ? ' <span style="color:var(--green)"><i class="fa-solid fa-check" aria-hidden="true"></i> 확인</span>' : ""}<div style="color:var(--text-dim);margin-top:2px;">${escHtml(e.detail || "")}</div></div>`).join("")}</div>` : ""}
     <p class="text-xs mt-2" style="color:var(--text-mute);">구름 위 = 지지 영역 위에서 거래, 구름 아래 = 저항 영역 아래에서 거래. 전환선>기준선·후행스팬 양전이 함께 나오면 삼역 호전입니다. 차트 체크박스로 구름·선을 겹쳐 볼 수 있습니다.</p>`);
 }
 
 function renderVolumeProfileCard(box, vp) {
   if (!vp || vp.error) {
-    box("pt-vp", `<h3 class="font-semibold text-sm mb-2">📊 매물대</h3><p class="text-sm" style="color:var(--text-mute)">${escHtml(vp?.error || "계산 불가")}</p>`);
+    box("pt-vp", `<h3 class="font-semibold text-sm mb-2"><i class="fa-solid fa-chart-column" aria-hidden="true"></i> 매물대</h3><p class="text-sm" style="color:var(--text-mute)">${escHtml(vp?.error || "계산 불가")}</p>`);
     return;
   }
   const maxPct = Math.max(...vp.rows.map(r => r.pct), 1);
@@ -686,7 +687,7 @@ function renderVolumeProfileCard(box, vp) {
       <td style="width:45%"><div style="height:12px;border-radius:3px;background:${r.poc ? "#f59e0b" : r.value_area ? "#fbbf24aa" : "var(--border)"};width:${Math.max(2, r.pct / maxPct * 100)}%"></div></td>
       <td class="text-xs" style="text-align:right;white-space:nowrap">${(r.volume / 1e6 >= 1 ? (r.volume / 1e6).toFixed(2) + "m" : (r.volume / 1e3).toFixed(0) + "k")} (${r.pct}%)</td>
       <td class="text-xs">${r.poc ? "<b>최대 매물대</b>" : r.heavy ? "두터움" : r.value_area ? "가치영역" : ""}</td></tr>`).join("");
-  box("pt-vp", `<h3 class="font-semibold text-sm mb-2">📊 매물대 (최근 ${vp.lookback_bars}봉 · 가격대별 거래량)</h3>
+  box("pt-vp", `<h3 class="font-semibold text-sm mb-2"><i class="fa-solid fa-chart-column" aria-hidden="true"></i> 매물대 (최근 ${vp.lookback_bars}봉 · 가격대별 거래량)</h3>
     <div class="flex flex-wrap gap-2 text-xs mb-2">
       <span class="badge-hold">최대 매물대 ${fmt(vp.poc.low)}~${fmt(vp.poc.high)} (${vp.poc.pct}%)</span>
       <span class="badge-hold">가치영역 ${fmt(vp.value_area.low)}~${fmt(vp.value_area.high)} (${vp.value_area.pct}%)</span>
@@ -699,7 +700,7 @@ function renderVolumeProfileCard(box, vp) {
 }
 
 function renderGapsCard(box, gaps, dirBadge) {
-  box("pt-gaps", `<h3 class="font-semibold text-sm mb-2">🪜 갭 (최근 5봉)</h3>${
+  box("pt-gaps", `<h3 class="font-semibold text-sm mb-2"><i class="fa-solid fa-stairs" aria-hidden="true"></i> 갭 (최근 5봉)</h3>${
     gaps.length ? `<table><thead><tr><th>시각</th><th>갭</th><th>방향</th><th style="text-align:right">거래량/20봉</th><th>메움</th><th>해설</th></tr></thead><tbody>${gaps.map(g => `<tr><td class="text-xs">${escHtml(g.date)}${g.bars_ago === 0 ? " <b>(최신)</b>" : ""}</td><td style="font-weight:600">${escHtml(g.name)}</td><td>${dirBadge(g.direction)}</td><td style="text-align:right">${g.vol_ratio}배</td><td class="text-xs">${g.filled ? "메워짐" : g.faded ? "되밀림" : "유지"}</td><td class="text-xs" style="color:var(--text-dim)">${escHtml(g.description)}</td></tr>`).join("")}</tbody></table>`
     : `<p class="text-sm" style="color:var(--text-mute)">최근 5봉에 1% 이상 갭이 없습니다.</p>`}
     <p class="text-xs mt-2" style="color:var(--text-mute);">거래량을 동반한 갭 상승이 당일 되밀리면 소진 갭(단기 고점), 유지되면 돌파 갭으로 분류합니다. 분봉에서는 장 시작 봉의 갭이 대부분입니다.</p>`);
@@ -738,7 +739,7 @@ async function loadPatternAnalysis({ automatic = false } = {}) {
       const actCls = mtf.action.includes("매수") ? "badge-buy" : mtf.action.includes("매도") ? "badge-sell" : "badge-hold";
       box("pt-mtf", `
         <div class="flex flex-wrap items-center gap-3 mb-3">
-          <h3 class="font-semibold text-sm">📐 멀티타임프레임 종합 신호 — ${escHtml(symbol)}</h3>
+          <h3 class="font-semibold text-sm"><i class="fa-solid fa-ruler-combined" aria-hidden="true"></i> 멀티타임프레임 종합 신호 — ${escHtml(symbol)}</h3>
           <span class="${actCls}" style="font-size:14px;">${escHtml(mtf.action)}</span>
           <span class="text-xs" style="color:var(--text-dim);">종합 점수 ${mtf.composite} · ${tt("신뢰도","타임프레임 방향 일치도(50%) + 점수 크기(50%)","confidence")} <b>${mtf.confidence}%</b> · 방향 일치 ${mtf.agreement}%</span>
         </div>
@@ -750,19 +751,19 @@ async function loadPatternAnalysis({ automatic = false } = {}) {
       box("pt-mtf", `<span class="text-sm" style="color:var(--text-mute);">멀티타임프레임 조회 실패: ${escHtml(mtfResult.reason?.message || "데이터를 불러오지 못했습니다.")}</span>`);
     }
     const dirBadge = (d) => d === "bullish" ? `<span class="badge-buy">상승</span>` : d === "bearish" ? `<span class="badge-sell">하락</span>` : `<span class="badge-hold">중립</span>`;
-    box("pt-patterns", `<h3 class="font-semibold text-sm mb-2">🕯️ 캔들 패턴 (최근 5봉) · 패턴 점수 ${pat.pattern_score} (${escHtml(pat.pattern_bias)})</h3>${
+    box("pt-patterns", `<h3 class="font-semibold text-sm mb-2"><i class="fa-solid fa-chart-simple" aria-hidden="true"></i> 캔들 패턴 (최근 5봉) · 패턴 점수 ${pat.pattern_score} (${escHtml(pat.pattern_bias)})</h3>${
       pat.patterns.length ? `<table><thead><tr><th>일자</th><th>패턴</th><th>방향</th><th>해설</th></tr></thead><tbody>${pat.patterns.map(p => `<tr><td class="text-xs">${p.date}${p.bars_ago===0?" <b>(최신)</b>":""}</td><td style="font-weight:600">${escHtml(p.name)}</td><td>${dirBadge(p.direction)}</td><td class="text-xs" style="color:var(--text-dim)">${escHtml(p.description)}</td></tr>`).join("")}</tbody></table>`
       : `<p class="text-sm" style="color:var(--text-mute)">최근 5봉에서 뚜렷한 캔들 패턴이 없습니다.</p>`}`);
     const sr = pat.support_resistance;
-    box("pt-sr", `<h3 class="font-semibold text-sm mb-2">📏 지지·저항선 (최근 ${sr.lookback_bars}봉 피벗 군집) · 분석 기준가 ${fmt(sr.last_price)}</h3>
+    box("pt-sr", `<h3 class="font-semibold text-sm mb-2"><i class="fa-solid fa-ruler-horizontal" aria-hidden="true"></i> 지지·저항선 (최근 ${sr.lookback_bars}봉 피벗 군집) · 분석 기준가 ${fmt(sr.last_price)}</h3>
       <div class="flex gap-3 text-xs mb-2">${sr.nearest_resistance ? `<span class="badge-sell">가장 가까운 저항 ${fmt(sr.nearest_resistance.price)} (${sr.nearest_resistance.distance_pct>0?"+":""}${sr.nearest_resistance.distance_pct}%)</span>` : ""}${sr.nearest_support ? `<span class="badge-buy">가장 가까운 지지 ${fmt(sr.nearest_support.price)} (${sr.nearest_support.distance_pct}%)</span>` : ""}</div>
       <div class="text-xs mb-3 space-y-1" style="color:var(--text-dim);line-height:1.7;">
         <p>${sr.nearest_support ? `가까운 지지 ${fmt(sr.nearest_support.price)}: 기준가보다 ${Math.abs(sr.nearest_support.distance_pct)}% 낮은 가격대입니다. 가격이 내려올 때 이 부근에서 하락이 멈추는지 또는 아래로 이탈하는지 살펴보세요.` : "표시된 후보 중 기준가 아래의 지지는 없습니다. 하락할 수 없다는 의미는 아닙니다."}</p>
         <p>${sr.nearest_resistance ? `가까운 저항 ${fmt(sr.nearest_resistance.price)}: ${sr.nearest_resistance.distance_pct === 0 ? "기준가와 같은" : `기준가보다 ${Math.abs(sr.nearest_resistance.distance_pct)}% 높은`} 가격대입니다. 가격이 올라올 때 이 부근에서 상승이 막히는지 또는 위로 돌파하는지 살펴보세요.` : "표시된 후보 중 기준가 이상의 저항은 없습니다. 계속 상승한다는 의미는 아닙니다."}</p>
       </div>
       ${sr.levels.length ? `<table><thead><tr><th>가격대</th><th>구분</th><th style="text-align:right">터치</th><th>강도</th><th style="text-align:right">기준가 대비</th></tr></thead><tbody>${sr.levels.map(l => `<tr><td style="font-weight:600">${fmt(l.price)}</td><td>${l.type==="support"?'<span class="badge-buy">지지</span>':'<span class="badge-sell">저항</span>'}</td><td style="text-align:right">${l.touches}회</td><td>${l.strength}</td><td style="text-align:right;color:${l.distance_pct>=0?"var(--green)":"var(--red)"}">${l.distance_pct>0?"+":""}${l.distance_pct}%</td></tr>`).join("")}</tbody></table>` : `<p class="text-sm" style="color:var(--text-mute)">레벨을 찾지 못했습니다.</p>`}`);
-    box("pt-breakouts", `<h3 class="font-semibold text-sm mb-2">🚀 돌파·크로스 이벤트 (${pat.as_of} 기준)</h3>${
-      pat.breakouts.length ? `<div class="flex flex-wrap gap-2">${pat.breakouts.map(e => `<div class="rounded-lg p-2 text-xs" style="background:var(--surf2);border:1px solid var(--border);min-width:220px;">${dirBadge(e.direction)} <b>${escHtml(e.name)}</b>${e.confirmed ? ' <span style="color:var(--green)">✔ 확인</span>' : ''}<div style="color:var(--text-dim);margin-top:2px;">${escHtml(e.detail || "")}</div></div>`).join("")}</div>`
+    box("pt-breakouts", `<h3 class="font-semibold text-sm mb-2"><i class="fa-solid fa-rocket" aria-hidden="true"></i> 돌파·크로스 이벤트 (${pat.as_of} 기준)</h3>${
+      pat.breakouts.length ? `<div class="flex flex-wrap gap-2">${pat.breakouts.map(e => `<div class="rounded-lg p-2 text-xs" style="background:var(--surf2);border:1px solid var(--border);min-width:220px;">${dirBadge(e.direction)} <b>${escHtml(e.name)}</b>${e.confirmed ? ' <span style="color:var(--green)"><i class="fa-solid fa-check" aria-hidden="true"></i> 확인</span>' : ''}<div style="color:var(--text-dim);margin-top:2px;">${escHtml(e.detail || "")}</div></div>`).join("")}</div>`
       : `<p class="text-sm" style="color:var(--text-mute)">현재 봉에서 돌파·크로스 이벤트가 없습니다.</p>`}`);
     renderIchimokuCard(box, pat.ichimoku, dirBadge);
     renderVolumeProfileCard(box, pat.volume_profile);
@@ -820,7 +821,7 @@ async function loadRoboDecision() {
   try {
     const [data, ready] = await Promise.all([api("/api/quant/auto/status"), api("/api/quant/kis/quickstart").catch(() => null)]);
     const el = document.getElementById("robo-decision-status");
-    if (el) el.textContent = data.running ? "🟢 실행 중" : "⚫ 중지됨";
+    if (el) setIconText(el, data.running ? "<i class=\"fa-solid fa-circle\" aria-hidden=\"true\"></i> 실행 중" : "<i class=\"fa-solid fa-circle\" aria-hidden=\"true\"></i> 중지됨");
     renderRoboAccount(data, ready);
     renderRoboDecisionLog(data.logs || []);
     renderRoboRationale(data.signals || []);
@@ -904,7 +905,7 @@ function renderRoboRationale(signals) {
     <div class="card" style="padding:14px;">
       <div class="flex items-center justify-between gap-2 mb-1"><div class="font-semibold text-sm">${escHtml(s.name || s.symbol)}</div>${badge}</div>
       <div class="text-xs mb-1" style="color:var(--text-mute);">신호 점수 ${Number(s.score ?? 0).toFixed(1)} · ${s.price != null ? `${Number(s.price).toLocaleString("ko-KR")}원 · ` : ""}${s.source === "batch" ? "배치" : "내 계정"}${s.cycle_time ? ` · 사이클 ${escHtml(s.cycle_time)}` : ""}</div>
-      <div class="text-xs mb-2" style="color:var(--text-mute);">📡 ${rationaleBasis(s)}</div>
+      <div class="text-xs mb-2" style="color:var(--text-mute);"><i class="fa-solid fa-satellite-dish" aria-hidden="true"></i> ${rationaleBasis(s)}</div>
       <ul class="text-xs space-y-1" style="color:var(--text-dim);list-style:disc;padding-left:16px;">${reasons.map(r => `<li>${escHtml(r)}</li>`).join("")}</ul>
     </div>`;
   }).join("");

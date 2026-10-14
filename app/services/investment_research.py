@@ -295,7 +295,7 @@ def ai_predict_return(candles: list[dict]) -> dict | None:
             if explanation:
                 explanation["quality_warning"] = (f"검증 정확도 {cls_acc:.2f}가 기준선(다수 클래스 {baseline:.2f}) 대비 유의하게 높지 않아 "
                                                   f"모델 신호를 '관망'으로 낮췼습니다. 아래 기여도는 참고용입니다.")
-                explanation["summary"] = "⚠ " + explanation["quality_warning"] + " " + explanation["summary"]
+                explanation["summary"] = "주의: " + explanation["quality_warning"] + " " + explanation["summary"]
     except Exception:
         signal = 1 if pred_5d > 0 else (-1 if pred_5d < 0 else 0)
         explanation = None

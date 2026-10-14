@@ -71,7 +71,7 @@ async def tradingview_webhook(request: Request, db: AsyncSession = Depends(get_p
     # 신호 전달 (Slack/Telegram/Email 등 사용자 알림 채널)
     try:
         label = {"BUY": "매수", "SELL": "매도"}.get(sig["side"], "알림")
-        text = (f"📡 [TradingView] {label} 신호 수신 — {sig['symbol']} {sig['quantity']}주"
+        text = (f" [TradingView] {label} 신호 수신 — {sig['symbol']} {sig['quantity']}주"
                 f"{f' @ {sig['signal_price']:,.0f}' if sig['signal_price'] else ''}"
                 f"\n전략: {sig['strategy'] or '-'} · 처리: {sig['status']} · {sig['message']}")
         await notification.dispatch(text, html_message=text.replace("\n", "\n\n"), subject=f"[TradingView] {label} 신호 – {sig['symbol']}",

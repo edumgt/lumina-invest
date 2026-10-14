@@ -1,3 +1,4 @@
+import { setIconText } from "/js/icons.js";
 /* 퀀트자동매매: 대시보드, 자동매매·위험관리 상태, 전략 분석
  * app.html 인라인 스크립트에서 분리됨. 엔트리는 main.js */
 import { api, getMe, setToast, escHtml, fmt, fmtPct, colorPct } from "/js/common.js";
@@ -106,17 +107,16 @@ async function loadAutoTradeStatus() {
   loadRiskStatus(); // 로그가 없어 아래에서 조기 return 되더라도 위험관리 상태는 항상 표시
   try {
     const s = await api("/api/auto-trade/status");
-    document.getElementById("auto-trade-status").textContent =
-      (s.running ? "🟢 실행 중" : "⭕ 정지") + (s.scheduler ? ` · ${s.scheduler}` : "") + (s.last_cycle_at ? ` · 마지막 사이클 ${s.last_cycle_at} UTC` : "");
+    setIconText(document.getElementById("auto-trade-status"), (s.running ? "<i class=\"fa-solid fa-circle\" aria-hidden=\"true\"></i> 실행 중" : "<i class=\"fa-solid fa-circle\" aria-hidden=\"true\"></i> 정지") + (s.scheduler ? ` · ${s.scheduler}` : "") + (s.last_cycle_at ? ` · 마지막 사이클 ${s.last_cycle_at} UTC` : ""));
     const el = document.getElementById("auto-trade-log");
     if (!s.log?.length) { el.innerHTML = "<div class='text-slate-400'>자동매매 로그가 없습니다.</div>"; return; }
     el.innerHTML = [...s.log].reverse().map(cycle => {
       const trades = (cycle.trades || []).map(t =>
         t.type === "risk" || t.status === "skipped"
-          ? `<div class="ml-3 text-amber-400">⚠️ ${t.action === "buy" ? "매수" : "매도"} 생략 ${escHtml(t.name)} — ${escHtml(t.reason || "")}</div>`
-          : `<div class="ml-3 text-slate-300">${t.action === "buy" ? "🟢매수" : "🔴매도"} ${escHtml(t.name)} ${fmt(t.quantity)}주 @${fmt(t.price)}</div>`
+          ? `<div class="ml-3 text-amber-400"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> ${t.action === "buy" ? "매수" : "매도"} 생략 ${escHtml(t.name)} — ${escHtml(t.reason || "")}</div>`
+          : `<div class="ml-3 text-slate-300">${t.action === "buy" ? "<i class=\"fa-solid fa-circle\" aria-hidden=\"true\"></i>매수" : "<i class=\"fa-solid fa-circle\" aria-hidden=\"true\"></i>매도"} ${escHtml(t.name)} ${fmt(t.quantity)}주 @${fmt(t.price)}</div>`
       ).join("");
-      const risk = cycle.risk ? `<div class="ml-3 text-slate-500">위험관리: 당일 ${cycle.risk.day_pnl_pct ?? "-"}% · 주문 ${cycle.risk.orders_today ?? "-"}건${cycle.risk.halted ? ` · <span class="text-red-400">🛑 ${escHtml(cycle.risk.reason || "비상 정지")}</span>` : ""}</div>` : "";
+      const risk = cycle.risk ? `<div class="ml-3 text-slate-500">위험관리: 당일 ${cycle.risk.day_pnl_pct ?? "-"}% · 주문 ${cycle.risk.orders_today ?? "-"}건${cycle.risk.halted ? ` · <span class="text-red-400"><i class="fa-solid fa-circle-stop" aria-hidden="true"></i> ${escHtml(cycle.risk.reason || "비상 정지")}</span>` : ""}</div>` : "";
       const sigs = (cycle.signals || []).map(sig =>
         `<div class="ml-3 text-slate-500">${escHtml(sig.name||sig.symbol)}: ${escHtml(sig.action||"-")} (점수:${sig.score??"-"})</div>`
       ).join("");
@@ -135,7 +135,7 @@ async function loadRiskStatus() {
     const pnlCls = r.day_pnl_pct == null ? "" : (r.day_pnl_pct >= 0 ? "text-emerald-400" : "text-red-400");
     const tile = (label, value, cls = "") => `<div class="rounded-lg p-2" style="background:var(--surf3);"><div style="color:var(--text-mute);">${label}</div><div class="font-bold ${cls}">${value}</div></div>`;
     document.getElementById("risk-kpis").innerHTML = [
-      tile("비상 정지", r.kill_switch ? `<span class="text-red-400">🛑 ON</span>` : `<span class="text-emerald-400">OFF</span>`),
+      tile("비상 정지", r.kill_switch ? `<span class="text-red-400"><i class="fa-solid fa-circle-stop" aria-hidden="true"></i> ON</span>` : `<span class="text-emerald-400">OFF</span>`),
       tile("당일 손익", r.day_pnl_pct == null ? "-" : `${r.day_pnl_pct > 0 ? "+" : ""}${r.day_pnl_pct}% <span class="font-normal" style="color:var(--text-mute)">/ 한도 -${L.daily_loss_limit_pct}%</span>`, r.daily_loss_breached ? "text-red-400" : pnlCls),
       tile("당일 자동 주문", `${r.orders_today ?? 0}건 <span class="font-normal" style="color:var(--text-mute)">/ 최대 ${L.max_orders_per_day || "∞"}</span>`),
       tile("종목 비중 한도", `${L.max_position_pct || "∞"}%`),
@@ -224,7 +224,7 @@ document.getElementById("bt-load").addEventListener("click", async () => {
           summary: `수익률 ${pct(data.total_return_pct)} · 보유 ${pct(data.buy_hold_return_pct)} · 샤프 ${data.sharpe_ratio ?? "-"} · MDD ${data.mdd_pct}%`,
           metrics: { return_pct: data.total_return_pct, bh_pct: data.buy_hold_return_pct, excess_pct: excess, sharpe: data.sharpe_ratio, mdd_pct: data.mdd_pct,
                      win_rate_pct: data.win_rate_pct, trade_count: data.trade_count, exposure_pct: data.exposure_pct, cost_bps: data.cost_bps, period: "10y" },
-        }).replace(/'/g, "&#39;")})'>⚖️ 비교에 추가</button>
+        }).replace(/'/g, "&#39;")})'><i class="fa-solid fa-scale-balanced" aria-hidden="true"></i> 비교에 추가</button>
       </div>
     `;
     renderCompareTrayAll();

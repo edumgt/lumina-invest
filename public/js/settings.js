@@ -1,3 +1,4 @@
+import { setIconText } from "/js/icons.js";
 /* 증권사 Open API 설정, 알림 설정
  * app.html 인라인 스크립트에서 분리됨. 엔트리는 main.js */
 import { api, getMe, setToast, escHtml, fmt, fmtPct, colorPct } from "/js/common.js";
@@ -24,7 +25,7 @@ async function loadSettings() {
     document.getElementById("risk-max-orders").value   = rk.max_orders_per_day ?? 20;
     document.getElementById("risk-cooldown").value     = rk.cooldown_min ?? 30;
     document.getElementById("risk-kill-badge").innerHTML = rk.kill_switch
-      ? `<span class="badge-sell">🛑 비상 정지 ON${cfg.risk_halt_reason ? " · " + escHtml(cfg.risk_halt_reason) : ""}</span>`
+      ? `<span class="badge-sell"><i class="fa-solid fa-circle-stop" aria-hidden="true"></i> 비상 정지 ON${cfg.risk_halt_reason ? " · " + escHtml(cfg.risk_halt_reason) : ""}</span>`
       : `<span class="badge-buy">정상</span>`;
     const selected = new Set(cfg.selected_symbols || []);
     document.querySelectorAll(".quant-symbol").forEach((el) => {
@@ -34,9 +35,9 @@ async function loadSettings() {
     managedBrokers = new Set(cfg.managed_brokers || ["kis"]);
     lastKisManaged = cfg.kis_managed || null;
     renderManagedBroker();
-    document.getElementById("broker-status").textContent = cfg.kis_managed
-      ? (cfg.connected ? `✅ 연결됨 (KIS · 서버 관리 자격증명)` : "⚠️ KIS 자격증명 미연동 – Mockup 모드")
-      : (cfg.connected ? `✅ 연결됨 (${cfg.broker})` : "⚠️ API 키 미설정 – Mockup 모드");
+    setIconText(document.getElementById("broker-status"), cfg.kis_managed
+      ? (cfg.connected ? `<i class="fa-solid fa-check" aria-hidden="true"></i> 연결됨 (KIS · 서버 관리 자격증명)` : "<i class=\"fa-solid fa-triangle-exclamation\" aria-hidden=\"true\"></i> KIS 자격증명 미연동 – Mockup 모드")
+      : (cfg.connected ? `<i class="fa-solid fa-check" aria-hidden="true"></i> 연결됨 (${cfg.broker})` : "<i class=\"fa-solid fa-triangle-exclamation\" aria-hidden=\"true\"></i> API 키 미설정 – Mockup 모드"));
     renderLiveRoute(cfg.live_gateway);
     await loadStrategies(cfg.strategy_id || "", cfg.strategy_version || 0);
     loadLiveOrders();
@@ -58,14 +59,14 @@ function renderManagedBroker() {
   if (!managed) return;
   const st = lastKisManaged;
   if (!st) {
-    box.innerHTML = `<b>🔐 자격증명 서버 관리</b> · App Key / Secret / 계좌번호는 입력하지 않습니다. 저장 후 연동 여부가 표시됩니다.`;
+    box.innerHTML = `<b><i class="fa-solid fa-lock" aria-hidden="true"></i> 자격증명 서버 관리</b> · App Key / Secret / 계좌번호는 입력하지 않습니다. 저장 후 연동 여부가 표시됩니다.`;
     return;
   }
   const badge = st.configured ? `<span class="badge-buy">연동됨</span>` : `<span class="badge-sell">미연동</span>`;
   const src = st.source === "secrets-manager" ? `AWS Secrets Manager${st.secret_name ? " · " + escHtml(st.secret_name) : ""}`
             : st.source === "env" ? "서버 환경변수" : "소스 미설정";
   const env = st.environment === "real" ? "실전" : "모의(Testbed)";
-  box.innerHTML = `<b>🔐 KIS 자격증명 · 서버 관리</b> ${badge}<br>` +
+  box.innerHTML = `<b><i class="fa-solid fa-lock" aria-hidden="true"></i> KIS 자격증명 · 서버 관리</b> ${badge}<br>` +
     `<span style="color:var(--text-mute);">소스: ${src} · 환경: ${env}` +
     (st.account_masked ? ` · 계좌 ${escHtml(st.account_masked)}` : (st.configured ? " · 계좌번호 없음" : "")) +
     (st.error ? `<br>오류: ${escHtml(st.error)}` : "") + `</span>`;
@@ -224,10 +225,10 @@ document.getElementById("broker-test")?.addEventListener("click", async () => {
   el.textContent = "연결 테스트 중...";
   try {
     const data = await api("/api/broker/price?symbol=005930.KS");
-    el.textContent = `✅ 연결 성공 – 삼성전자 현재가: ${fmt(data.current)}원`;
+    setIconText(el, `<i class="fa-solid fa-check" aria-hidden="true"></i> 연결 성공 – 삼성전자 현재가: ${fmt(data.current)}원`);
     setToast("연결 성공", "ok");
   } catch (e) {
-    el.textContent = `❌ 연결 실패: ${e.message}`;
+    setIconText(el, `<i class="fa-solid fa-xmark" aria-hidden="true"></i> 연결 실패: ${e.message}`);
     setToast(e.message, "error");
   }
 });
@@ -326,7 +327,7 @@ document.getElementById("noti-save")?.addEventListener("click", async () => {
       },
     });
     setToast("알림 설정이 저장되었습니다.", "ok");
-    document.getElementById("noti-status").textContent = "✅ 저장 완료";
+    setIconText(document.getElementById("noti-status"), "<i class=\"fa-solid fa-check\" aria-hidden=\"true\"></i> 저장 완료");
     loadNotificationSettings();
   } catch (e) { setToast(e.message, "error"); }
 });
@@ -336,11 +337,11 @@ document.getElementById("noti-test")?.addEventListener("click", async () => {
   el.textContent = "테스트 알림 전송 중...";
   try {
     await api("/api/notification/test", { method: "POST" });
-    el.textContent = "✅ 테스트 알림을 전송했습니다. 수신 여부를 확인하세요.";
+    setIconText(el, "<i class=\"fa-solid fa-check\" aria-hidden=\"true\"></i> 테스트 알림을 전송했습니다. 수신 여부를 확인하세요.");
     setToast("테스트 알림 전송 완료", "ok");
     loadNotificationHistory();
   } catch (e) {
-    el.textContent = `❌ 전송 실패: ${e.message}`;
+    setIconText(el, `<i class="fa-solid fa-xmark" aria-hidden="true"></i> 전송 실패: ${e.message}`);
     setToast(e.message, "error");
   }
 });

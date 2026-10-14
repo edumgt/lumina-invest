@@ -41,7 +41,7 @@ const GNB_MENUS = {
   trading: {
     label: "<i class='fa-solid fa-chart-line'></i> 직접매매",
     items: [
-      { key: "trading-chart",     icon: "fa-solid fa-chart-candlestick", label: "주가 차트" },
+      { key: "trading-chart",     icon: "fa-solid fa-chart-simple", label: "주가 차트" },
       { key: "trading-portfolio", icon: "fa-solid fa-briefcase",         label: "포트폴리오" },
       { key: "trading-order",     icon: "fa-solid fa-arrows-rotate",     label: "주문/매매" },
     ],
@@ -95,7 +95,7 @@ const GNB_MENUS = {
       { key: "ml-regression",  icon: "fa-solid fa-chart-line",      label: "회귀 분석" },
       { key: "ml-cluster",     icon: "fa-solid fa-circle-nodes",    label: "종목 군집화" },
       { key: "ml-tune",        icon: "fa-solid fa-sliders",         label: "하이퍼파라미터 튜닝" },
-      { key: "ml-deeplearning",icon: "fa-solid fa-brain-circuit",   label: "딥러닝 (LSTM·Transformer)" },
+      { key: "ml-deeplearning",icon: "fa-solid fa-brain",   label: "딥러닝 (LSTM·Transformer)" },
     ],
   },
   invest: {
@@ -104,14 +104,14 @@ const GNB_MENUS = {
       { key: "macro-dashboard",   icon: "fa-solid fa-globe",           label: "거시경제 지표" },
       { key: "macro-industry",    icon: "fa-solid fa-industry",        label: "산업 분석" },
       { key: "invest-fundamental",icon: "fa-solid fa-file-invoice-dollar", label: "재무제표 분석" },
-      { key: "invest-technical",  icon: "fa-solid fa-chart-candlestick",  label: "기술적 분석" },
+      { key: "invest-technical",  icon: "fa-solid fa-chart-simple",  label: "기술적 분석" },
     ],
   },
   finance: {
     label: "<i class='fa-solid fa-coins'></i> 금융 필수 지식",
     items: [
       { key: "fin-products",   icon: "fa-solid fa-layer-group",   label: "금융상품 이해" },
-      { key: "fin-allocation", icon: "fa-solid fa-pie-chart",     label: "자산배분 모델" },
+      { key: "fin-allocation", icon: "fa-solid fa-chart-pie",     label: "자산배분 모델" },
       { key: "quant-seasonal", icon: "fa-solid fa-calendar-days", label: "계절성 분석" },
     ],
   },
@@ -190,7 +190,7 @@ const VIEW_GUIDES = {
   "agent-chat":      { summary: "금융 지식·데이터를 학습한 AI 로보 어드바이저에게 자유롭게 투자 관련 질문을 합니다.", steps: ["궁금한 내용을 채팅창에 입력 후 전송 버튼(또는 Enter)을 누르세요.", "신용점수, 금융상품, 퀀트 전략 등 여러 주제를 한 대화에서 섞어 물어봐도 됩니다.", "AI 답변은 참고용이며, 실제 투자 결정 전 반드시 스스로 데이터를 검증하세요."], relatedTerms: ["rag", "cb_score"] },
   "strategy-settings":    { summary: "자동매매 봇의 운영 모드를 ① 공격 모드 · ② 백테스트 기반 규칙(pr LEAN 합격 전략 스펙) · ③ 사용자 설정(일봉 점수 임계값) 중에서 고르고, 모드별 파라미터·청산 규칙·주문 유형·투자금·위험관리를 설명과 함께 바꿉니다. 저장 즉시 다음 사이클부터 적용됩니다(재시작 불필요). 이 값들은 ML 하이퍼파라미터가 아니라 운영 파라미터이며, 하이퍼파라미터와 성격이 비슷한 조정값은 굵게 표시됩니다.", steps: ["맨 위 「운영 모드」 카드에서 세 모드 중 하나를 고르세요. 선택한 모드의 그룹만 매매에 쓰입니다.", "② 백테스트 기반 규칙이면 전략 스펙을 고르고 카드에서 규칙·백테스트 결과·버전을 확인하세요. 최근 기간 성과가 궁금하면 「최근 기간으로 재검증」, 새 조건은 「pr 에서 백테스트 열기」 → 저장 → 여기서 선택.", "굵게 표시된 항목(임계값·익절/손절·분봉 간격)은 한 번에 하나씩 바꾸고 프로필 메모를 남기세요.", "「저장·적용」 후 「설정별 성과」에서 결과를 비교하세요."], relatedTerms: ["ma", "rsi", "mdd", "win_rate", "position_sizing"] },
   "return-review":        { summary: "KIS 계좌의 일별 평가액(누적 수익률·손익)을 DB(kis_equity_snapshots)에 쌓고, 같은 날의 매매 이력(체결 수·실현손익·승률·손익비)과 전략설정 프로필(운영 모드)을 맞춰 봅니다. 수치에서 나온 진단마다 전략설정의 어느 항목을 어떻게 바꿀지, 기대 효과와 검증 방법을 가이드로 제시합니다.", steps: ["KIS 화면의 일별 손익 표를 「붙여넣기 적재」에 넣으면 날짜별로 저장됩니다(같은 날짜는 덮어씀). 매 영업일 15:40 에는 게이트웨이 잔고로 자동 기록됩니다.", "KPI·차트에서 손실이 집중된 날을 찾고, 표에서 그 날의 체결 수·운영 모드를 확인하세요.", "가이드 카드의 「전략설정에서 바꾸기」 버튼은 해당 항목으로 이동해 강조합니다. 한 번에 하나씩 바꾸고 프로필 메모를 남기세요.", "바꾼 뒤 1주일, 이 화면에서 전환 전후의 일변화 분포·기대값을 비교하세요."], relatedTerms: ["mdd", "win_rate", "sharpe"] },
-  "strategy-performance": { summary: "설정 프로필(저장 시점)별로 봇의 가상 체결·KIS 실체결 실현손익, 승률, 거래 수, 평가액 변화를 비교합니다. 매도 시각에 적용 중이던 프로필에 손익을 귀속합니다.", steps: ["표의 한 행이 설정 프로필 하나(적용 기간)입니다. ★ 가 현재 적용 중.", "실현손익(KIS)은 FILLED 실주문 기준, 가상은 가상계좌 체결 기준입니다. 평가액 변화는 프로필 시작·종료 시점 사이클 로그의 평가액 차이입니다.", "행을 클릭하면 그 프로필의 설정값 전체를 볼 수 있습니다.", "프로필 적용 시간이 짧으면 통계가 불안정하니 최소 며칠 단위로 비교하세요."], relatedTerms: ["win_rate", "mdd", "sharpe", "cost_bps"] },
+  "strategy-performance": { summary: "설정 프로필(저장 시점)별로 봇의 가상 체결·KIS 실체결 실현손익, 승률, 거래 수, 평가액 변화를 비교합니다. 매도 시각에 적용 중이던 프로필에 손익을 귀속합니다.", steps: ["표의 한 행이 설정 프로필 하나(적용 기간)입니다. 별 아이콘이 현재 적용 중인 설정입니다.", "실현손익(KIS)은 FILLED 실주문 기준, 가상은 가상계좌 체결 기준입니다. 평가액 변화는 프로필 시작·종료 시점 사이클 로그의 평가액 차이입니다.", "행을 클릭하면 그 프로필의 설정값 전체를 볼 수 있습니다.", "프로필 적용 시간이 짧으면 통계가 불안정하니 최소 며칠 단위로 비교하세요."], relatedTerms: ["win_rate", "mdd", "sharpe", "cost_bps"] },
   "kis-monitor":     { summary: "KIS 모의투자(Testbed) 자동매매만 모아서 봅니다 — 배치 상태, 계좌 잔고·보유, 봇 실주문·체결률·실현손익, 3분 사이클 이력, 로그와 실거래의 정합성.", steps: ["상단 배지에서 배치 실행·공격 모드·heartbeat(beat 생존)·환경(paper) 을 확인하세요.", "「봇 실주문」 표의 상태가 FILLED 면 KIS 에 체결된 것이고 UNKNOWN/LOST/ERROR 는 응답 미수신·실패입니다.", "「정합성」 패널에 불일치가 있으면 가상 장부와 KIS 실제 보유가 다른 것이니 사유를 확인하세요.", "60초 자동 새로고침을 켜 두면 사이클(3분)마다 새 거래가 반영됩니다."], relatedTerms: ["auto_trade_cycle", "slippage", "mdd"] },
   "robo-portfolio":  { summary: "위험 성향·투자기간·투자금액을 입력하면 AI가 자산배분 비중과 추천 종목을 계산합니다.", steps: ["위험 성향(안정/중립/공격)과 투자 기간, 투자금액을 선택하세요.", "'배분 계산' 버튼을 누르면 자산군별 비중과 추천 종목이 표시됩니다.", "기대수익률·MDD는 과거 데이터 기반 추정치이며 미래 수익을 보장하지 않습니다."], relatedTerms: ["covariance_opt", "mvo", "risk_parity", "mdd", "sharpe"] },
   "robo-screening":  { summary: "패턴 인식 모델로 대표 종목들을 매수/매도/관망으로 스크리닝합니다.", steps: ["모델(RSI/이동평균/볼린저/앙상블)과 신호 필터, 최소 신뢰도를 선택하세요.", "결과 카드에서 종목별 신호·점수·근거를 확인하세요.", "신뢰도가 높다고 100% 적중을 의미하지 않으니 다른 지표와 함께 판단하세요."], relatedTerms: ["signal", "lightgbm", "rsi", "golden_cross"] },
@@ -224,12 +224,12 @@ const VIEW_GUIDES = {
   "indicator-tradingview": { summary: "TradingView 알림을 Webhook으로 받아 모의계좌 체결·알림 전달하고, Strategy Tester 성과를 LEAN 백테스트와 교차 검증합니다.", steps: ["모의투자 › Open API에서 API 키를 발급받아 알림 메시지의 token에 넣습니다.", "TradingView 알림 생성 시 Webhook URL과 메시지 템플릿을 붙여 넣으면 buy/sell 알림이 모의계좌에 체결됩니다.", "Strategy Tester 성과를 입력(또는 거래 목록 CSV)하고 LEAN과 비교해 수익률·MDD·거래 횟수 차이와 원인을 확인합니다."], relatedTerms: ["pine_script", "sharpe", "mdd"] },
   "robo-patterns": { summary: "캔들 패턴·지지/저항선·돌파 이벤트를 탐지하고 분봉·일봉·주봉을 종합한 매수·매도·관망 신호와 신뢰도를 보여줍니다.", steps: ["종목코드를 입력하고 분석을 실행하세요 (60분봉 1개월 · 일봉 1년 · 주봉 5년).", "종합 점수는 타임프레임별 지표 점수를 20/50/30% 가중 평균한 값이고, 신뢰도는 방향 일치도와 점수 크기를 반반 섞은 값입니다.", "지지·저항선은 피벗 고점/저점을 1% 허용 범위로 군집화해 터치 횟수로 강도를 매깁니다."], relatedTerms: ["rsi", "ma", "bollinger", "macd"] },
   "indicator-formula": { summary: "함수 조합 산식(DSL)으로 커스텀 지표와 매수·매도 조건을 정의하고, 버전 이력과 계산 결과를 저장·재사용합니다.", steps: ["템플릿을 불러오거나 indicator 산식을 직접 쓰고 '검증'으로 문법·이름을 확인합니다 (함수 레퍼런스 참고).", "'계산 실행'으로 차트·백테스트를 보고, 마음에 들면 이름을 붙여 저장합니다. 산식이 바뀌면 자동으로 새 버전이 생깁니다.", "버전 이력에서 과거 산식을 복원하고, 결과 이력에서 (버전·종목·기간)별 저장 결과를 다시 봅니다. Pine/Python 코드로 내보낼 수 있습니다."], relatedTerms: ["rsi", "bollinger", "sharpe", "mdd"] },
-  "indicator-custom": { summary: "나만의 파라미터로 커스텀 인디케이터를 만들고 PineScript/Python 코드를 생성합니다.", steps: ["기준 조합(RSI+MA, MACD+BB 등)과 기간·임계값을 조정하세요.", "생성된 PineScript는 트레이딩뷰에, Python 코드는 직접 백테스트에 활용할 수 있습니다.", "'백테스트 실행'으로 이 앱에서 바로 성과를 검증할 수 있습니다.", "마음에 드는 조합은 '저장'해두면 다음에 목록에서 바로 불러올 수 있습니다."], relatedTerms: ["custom_indicator", "pine_script", "backtest"] },
+  "indicator-custom": { summary: "나만의 파라미터로 커스텀 인디케이터를 만들고 Pine Script 코드를 생성합니다.", steps: ["기준 조합(RSI+MA, MACD+BB 등)과 기간·임계값을 조정하세요.", "생성된 Pine Script를 TradingView Pine Editor에 붙여넣고 차트에 적용하세요.", "'백테스트 실행'으로 이 앱에서 바로 성과를 검증할 수 있습니다.", "마음에 드는 조합은 '저장'해두면 다음에 목록에서 바로 불러올 수 있습니다."], relatedTerms: ["custom_indicator", "pine_script", "backtest"] },
   "indicator-backtest": { summary: "여러 전략과 단순 보유의 수익·위험을 같은 조건으로 비교합니다.", steps: ["종목·기간·전략을 선택하고 비교하기를 누르세요.", "비교표와 차트에서 수익률·최대 하락폭·샤프 비율을 함께 확인하세요.", "전략별 판단근거에서 성과 차이와 실제 매매 조건을 확인하세요."], relatedTerms: ["backtest", "sharpe", "mdd", "win_rate", "cost_bps"] },
   "indicator-api":   { summary: "완성한 인디케이터 전략을 증권사 API와 연결해 자동화하는 방법을 안내합니다.", steps: ["3단계 아키텍처(신호 계산→주문 생성→증권사 API 전송)를 확인하세요.", "하단에서 증권사 키를 등록하고 연결을 테스트하세요."], relatedTerms: ["broker_api", "custom_indicator"] },
   "company-dashboard": { summary: "기업의 개요·밸류에이션·수익성 지표를 한 화면에서 확인합니다.", steps: ["상단에서 기업을 선택하세요.", "개요/밸류에이션/수익성 탭과 분기·재무상태표 데이터를 확인하세요."], relatedTerms: ["dcf", "fcf"] },
   "company-compare": { summary: "여러 기업의 핵심 지표를 표로 나란히 비교합니다.", steps: ["비교 표에서 기업별 지표 값을 확인하며 상대적 위치를 파악하세요."], relatedTerms: ["dcf", "eva"] },
-  "company-sector":  { summary: "자동매매 유니버스(31종목)를 섹터로 묶어 밸류에이션·수익성·성장·재무안정성·가격모멘텀·시장폭을 실제 펀더멘털·일봉에서 집계하고, 섹터 간 상대점수와 판단 근거를 보여줍니다.", steps: ["섹터 비교 표에서 상대점수·판정과 PER·ROE·3개월 수익률을 한 줄로 비교하세요.", "섹터 카드의 팩터 점수 막대(모멘텀·수익성·성장·밸류에이션·안정성)로 어느 요인이 점수를 끌어올렸는지 봅니다.", "「판단 근거」는 계산된 수치를 그대로 인용한 문장이고, 그 아래 📡 줄에 데이터 출처·기준일·결측 종목 수가 적혀 있습니다.", "구성종목 상세를 펼치면 종목별 비중·PER·ROE·수익률·추세를 확인할 수 있습니다."], relatedTerms: ["per", "pbr", "roe", "rsi", "ma"] },
+  "company-sector":  { summary: "자동매매 유니버스(31종목)를 섹터로 묶어 밸류에이션·수익성·성장·재무안정성·가격모멘텀·시장폭을 실제 펀더멘털·일봉에서 집계하고, 섹터 간 상대점수와 판단 근거를 보여줍니다.", steps: ["섹터 비교 표에서 상대점수·판정과 PER·ROE·3개월 수익률을 한 줄로 비교하세요.", "섹터 카드의 팩터 점수 막대(모멘텀·수익성·성장·밸류에이션·안정성)로 어느 요인이 점수를 끌어올렸는지 봅니다.", "「판단 근거」는 계산된 수치를 그대로 인용한 문장이고, 그 아래 데이터 출처 줄에 데이터 출처·기준일·결측 종목 수가 적혀 있습니다.", "구성종목 상세를 펼치면 종목별 비중·PER·ROE·수익률·추세를 확인할 수 있습니다."], relatedTerms: ["per", "pbr", "roe", "rsi", "ma"] },
   "ml-compare":      { summary: "7종 ML 모델의 5-fold 교차검증 정확도를 비교합니다.", steps: ["종목·기간을 선택하고 '모델 비교 실행'을 누르세요.", "정확도 순위표에서 어떤 모델이 이 종목에 가장 잘 맞는지 확인하세요.", "'비교에 추가'로 여러 실행 결과를 모아 볼 수 있습니다."], relatedTerms: ["cross_validation", "lightgbm", "mlp", "stacking"] },
   "ml-regression":   { summary: "선형회귀·Ridge·Lasso·SVR로 향후 수익률을 예측하고 오차를 비교합니다.", steps: ["종목·기간을 선택해 실행하면 모델별 예측값과 RMSE/MAE가 표시됩니다.", "오차가 작을수록 해당 구간에서 예측력이 높았다는 의미입니다."], relatedTerms: ["regression", "ridge_lasso"] },
   "ml-cluster":      { summary: "수익률·변동성 패턴이 비슷한 종목끼리 KMeans(및 DBSCAN 이상치 탐지)로 군집화합니다.", steps: ["대상 종목을 선택(또는 기본값 사용)하고 '군집화 실행'을 누르세요.", "같은 군집으로 묶인 종목들의 공통 특징을 해석해보세요.", "DBSCAN 결과의 '이상치'는 다른 종목과 패턴이 크게 다른 종목입니다."], relatedTerms: ["kmeans", "dbscan"] },
@@ -382,9 +382,9 @@ function compareTrayAnalysis(list) {
     const worstMddAbs = bt.filter(r => r.mdd != null).sort((a, b) => absMdd(b) - absMdd(a))[0] || null;
     const maxRet = Math.max(...bt.map(r => Math.abs(r.ret ?? 0)), 0.01), maxMdd = Math.max(...bt.map(r => absMdd(r) ?? 0), 0.01);
     const sorted = [...bt].sort((a, b) => (b.sharpe ?? -1e9) - (a.sharpe ?? -1e9));
-    const star = (r, pick) => pick && r.id === pick.id ? ' <span title="이 지표 1위">★</span>' : "";
+    const star = (r, pick) => pick && r.id === pick.id ? ' <span title="이 지표 1위"><i class="fa-solid fa-star" aria-hidden="true"></i></span>' : "";
     btTable = `
-      <h4 class="font-semibold text-sm mt-3 mb-1">백테스트 항목 순위 (샤프 비율 순 · ★ = 지표별 1위)</h4>
+      <h4 class="font-semibold text-sm mt-3 mb-1">백테스트 항목 순위 (샤프 비율 순 · 별 아이콘 = 지표별 1위)</h4>
       <div class="overflow-x-auto"><table><thead><tr><th>#</th><th>이름</th><th style="text-align:right">누적 수익률</th><th style="text-align:right">단순 보유</th><th style="text-align:right">초과</th><th style="text-align:right">샤프</th><th style="text-align:right">MDD</th><th style="text-align:right">수익/MDD</th><th style="text-align:right">승률</th><th style="text-align:right">매매</th><th>기간</th></tr></thead>
       <tbody>${sorted.map((r, i) => `<tr>
         <td style="color:var(--text-mute)">${i + 1}</td>
@@ -443,12 +443,12 @@ function compareTrayAnalysis(list) {
   return `
     <div class="mt-3 pt-3" style="border-top:1px solid var(--border);">
       <div class="flex items-center justify-between flex-wrap gap-2">
-        <h3 class="font-semibold text-sm">📊 비교 분석</h3>
+        <h3 class="font-semibold text-sm"><i class="fa-solid fa-chart-column" aria-hidden="true"></i> 비교 분석</h3>
         <button type="button" class="btn-secondary text-xs" onclick="compareTrayCopy()">분석 메모 복사 (Markdown)</button>
       </div>
       ${btTable}${mlTable}
       ${insights.length ? `<h4 class="font-semibold text-sm mt-3 mb-1">읽는 법</h4><ul class="text-xs space-y-1" style="color:var(--text-dim);line-height:1.7;">${insights.map(t => `<li>· ${t}</li>`).join("")}</ul>` : ""}
-      ${cautions.length ? `<h4 class="font-semibold text-sm mt-3 mb-1">주의</h4><ul class="text-xs space-y-1" style="color:var(--text-dim);line-height:1.7;">${cautions.map(t => `<li>⚠ ${t}</li>`).join("")}</ul>` : ""}
+      ${cautions.length ? `<h4 class="font-semibold text-sm mt-3 mb-1">주의</h4><ul class="text-xs space-y-1" style="color:var(--text-dim);line-height:1.7;">${cautions.map(t => `<li><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> ${t}</li>`).join("")}</ul>` : ""}
       <p class="text-xs mt-3" style="color:var(--text-mute);">지표 뜻 — 샤프: 변동성 1단위당 초과수익(높을수록 좋음, 1 이상이면 양호) · MDD: 고점 대비 최대 하락(작을수록 좋음) · 수익/MDD: 누적수익률을 최대 낙폭으로 나눈 값(높을수록 낙폭 대비 보상이 큼) · 승률: 수익이 난 보유일 비율(거래별 승률 아님). 모두 과거 검증이며 미래 성과를 보장하지 않습니다.</p>
     </div>`;
 }
@@ -470,7 +470,7 @@ function compareTrayCopy() {
     lines.push("");
   }
   const tmp = document.createElement("div"); tmp.innerHTML = compareTrayAnalysis(list);
-  const notes = [...tmp.querySelectorAll("li")].map(li => `- ${li.textContent.replace(/^[·⚠]\s*/, "").trim()}`);
+  const notes = [...tmp.querySelectorAll("li")].map(li => `- ${li.textContent.replace(/^[·]\s*/, "").trim()}`);
   if (notes.length) lines.push("## 읽는 법 · 주의", "", ...notes, "");
   lines.push("_과거 검증 결과이며 투자 권유가 아닙니다._");
   const text = lines.join("\n");
@@ -487,7 +487,7 @@ function renderCompareTray(containerId) {
   el.innerHTML = `
     <div class="card" style="margin-top:12px;">
       <div class="flex items-center justify-between mb-2">
-        <h3 class="font-semibold text-sm">⚖️ 비교 트레이 (${list.length})</h3>
+        <h3 class="font-semibold text-sm"><i class="fa-solid fa-scale-balanced" aria-hidden="true"></i> 비교 트레이 (${list.length})</h3>
         <button type="button" class="btn-secondary text-xs" onclick="compareTrayClear()">전체 지우기</button>
       </div>
       <p class="text-xs mb-2" style="color:var(--text-mute);">서로 다른 화면에서 '비교에 추가'한 백테스트·모델 결과를 한 표에서 비교합니다 (이 브라우저에만 저장됨).</p>

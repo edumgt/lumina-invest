@@ -71,7 +71,7 @@ function metaFor(f) {
 function renderHpHelp() {
   const el = $("ss-hp"); if (!el || !_cfg?.hp_help) return;
   const h = _cfg.hp_help;
-  el.innerHTML = `<h3 class="font-semibold text-sm mb-1">📐 ${escHtml(h.title)}</h3>
+  el.innerHTML = `<h3 class="font-semibold text-sm mb-1"><i class="fa-solid fa-ruler-combined" aria-hidden="true"></i> ${escHtml(h.title)}</h3>
     <p class="text-xs" style="color:var(--text-dim);line-height:1.55;">${escHtml(h.summary)}</p>
     <table class="ss-hp-table"><thead><tr><th>구분</th><th>전략설정 (이 화면)</th><th>하이퍼파라미터 (ML 모델 학습)</th></tr></thead>
     <tbody>${(h.rows || []).map(r => `<tr><td>${escHtml(r.aspect)}</td><td>${escHtml(r.settings)}</td><td>${escHtml(r.hyper)}</td></tr>`).join("")}</tbody></table>
@@ -83,7 +83,7 @@ function renderModes() {
   const el = $("ss-modes"); if (!el || !_cfg) return;
   const mode = currentMode();
   const explicit = !!_cfg.signal_mode_explicit;
-  el.innerHTML = `<h3 class="font-semibold text-sm mb-1">🧭 운영 모드 <span class="text-xs" style="color:var(--text-mute);font-weight:400;">· 세 모드는 배타적 — 고른 모드의 그룹만 매매에 쓰입니다</span></h3>
+  el.innerHTML = `<h3 class="font-semibold text-sm mb-1"><i class="fa-solid fa-compass" aria-hidden="true"></i> 운영 모드 <span class="text-xs" style="color:var(--text-mute);font-weight:400;">· 세 모드는 배타적 — 고른 모드의 그룹만 매매에 쓰입니다</span></h3>
     <div class="ss-mode-cards">${(_cfg.signal_modes || []).map(m => `
       <label class="ss-mode-card ${m.value === mode ? "selected" : ""}">
         <div class="ss-mode-title"><input type="radio" name="ss-mode" value="${m.value}" ${m.value === mode ? "checked" : ""}>${escHtml(m.label)}${m.value === _cfg.signal_mode ? `<span class="ss-mode-now">지금 적용 중</span>` : ""}</div>
@@ -113,7 +113,7 @@ function renderGroups() {
         const changed = JSON.stringify(_draft[f.key] ?? null) !== JSON.stringify(currentValue(f) ?? null);
         const overridden = f.source === "env" && Object.prototype.hasOwnProperty.call(_cfg.overrides || {}, f.key);
         return `<div class="ss-field ${changed ? "changed" : ""} ${overridden ? "overridden" : ""} ${f.hp_like ? "hp" : ""}" data-field="${f.key}">
-          <div><div class="ss-label">${f.hp_like ? `<b>${escHtml(f.label)}</b><span class="ss-hp-tag" title="하이퍼파라미터처럼 결과 품질을 좌우하는 조정값 — 감으로 바꾸지 말고 백테스트·설정별 성과로 검증하세요">HP 유사</span>` : escHtml(f.label)}</div><div class="ss-meta" style="font-family:monospace;">${escHtml(f.key)}</div></div>
+          <div><div class="ss-label">${f.hp_like ? `<b>${escHtml(f.label)}</b><span class="ss-hp-tag" title="하이퍼파라미터처럼 결과 품질을 좌우하는 조정값 — 감으로 바꾸지 말고 백테스트·설정별 성과로 검증하세요">HP 유사</span>` : escHtml(f.label)}</div><div class="ss-meta" style="font-family:var(--font-code);">${escHtml(f.key)}</div></div>
           <div>${inputFor(f)}</div>
           <div><div class="ss-desc">${escHtml(f.description)}</div><div class="ss-meta">${metaFor(f)}</div></div>
         </div>`;
@@ -161,7 +161,7 @@ function renderSpecCard() {
   const universe = (sp.universe || []).map(c => `${escHtml(c)}${names[c] ? ` ${escHtml(names[c])}` : ""}`).join(", ");
   const vers = (b.versions?.versions || []);
   el.innerHTML = `<div class="ss-spec-card">
-    <h4>📄 ${escHtml(sp.name || sid)} <span style="font-weight:400;color:var(--text-mute);">· ${escHtml(sid)} v${sp.version}${sameAsApplied && appliedV ? ` · 적용 중 v${appliedV}` : ""}${latestV ? ` · 최신 합격 v${latestV}` : ""}</span></h4>
+    <h4><i class="fa-solid fa-file-lines" aria-hidden="true"></i> ${escHtml(sp.name || sid)} <span style="font-weight:400;color:var(--text-mute);">· ${escHtml(sid)} v${sp.version}${sameAsApplied && appliedV ? ` · 적용 중 v${appliedV}` : ""}${latestV ? ` · 최신 합격 v${latestV}` : ""}</span></h4>
     <dl class="ss-spec-grid">
       <div><dt>진입 규칙 (entry)</dt><dd>${ruleText(sp.entry)}</dd></div>
       <div><dt>청산 규칙 (exit)</dt><dd>${ruleText(sp.exit)}</dd></div>
@@ -182,7 +182,7 @@ function renderSpecCard() {
     </div>
     ${vers.length ? `<details><summary class="text-xs" style="cursor:pointer;color:var(--text-mute);">버전 이력 ${vers.length}건 (불합격 포함)</summary>
       <table class="ss-versions"><thead><tr><th>버전</th><th>판정 · 미달 사유</th><th>연수익</th><th>MDD</th><th>거래</th><th>승률</th><th>기간 종료</th><th>생성</th></tr></thead><tbody>
-      ${vers.map(v => `<tr><td>v${v.version}${v.version === appliedV && sameAsApplied ? " ★" : ""}</td><td>${v.passed ? badge("합격", "ok") : badge("불합격", "bad")} ${escHtml((v.failed || []).join("; "))}</td><td>${pct(v.backtest_result?.annualized_return_pct)}</td><td>${pct(v.backtest_result?.max_drawdown_pct)}</td><td>${v.backtest_result?.trade_count ?? "-"}</td><td>${v.backtest_result?.win_rate_pct ?? "-"}</td><td>${escHtml(v.backtest_result?.period?.end || "-")}</td><td>${escHtml(String(v.created_at || "").slice(0, 10))}</td></tr>`).join("")}
+      ${vers.map(v => `<tr><td>v${v.version}${v.version === appliedV && sameAsApplied ? " <i class=\"fa-solid fa-star\" aria-hidden=\"true\"></i>" : ""}</td><td>${v.passed ? badge("합격", "ok") : badge("불합격", "bad")} ${escHtml((v.failed || []).join("; "))}</td><td>${pct(v.backtest_result?.annualized_return_pct)}</td><td>${pct(v.backtest_result?.max_drawdown_pct)}</td><td>${v.backtest_result?.trade_count ?? "-"}</td><td>${v.backtest_result?.win_rate_pct ?? "-"}</td><td>${escHtml(v.backtest_result?.period?.end || "-")}</td><td>${escHtml(String(v.created_at || "").slice(0, 10))}</td></tr>`).join("")}
       </tbody></table></details>` : ""}
   </div>`;
   $("ss-spec-refresh")?.addEventListener("click", () => { _specFor = ""; renderSpecCard(); });
@@ -281,7 +281,7 @@ async function save(opts = {}) {
   if (mode === "backtest" && !(_draft.strategy_id || "").trim()) { setToast("② 백테스트 기반 규칙은 전략 스펙을 선택해야 저장할 수 있습니다.", "error"); return; }
   const modeChange = mode !== _cfg.signal_mode || !_cfg.signal_mode_explicit;
   let warn = "";
-  if (modeChange && mode !== "aggressive" && !(Number(_draft.QUANT_BASE_TAKE_PROFIT_PCT) > 0 || Number(_draft.QUANT_BASE_STOP_LOSS_PCT) > 0)) warn += "\n\n⚠ 일봉 모드 익절·손절이 0 이라 " + (mode === "backtest" ? "스펙 exit 규칙" : "매도 임계 점수") + "과 일손실 한도만으로 청산합니다.";
+  if (modeChange && mode !== "aggressive" && !(Number(_draft.QUANT_BASE_TAKE_PROFIT_PCT) > 0 || Number(_draft.QUANT_BASE_STOP_LOSS_PCT) > 0)) warn += "\n\n주의: 일봉 모드 익절·손절이 0 이라 " + (mode === "backtest" ? "스펙 exit 규칙" : "매도 임계 점수") + "과 일손실 한도만으로 청산합니다.";
   if (mode === "custom" && (_draft.strategy_id || "").trim()) warn += "\n\nℹ ③ 사용자 설정에서는 선택된 전략 스펙이 무시됩니다.";
   const msg = opts.force ? `${label}\n다음 사이클부터 적용합니다. 계속할까요?`
     : `${d.length}개 설정을 저장하고 다음 사이클부터 적용합니다.${modeChange ? `\n운영 모드: ${MODE_LABEL(_cfg.signal_mode)} → ${MODE_LABEL(mode)}` : ""}${warn}\n계속할까요?`;

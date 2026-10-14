@@ -111,7 +111,7 @@ async def ingest_local_docs(
             )
             await db.execute(stmt)
             await db.commit()
-            log.append(f"✓ {rel_path} → {len(chunks)}청크 (Qdrant {stored}건)")
+            log.append(f" {rel_path} → {len(chunks)}청크 (Qdrant {stored}건)")
             total += len(chunks)
 
     return {"ok": True, "total_chunks": total, "log": log}

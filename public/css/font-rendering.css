@@ -1,0 +1,48 @@
+/* Rendering only: shared common.css owns font sizes and the Hangul 110% face. */
+:root {
+  --font-code: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    "Liberation Mono", "Courier New", "Pretendard Hangul 110",
+    "Pretendard Variable", "Apple SD Gothic Neo", "Malgun Gothic", monospace;
+}
+
+body {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: auto;
+  font-kerning: normal;
+  font-optical-sizing: auto;
+  /* Variable fonts supply real weights; retain italic emphasis when needed. */
+  font-synthesis: style;
+}
+
+button, input, select, textarea {
+  font-kerning: inherit;
+  text-rendering: inherit;
+}
+
+pre, code, kbd, samp, #ci-pine-code, #ci-pine-lines {
+  font-family: var(--font-code);
+  font-kerning: none;
+  font-variant-ligatures: none;
+  text-rendering: auto;
+}
+
+#ci-pine-code, #ci-pine-lines {
+  font-size: 12px;
+  line-height: 1.6;
+  letter-spacing: normal;
+  tab-size: 4;
+}
+
+/* Align financial figures without changing surrounding text typography. */
+table {
+  font-variant-numeric: lining-nums tabular-nums;
+}
+
+/* Never override the icon font family or its required 400/900 weight. */
+.fa, .fas, .far, .fab, .fa-solid, .fa-regular, .fa-brands {
+  font-synthesis: none;
+  font-kerning: none;
+  font-variant-ligatures: none;
+  text-rendering: auto;
+}

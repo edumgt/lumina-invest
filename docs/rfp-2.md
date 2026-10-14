@@ -1,6 +1,6 @@
 # RFP — 나만의 로보 어드바이저 개발 및 성과 검증 프로젝트
 
-> 제안요청서 (Request for Proposal) | 📊 AI 기반 자동화 투자 시스템
+> 제안요청서 (Request for Proposal) |  AI 기반 자동화 투자 시스템
 
 ---
 

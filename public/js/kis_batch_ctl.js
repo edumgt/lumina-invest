@@ -1,3 +1,4 @@
+import { setIconText } from "/js/icons.js";
 /* GNB 공통: KIS 모의투자 배치(백그라운드 자동매매) 실행 상태 배지 + 시작 / 비상 정지 / 해제 버튼. 모든 화면에서 보인다.
  * 상태: GET /api/quant/kis/batch/status (kis_batch.system_status) · 제어: POST /api/quant/kis/batch/control {action: start|kill_on|kill_off, reason}
  * 로그인 사용자 본인 행(#quant-auto 의 버튼)이 아니라 **배치(시스템 사용자) 행**을 제어한다. kis_monitor.js 도 갱신 시 renderBatchState 를 부른다. */
@@ -12,11 +13,11 @@ export function renderBatchState(b) {
   _state = b || {};
   const badge = $("gnb-kis-badge"); if (!badge) return;
   let text, cls, tip;
-  if (_state.kill_switch) { text = "🛑 자동매매 비상 정지"; cls = "halt"; tip = `사유: ${_state.kill_reason || "수동 정지"} — '▶ 자동매매 시작' 또는 '해제' 로 풉니다`; }
-  else if (_state.running) { text = "🟢 자동매매 실행 중"; cls = "run"; tip = "KIS 모의투자 배치가 3분마다 사이클을 돕니다"; }
-  else if (_state.enabled) { text = "⭕ 자동매매 대기"; cls = "idle"; tip = "배치 스위치는 켜져 있고 다음 사이클에 시작됩니다"; }
-  else { text = "⭕ 자동매매 OFF"; cls = "idle"; tip = "서버 배치 스위치(KIS_PAPER_BATCH_ENABLED)가 꺼져 있습니다"; }
-  badge.textContent = text; badge.className = `gnb-kis-badge ${cls}`; badge.title = tip;
+  if (_state.kill_switch) { text = "<i class=\"fa-solid fa-circle-stop\" aria-hidden=\"true\"></i> 자동매매 비상 정지"; cls = "halt"; tip = `사유: ${_state.kill_reason || "수동 정지"} — '자동매매 시작' 또는 '해제' 로 풉니다`; }
+  else if (_state.running) { text = "<i class=\"fa-solid fa-circle\" aria-hidden=\"true\"></i> 자동매매 실행 중"; cls = "run"; tip = "KIS 모의투자 배치가 3분마다 사이클을 돕니다"; }
+  else if (_state.enabled) { text = "<i class=\"fa-solid fa-circle\" aria-hidden=\"true\"></i> 자동매매 대기"; cls = "idle"; tip = "배치 스위치는 켜져 있고 다음 사이클에 시작됩니다"; }
+  else { text = "<i class=\"fa-solid fa-circle\" aria-hidden=\"true\"></i> 자동매매 OFF"; cls = "idle"; tip = "서버 배치 스위치(KIS_PAPER_BATCH_ENABLED)가 꺼져 있습니다"; }
+  setIconText(badge, text); badge.className = `gnb-kis-badge ${cls}`; badge.title = tip;
   const start = $("gnb-kis-start"), kill = $("gnb-kis-kill"), rel = $("gnb-kis-release");
   if (start) start.disabled = !!_state.running;
   if (kill) kill.disabled = !!_state.kill_switch;

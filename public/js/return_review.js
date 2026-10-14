@@ -101,7 +101,7 @@ function renderPlans() {
       ${p.risks?.length ? `<div class="rr-sec">리스크</div><ul>${p.risks.map(e => `<li>${escHtml(e)}</li>`).join("")}</ul>` : ""}
       ${p.blocker ? `<div class="rr-sec">적용 불가</div><div class="rr-blocker">${escHtml(p.blocker)}</div>` : ""}
       <div class="rr-approve">${p.applicable && p.changes?.length
-        ? `<button class="btn-primary text-xs" data-plan="${p.id}">✔ 승인 · 전략설정에 적용 (${p.changes.length}건)</button>`
+        ? `<button class="btn-primary text-xs" data-plan="${p.id}"><i class="fa-solid fa-check" aria-hidden="true"></i> 승인 · 전략설정에 적용 (${p.changes.length}건)</button>`
         : p.applicable ? `<span class="text-xs" style="color:var(--text-mute);">현재 설정과 같아 바꿀 값이 없습니다.</span>`
         : `<button class="btn-secondary text-xs" data-plan-ext="1">↗ pr 에서 합격 전략 만들기</button>`}</div>
     </div>`).join("") || `<span class="text-xs" style="color:var(--text-mute);">데이터가 쌓이면 방안이 생성됩니다.</span>`;
@@ -153,7 +153,7 @@ function renderGuide() {
   el.innerHTML = g.map((f, i) => `<div class="rr-card ${f.level}">
       <h4><span class="rr-lv">${LV[f.level] || f.level}</span>${escHtml(f.title)}</h4>
       ${f.evidence?.length ? `<div class="rr-sec">근거</div><ul>${f.evidence.map(e => `<li>${escHtml(e)}</li>`).join("")}</ul>` : ""}
-      ${f.actions?.length ? `<div class="rr-sec">권고 · 전략설정에서 바꾸기</div><div class="rr-actions">${f.actions.map((a, j) => `<button class="btn-secondary" data-g="${i}" data-a="${j}" title="${escHtml(a.field ? `전략설정 ${a.field} 로 이동` : a.view || "")}">${a.field ? "⚙ " : a.view === "external:pr" ? "↗ " : "→ "}${escHtml(a.text)}</button>`).join("")}</div>` : ""}
+      ${f.actions?.length ? `<div class="rr-sec">권고 · 전략설정에서 바꾸기</div><div class="rr-actions">${f.actions.map((a, j) => `<button class="btn-secondary" data-g="${i}" data-a="${j}" title="${escHtml(a.field ? `전략설정 ${a.field} 로 이동` : a.view || "")}">${a.field ? "<i class=\"fa-solid fa-gears\" aria-hidden=\"true\"></i> " : a.view === "external:pr" ? "↗ " : "→ "}${escHtml(a.text)}</button>`).join("")}</div>` : ""}
       ${f.expected ? `<div class="rr-sec">기대 효과</div><ul><li>${escHtml(f.expected)}</li></ul>` : ""}
       ${f.verify ? `<div class="rr-sec">검증</div><ul><li>${escHtml(f.verify)}</li></ul>` : ""}
     </div>`).join("") || `<div class="text-xs" style="color:var(--text-mute);">가이드가 없습니다.</div>`;
@@ -181,7 +181,7 @@ function renderTable() {
       <td>${t.virtual_buys || t.virtual_sells ? `${t.virtual_buys}/${t.virtual_sells}` : "-"}</td>
       <td>${r.raw_count == null ? "-" : fmt(r.raw_count)}</td>
       <td class="l" title="${escHtml(r.note || "")}">${escHtml(r.source || "")}</td>
-      <td><span class="rr-del" data-date="${escHtml(r.snap_date)}" title="이 날짜 행 삭제">✕</span></td>
+      <td><span class="rr-del" data-date="${escHtml(r.snap_date)}" title="이 날짜 행 삭제"><i class="fa-solid fa-xmark" aria-hidden="true"></i></span></td>
     </tr>`;
   }).join("") || `<tr><td colspan="15" style="text-align:center;color:var(--text-mute);">행이 없습니다.</td></tr>`;
   $("rr-table").querySelectorAll(".rr-del").forEach(x => x.addEventListener("click", async () => {

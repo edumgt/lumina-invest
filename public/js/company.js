@@ -483,7 +483,7 @@ function secBasisLine(s) {
   const perNote = perBasis && (perBasis.trailing || perBasis.forward)
     ? ` · PER 근거: 실적 ${perBasis.trailing}종목 / 전망 ${perBasis.forward}종목` : "";
   return `<div class="text-xs mt-3 rounded-lg p-3" style="background:var(--surf2);border:1px solid var(--border);color:var(--text-mute);">
-    📡 ${escHtml(b.source || "출처 미기록")} · 구성 ${b.members}종목 중 가격 ${b.priced}종목 · 일봉 ${b.index_days}일 · ${escHtml(b.price_as_of || "기준일 미기록")} 기준${escHtml(perNote)}
+    <i class="fa-solid fa-satellite-dish" aria-hidden="true"></i> ${escHtml(b.source || "출처 미기록")} · 구성 ${b.members}종목 중 가격 ${b.priced}종목 · 일봉 ${b.index_days}일 · ${escHtml(b.price_as_of || "기준일 미기록")} 기준${escHtml(perNote)}
     <div class="mt-1">집계: ${escHtml(b.method || "")}</div>
     ${missing.length ? `<div class="mt-1">결측(지어내지 않고 N/A 처리): ${escHtml(missing.join(" · "))}</div>` : ""}
     ${(b.errors || []).length ? `<div class="mt-1" style="color:var(--red);">제외: ${escHtml(b.errors.join(" · "))}</div>` : ""}
@@ -557,7 +557,7 @@ function secCard(s) {
     </div>
 
     <div class="rounded-lg p-3 text-xs" style="background:rgba(41,98,255,0.08);border:1px solid rgba(41,98,255,0.2);">
-      <strong style="color:var(--accent);">📌 판단 근거</strong>
+      <strong style="color:var(--accent);"><i class="fa-solid fa-thumbtack" aria-hidden="true"></i> 판단 근거</strong>
       <ul class="mt-2 space-y-1" style="color:var(--text-dim);list-style:disc;padding-left:16px;">
         ${(s.rationale || []).length ? s.rationale.map(r => `<li>${escHtml(r)}</li>`).join("") : `<li>계산된 근거가 없습니다 (데이터 부족)</li>`}
       </ul>

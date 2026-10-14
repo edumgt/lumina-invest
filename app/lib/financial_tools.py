@@ -219,8 +219,8 @@ async def search_funds(db: AsyncSession, args: dict[str, Any]) -> str:
 
     lines = [f"[공모펀드 검색 결과 - {len(rows)}건]"]
     for r in rows:
-        retire = "✓퇴직연금" if r.is_retirement else ""
-        esg = "✓ESG" if r.is_esg else ""
+        retire = "퇴직연금" if r.is_retirement else ""
+        esg = "ESG" if r.is_esg else ""
         aum = r.aum or 0
         lines.append(
             f"■ {r.fund_name} ({r.company_name})\n"

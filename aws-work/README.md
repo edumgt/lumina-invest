@@ -64,34 +64,34 @@ ansible-playbook -i inventories/osaka/hosts.yml playbooks/site.yml
 
 | 리소스 | ID / 값 | 상태 |
 |--------|---------|------|
-| VPC | `vpc-01879d70df92987b9` (final-vpc, `172.30.0.0/16`) | ✅ |
-| ECS Cluster | `lumina-prod` | ✅ |
-| ECS API Service | `lumina-invest-api-svc` — task-def rev 2, 2/2 running | ✅ |
-| ECS Worker Service | `lumina-invest-worker-svc` — task-def rev 2, 1/1 running | ✅ |
-| ALB | `lumina-alb` → `lumina-alb-1822566663.ap-northeast-2.elb.amazonaws.com` | ✅ |
-| ALB Target | `172.30.139.251` / `172.30.37.124` — healthy | ✅ |
-| CloudFront | `E2Z5V1W67DDW54` → `d3ls3wdarllhnf.cloudfront.net` | ✅ |
-| S3 Front Bucket | `lumina-invest-front-086015456585` | ✅ |
-| OAC | `E2HVAGOCBF9LUY` (`lumina-invest-oac`) | ✅ |
-| DocumentDB | `lumina-docdb.cluster-cg0ugoglztrn.ap-northeast-2.docdb.amazonaws.com:27017` | ✅ |
-| EC2 의존 서비스 호스트 | `i-0af91b80c1ada35f3` (`172.30.2.131`, `t3.medium`) | ✅ |
-| ECR | `086015456585.dkr.ecr.ap-northeast-2.amazonaws.com/lumina-invest:latest` | ✅ |
-| Secrets Manager | `lumina-invest/prod/app` (`-c4WE2y`) | ✅ |
-| IAM Exec Role | `ecsTaskExecutionRole` + `SecretsManagerReadAccess` | ✅ |
-| IAM Task Role | `luminaInvestTaskRole` | ✅ |
-| IAM Scheduler Role | `luminaSchedulerRole` | ✅ |
+| VPC | `vpc-01879d70df92987b9` (final-vpc, `172.30.0.0/16`) |  |
+| ECS Cluster | `lumina-prod` |  |
+| ECS API Service | `lumina-invest-api-svc` — task-def rev 2, 2/2 running |  |
+| ECS Worker Service | `lumina-invest-worker-svc` — task-def rev 2, 1/1 running |  |
+| ALB | `lumina-alb` → `lumina-alb-1822566663.ap-northeast-2.elb.amazonaws.com` |  |
+| ALB Target | `172.30.139.251` / `172.30.37.124` — healthy |  |
+| CloudFront | `E2Z5V1W67DDW54` → `d3ls3wdarllhnf.cloudfront.net` |  |
+| S3 Front Bucket | `lumina-invest-front-086015456585` |  |
+| OAC | `E2HVAGOCBF9LUY` (`lumina-invest-oac`) |  |
+| DocumentDB | `lumina-docdb.cluster-cg0ugoglztrn.ap-northeast-2.docdb.amazonaws.com:27017` |  |
+| EC2 의존 서비스 호스트 | `i-0af91b80c1ada35f3` (`172.30.2.131`, `t3.medium`) |  |
+| ECR | `086015456585.dkr.ecr.ap-northeast-2.amazonaws.com/lumina-invest:latest` |  |
+| Secrets Manager | `lumina-invest/prod/app` (`-c4WE2y`) |  |
+| IAM Exec Role | `ecsTaskExecutionRole` + `SecretsManagerReadAccess` |  |
+| IAM Task Role | `luminaInvestTaskRole` |  |
+| IAM Scheduler Role | `luminaSchedulerRole` |  |
 
 ### 추가 리소스
 
 | 리소스 | 값 | 상태 |
 |--------|----|------|
-| Auth API Gateway | `lumina-auth-api` (`6ow1q0ivg8`) | ✅ |
-| Crawl API Gateway | `lumina-crawl-api` (`uzsod90nkd`) | ✅ |
-| Auth Lambda | `lumina-auth-service` | ✅ |
-| Crawl Lambda | `lumina-crawl-service` | ✅ |
-| Slack Notify Lambda | `lumina-slack-notify` | ✅ |
-| CodePipeline | `lumina-invest-pipeline` | ✅ |
-| CodeBuild | `lumina-build` | ✅ |
+| Auth API Gateway | `lumina-auth-api` (`6ow1q0ivg8`) |  |
+| Crawl API Gateway | `lumina-crawl-api` (`uzsod90nkd`) |  |
+| Auth Lambda | `lumina-auth-service` |  |
+| Crawl Lambda | `lumina-crawl-service` |  |
+| Slack Notify Lambda | `lumina-slack-notify` |  |
+| CodePipeline | `lumina-invest-pipeline` |  |
+| CodeBuild | `lumina-build` |  |
 
 ### 남은 작업
 
@@ -522,14 +522,14 @@ export SECRET_ARN=arn:aws:secretsmanager:${REGION}:${ACCOUNT_ID}:secret:lumina-i
 
 | 파일 | 설명 | 상태 |
 |------|------|------|
-| `api-taskdef.json` | ECS API 태스크 정의 | ✅ |
-| `worker-taskdef.json` | ECS Worker 태스크 정의 | ✅ |
+| `api-taskdef.json` | ECS API 태스크 정의 |  |
+| `worker-taskdef.json` | ECS Worker 태스크 정의 |  |
 | `scheduler-ecs-policy.json` | Scheduler → ECS 실행 권한 | ⏳ |
-| `cf-distribution.json` | CloudFront 배포 설정 참조용 | ✅ |
-| `ecs-tasks-trust-policy.json` | ECS 태스크 신뢰 정책 | ✅ |
-| `scheduler-trust.json` | Scheduler 신뢰 정책 | ✅ |
-| `app-secrets.sample.json` | Secrets Manager 샘플 | ✅ |
-| `lumina-aws-architecture.svg` | AWS 아키텍처 다이어그램 | ✅ |
+| `cf-distribution.json` | CloudFront 배포 설정 참조용 |  |
+| `ecs-tasks-trust-policy.json` | ECS 태스크 신뢰 정책 |  |
+| `scheduler-trust.json` | Scheduler 신뢰 정책 |  |
+| `app-secrets.sample.json` | Secrets Manager 샘플 |  |
+| `lumina-aws-architecture.svg` | AWS 아키텍처 다이어그램 |  |
 
 ---
 

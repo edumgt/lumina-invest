@@ -40,7 +40,7 @@ async function validate() {
     const body = { ...readDefinition(), symbol: $("fx-symbol").value.trim() || null };
     const r = await api("/api/formula-indicators/validate", { method: "POST", body });
     const tr = r.trial ? ` · 시험 계산(${escHtml(body.symbol)} 1y): 최신값 ${r.trial.latest_value ?? "-"}, 신호 ${r.trial.latest_signal}, buy ${r.trial.signal_counts.buy}회 / sell ${r.trial.signal_counts.sell}회` : (r.trial_error ? ` · <span class="text-red-500">시험 계산 실패: ${escHtml(String(r.trial_error))}</span>` : "");
-    $("fx-validate-result").innerHTML = `<span class="badge-buy">문법 OK</span> 함수 ${r.functions.map(escHtml).join(", ") || "-"} · 변수 ${r.variables.map(escHtml).join(", ") || "-"} · 체크섬 <code>${r.checksum}</code>${tr}${r.warnings.length ? `<div class="text-amber-500 mt-1">⚠ ${r.warnings.map(escHtml).join(" / ")}</div>` : ""}`;
+    $("fx-validate-result").innerHTML = `<span class="badge-buy">문법 OK</span> 함수 ${r.functions.map(escHtml).join(", ") || "-"} · 변수 ${r.variables.map(escHtml).join(", ") || "-"} · 체크섬 <code>${r.checksum}</code>${tr}${r.warnings.length ? `<div class="text-amber-500 mt-1"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> ${r.warnings.map(escHtml).join(" / ")}</div>` : ""}`;
   } catch (e) { $("fx-validate-result").innerHTML = `<span class="badge-sell">오류</span> <span class="text-red-500">${escHtml(e.message)}</span>`; }
 }
 
@@ -137,7 +137,7 @@ async function loadVersions() {
   if (!current) return;
   const r = await api(`/api/formula-indicators/${current.id}/versions`);
   $("fx-versions").innerHTML = `<table><thead><tr><th>버전</th><th>indicator</th><th>buy / sell</th><th>params</th><th>메모</th><th>시각</th><th></th></tr></thead><tbody>${
-    r.versions.map(v => `<tr${v.version === r.current_version ? ' style="font-weight:600"' : ""}><td>v${v.version}${v.version === r.current_version ? " ✔" : ""}</td><td class="text-xs"><code>${escHtml(v.indicator_expr)}</code></td>
+    r.versions.map(v => `<tr${v.version === r.current_version ? ' style="font-weight:600"' : ""}><td>v${v.version}${v.version === r.current_version ? " <i class=\"fa-solid fa-check\" aria-hidden=\"true\"></i>" : ""}</td><td class="text-xs"><code>${escHtml(v.indicator_expr)}</code></td>
       <td class="text-xs"><code>${escHtml(v.buy_expr || "-")}</code><br><code>${escHtml(v.sell_expr || "-")}</code></td><td class="text-xs">${escHtml(JSON.stringify(v.params))}</td><td class="text-xs">${escHtml(v.note)}</td><td class="text-xs">${ts(v.created_at)}</td>
       <td>${v.version !== r.current_version ? `<button class="btn-secondary text-xs fx-restore" data-v="${v.version}">복원</button>` : ""}</td></tr>`).join("")}</tbody></table>`;
   $("fx-versions").querySelectorAll(".fx-restore").forEach(b => b.addEventListener("click", async () => {

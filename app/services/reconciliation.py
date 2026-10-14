@@ -212,7 +212,7 @@ async def run_reconciliation(db: AsyncSession, uid=SYSTEM_USER_ID) -> dict:
     if issues and settings.RECONCILE_NOTIFY and prev.get("signature") != sig:
         lines = [f"- {i['type']} {i.get('symbol', '')}: " + ", ".join(f"{k}={v}" for k, v in i.items() if k not in ("type", "symbol", "detail")) for i in issues[:8]]
         plain = f"[정합성] 로그와 실거래 불일치 {len(issues)}건 ({env})\n" + "\n".join(lines)
-        html = f"⚠️ <b>[정합성] 로그와 실거래 불일치 {len(issues)}건</b> ({env})\n\n" + "\n".join(lines)
+        html = f" <b>[정합성] 로그와 실거래 불일치 {len(issues)}건</b> ({env})\n\n" + "\n".join(lines)
         try:
             await notification.dispatch(plain, html_message=html, subject="[정합성] 로그·실거래 불일치", user_id=str(uid))
         except Exception as exc:  # 알림 실패가 점검을 막으면 안 된다

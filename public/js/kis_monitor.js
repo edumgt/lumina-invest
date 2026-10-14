@@ -1,3 +1,4 @@
+import { setIconText } from "/js/icons.js";
 /* KIS 모의투자결과 — 로보 어드바이저 > KIS 모의투자결과 (data-view="kis-monitor"). 데이터: GET /api/quant/kis/monitor */
 import { api, escHtml, fmt } from "/js/common.js";
 import { renderBatchState } from "/js/kis_batch_ctl.js";
@@ -86,7 +87,7 @@ const numberFormat = ({ value }) => value == null ? "-" : fmt(value);
 const numericColumn = (field, headerName, extra = {}) => ({ field, headerName, filter: "agNumberColumnFilter", valueFormatter: numberFormat, cellStyle: { textAlign: "right" }, ...extra });
 const textColumn = (field, headerName, extra = {}) => ({ field, headerName, filter: "agTextColumnFilter", ...extra });
 function textCell(value, color = "") {
-  const el = document.createElement("span"); el.textContent = value ?? "-"; if (color) el.style.color = color; return el;
+  const el = document.createElement("span"); setIconText(el, value ?? "-"); if (color) el.style.color = color; return el;
 }
 function updateGrid(id, columns, rows, emptyMessage, resetPage = false) {
   const el = document.getElementById(id); if (!el) return null;
@@ -128,9 +129,9 @@ function renderHoldings(d) {
   const a = d.account || {}, note = document.getElementById("kism-holdings-note");
   currentHoldings = a.connected && Array.isArray(a.holdings) ? new Map(a.holdings.map(h => [holdingSymbol(h.symbol), h.quantity == null || !Number.isFinite(Number(h.quantity)) ? null : Number(h.quantity)])) : null;
   const rows = a.connected ? (a.holdings || []).slice().sort((x, y) => (y.bot_managed - x.bot_managed) || (y.eval_amount - x.eval_amount)) : [];
-  if (note) note.textContent = `· ${rows.length}종목 · 페이지당 10건 (★ = 봇 관리)`;
+  if (note) setIconText(note, `· ${rows.length}종목 · 페이지당 10건 (<i class="fa-solid fa-star" aria-hidden="true"></i> = 봇 관리)`);
   updateGrid("kism-holdings", [
-    textColumn("name", "종목", { width: 190, cellRenderer: ({ data }) => textCell(`${data.bot_managed ? "★ " : ""}${data.name || data.symbol}`) }),
+    textColumn("name", "종목", { width: 190, cellRenderer: ({ data }) => textCell(`${data.bot_managed ? "<i class=\"fa-solid fa-star\" aria-hidden=\"true\"></i> " : ""}${data.name || data.symbol}`) }),
     textColumn("symbol", "종목코드"), numericColumn("quantity", "수량"), numericColumn("bot_quantity", "봇수량"),
     numericColumn("avg_price", "평균단가"), numericColumn("current_price", "현재가"), numericColumn("eval_amount", "평가금액"),
     numericColumn("profit_loss", "평가손익", { cellStyle: ({ value }) => ({ textAlign: "right", color: pnlColor(value) }) }),

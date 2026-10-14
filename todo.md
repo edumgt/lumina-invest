@@ -89,10 +89,10 @@ domain-rag-lab LEAN 백테스트를 통과해 export된 전략 스펙만 노출�
   - Redis 장애 시 메모리 폴백
 - 설정 모델: `app/models/trading.py` `BrokerSettings` — `broker`, `app_key`, `app_secret`, `account_no`, `quant_mode`(paper/live), `risk_*` 컬럼
 - 자체 KIS 클라이언트: `app/services/brokers/kis.py` `KISClient.place_order()`
-  - ⚠️ 지정가(`ORD_DVSN="00"`) 고정, `EXCG_ID_DVSN_CD` 없음
-  - ⚠️ `r.raise_for_status()`만 확인 → KIS는 HTTP 200에 `rt_cd != "0"`으로 실패를 돌려주므로 **실패 주문이 성공으로 기록될 수 있음**
-  - ⚠️ tr_id가 구버전(`TTTC0802U`/`TTTC0801U`). stock-coin-trade는 신버전(`VTTC0012U`/`VTTC0011U`) 사용 → 통일 필요
-  - ⚠️ 주문 접수 후 **체결 확인 로직 없음**
+  -  지정가(`ORD_DVSN="00"`) 고정, `EXCG_ID_DVSN_CD` 없음
+  -  `r.raise_for_status()`만 확인 → KIS는 HTTP 200에 `rt_cd != "0"`으로 실패를 돌려주므로 **실패 주문이 성공으로 기록될 수 있음**
+  -  tr_id가 구버전(`TTTC0802U`/`TTTC0801U`). stock-coin-trade는 신버전(`VTTC0012U`/`VTTC0011U`) 사용 → 통일 필요
+  -  주문 접수 후 **체결 확인 로직 없음**
 - LEAN 백테스트: `app/services/lean_backtest.py` (domain-rag-lab과 중복 구현)
 
 ---
@@ -473,7 +473,7 @@ cd /home/ubuntu/lumina-invest && .venv/bin/python -m pytest tests/test_spec_rule
 1. 시크릿 생성: `aws secretsmanager create-secret --name lumina-invest/prod/kis --secret-string '{"app_key":"...","app_secret":"...","account_no":"50123456-01","environment":"paper"}' --region ap-northeast-2`
 2. fd EC2 인스턴스 역할에 `secretsmanager:GetSecretValue`(해당 시크릿 ARN) 허용. 컨테이너는 인스턴스 메타데이터로 자격증명을 받으므로 compose 변경 없음
 3. `.env` 에 `KIS_SECRETS_NAME=lumina-invest/prod/kis` 기입 후 `docker compose up -d app celery-worker celery-beat`
-4. 확인: 증권사 API 설정 화면에서 KIS 선택 → 「🔐 KIS 자격증명 · 서버 관리 **연동됨** · 소스 AWS Secrets Manager · 환경 모의(Testbed) · 계좌 5012****01」. 「연결 테스트」가 삼성전자 현재가를 돌려주면 끝
+4. 확인: 증권사 API 설정 화면에서 KIS 선택 → 「 KIS 자격증명 · 서버 관리 **연동됨** · 소스 AWS Secrets Manager · 환경 모의(Testbed) · 계좌 5012****01」. 「연결 테스트」가 삼성전자 현재가를 돌려주면 끝
 - 게이트웨이(`STOCK_COIN_TRADE_*`)가 설정돼 있으면 실주문은 종전처럼 stock-coin-trade 경유이고, Secrets Manager 자격증명은 가격·잔고 조회와 게이트웨이 폴백에 쓰인다. 둘 다 없으면 대시보드 버튼은 「미연동」으로 비활성
 - 기존 DB `broker_settings.app_key/app_secret` 에 남아 있는 KIS 키는 다음 저장(또는 원클릭) 시 빈 값으로 덮어써진다. 즉시 제거하려면 `UPDATE broker_settings SET app_key='', app_secret='', account_no='' WHERE broker='kis'`
 
@@ -784,7 +784,7 @@ sudo docker exec fin-ai-postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_D
 
 | 변경 | 내용 |
 |------|------|
-| `app/routes/kis_monitor.py` `GET /api/quant/kis/monitor` (인증) | 한 번에: 배치/공격모드/heartbeat/시세소스/유니버스, KIS 계좌(현금·평가·보유, **★봇 관리 종목** 표시·봇 수량), 봇 실주문(시스템+내 계정, 최근 50·당일 상태 분포·체결률·매수/매도 금액·평균 슬리피지·미해소 UNKNOWN/LOST/ERROR·**평균단가법 실현손익**), 가상 장부, 사이클 이력(대상·매수/매도 계획·거래별 실주문 결과·생략·비상정지·가상 평가), 마지막 beat 실행, 정합성 결과 |
+| `app/routes/kis_monitor.py` `GET /api/quant/kis/monitor` (인증) | 한 번에: 배치/공격모드/heartbeat/시세소스/유니버스, KIS 계좌(현금·평가·보유, **봇 관리 종목** 표시·봇 수량), 봇 실주문(시스템+내 계정, 최근 50·당일 상태 분포·체결률·매수/매도 금액·평균 슬리피지·미해소 UNKNOWN/LOST/ERROR·**평균단가법 실현손익**), 가상 장부, 사이클 이력(대상·매수/매도 계획·거래별 실주문 결과·생략·비상정지·가상 평가), 마지막 beat 실행, 정합성 결과 |
 | `public/js/core.js` | `GNB_MENUS.agent` 마지막에 `{key:"kis-monitor", label:"KIS 모의투자결과"}`, 사용법 가이드(`VIEW_GUIDE`) 추가 |
 | `public/app.html` | `data-view="kis-monitor"` 뷰: 상태 배지 줄, KPI 8개(총평가·계좌손익·봇 실현손익·당일 실주문/체결률·매수/매도·미해소·봇 보유/전체·정합성), 보유 표, 정합성 패널, 실주문 표, 사이클 이력. 60초 자동 새로고침 토글 + 수동 새로고침 |
 | `public/js/kis_monitor.js` 신설, `main.js` 연결 | 뷰 진입 시 로드, 뷰 이탈 시 타이머 정지(`lumina:view-changed`) |
@@ -833,8 +833,8 @@ sudo docker exec fin-ai-postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_D
 
 | 항목 | 파일 | 내용 |
 |------|------|------|
-| 실행 중 표시 | `public/js/robo.js` `startScreenHourglass/stopScreenHourglass`, `public/css/app.css` `.screen-loading .hourglass` | 「스크리닝 실행」 클릭 시 카드 영역에 CSS 애니메이션 모래시계(⏳ 회전 + 모래 바)와 0.1초 단위 경과 시간, 버튼도 `⏳ 12.3초` 로 바뀌며 비활성(중복 실행 방지). 완료/실패 시 `#screen-status` 에 `✔ 완료 — N종목 (모델/신호/신뢰도) · 소요 34.2초 · 시각` 또는 `✖ 실패 — 사유` 표시(기존 catch 가 삼키던 오류 노출). `prefers-reduced-motion` 이면 정지 |
-| 설명 모달 | `public/app.html` `#xai-modal`, `app.css` `#xai-modal*`, `robo.js` `openXaiModal/closeXaiModal/showScreenXai` | 결과 표의 「🧠 설명」이 표 아래 인라인 패널 대신 모달 팝업으로 열림. 로딩 중 같은 모래시계+경과 시간, 완료 시 종목명·5일 예측·모델·신뢰도·계산 시간 + `renderXaiBlock`. 닫기: ✕·배경 클릭·Esc. 기다리다 닫으면 결과를 덮어쓰지 않음. 인라인 `#screen-xai-panel` 제거 |
+| 실행 중 표시 | `public/js/robo.js` `startScreenHourglass/stopScreenHourglass`, `public/css/app.css` `.screen-loading .hourglass` | 「스크리닝 실행」 클릭 시 카드 영역에 CSS 애니메이션 모래시계(⏳ 회전 + 모래 바)와 0.1초 단위 경과 시간, 버튼도 `⏳ 12.3초` 로 바뀌며 비활성(중복 실행 방지). 완료/실패 시 `#screen-status` 에 ` 완료 — N종목 (모델/신호/신뢰도) · 소요 34.2초 · 시각` 또는 ` 실패 — 사유` 표시(기존 catch 가 삼키던 오류 노출). `prefers-reduced-motion` 이면 정지 |
+| 설명 모달 | `public/app.html` `#xai-modal`, `app.css` `#xai-modal*`, `robo.js` `openXaiModal/closeXaiModal/showScreenXai` | 결과 표의 「 설명」이 표 아래 인라인 패널 대신 모달 팝업으로 열림. 로딩 중 같은 모래시계+경과 시간, 완료 시 종목명·5일 예측·모델·신뢰도·계산 시간 + `renderXaiBlock`. 닫기: ·배경 클릭·Esc. 기다리다 닫으면 결과를 덮어쓰지 않음. 인라인 `#screen-xai-panel` 제거 |
 | 배포 | fd | rsync 3파일 → `compose up -d --build app`. 서버·컨테이너·공개 URL md5 = 로컬(`robo.js f57484ce…`). 미커밋. 브라우저 실행 검증은 미수행(에이전트 환경에 node·브라우저 없음, 괄호·템플릿 균형 검사만) → **사용자 확인**: `#robo-screening` 에서 실행 → 모래시계·초 표시 → 결과 → 「설명」 모달 |
 | 주의 | fd 서버 | 이전 세션 rsync 잔재 `public/public/`(9/29) 삭제함. 이번에도 `--relative` 로 한 번 잘못 올라가 즉시 정리 |
 
@@ -851,8 +851,8 @@ ssh -i lumina-invest/fd.edumgt.co.kr.pem ubuntu@43.201.229.188 "cd /home/ubuntu/
 | 항목 | 파일 | 내용 |
 |------|------|------|
 | 백엔드 | `app/routes/stocks.py` `stock_signals` | `symbols=`(쉼표 구분) 파라미터 추가 → 해당 종목만 계산. **빈 캔들 가드** 추가(`012510.KQ` Yahoo 폴백 0건이던 500 원인 제거, 해당 종목만 건너뜀·경고 로그). 응답 형식 동일, 기존 호출(전체)도 그대로 |
-| 진행 방식 | `public/js/robo.js` `loadRoboScreening` | `/api/quant/ml/stocks` 로 유니버스(31) 받은 뒤 **한 종목씩** `/api/stocks/signals?symbols=X&signal=all&min_confidence=0` 호출 → 신호·신뢰도 필터는 화면에서 적용(제외된 종목도 점수 표시). 종목마다 모달 목록에 `⏳ 검사 중 → ✔ BUY 81% / – 제외(HOLD 55%) / ✖ 오류` 체크, 진행 바 `n / 31`, 카드·표는 종목 끝날 때마다 갱신(신뢰도·|점수| 정렬) |
-| 중지 | `app.html` `#screen-stop-btn`(실행 버튼 옆, 실행 중만 표시), 모달 안 `#screen-modal-stop` | 누르면 "중지 중…" → 지금 검사 중인 종목까지 끝내고 멈춤. 상태 줄 `✔ 중지 — 12/31종목 검사, 5종목 통과 (조건) · 소요 n초`. 창을 닫아도 실행·중지 버튼은 페이지에 남음 |
+| 진행 방식 | `public/js/robo.js` `loadRoboScreening` | `/api/quant/ml/stocks` 로 유니버스(31) 받은 뒤 **한 종목씩** `/api/stocks/signals?symbols=X&signal=all&min_confidence=0` 호출 → 신호·신뢰도 필터는 화면에서 적용(제외된 종목도 점수 표시). 종목마다 모달 목록에 `⏳ 검사 중 →  BUY 81% / – 제외(HOLD 55%) /  오류` 체크, 진행 바 `n / 31`, 카드·표는 종목 끝날 때마다 갱신(신뢰도·|점수| 정렬) |
+| 중지 | `app.html` `#screen-stop-btn`(실행 버튼 옆, 실행 중만 표시), 모달 안 `#screen-modal-stop` | 누르면 "중지 중…" → 지금 검사 중인 종목까지 끝내고 멈춤. 상태 줄 ` 중지 — 12/31종목 검사, 5종목 통과 (조건) · 소요 n초`. 창을 닫아도 실행·중지 버튼은 페이지에 남음 |
 | 배포 | fd | `py_compile` 통과 → rsync 3파일 → `compose up -d --build app`. 컨테이너·공개 URL md5 = 로컬(`robo.js 3cfb3ba7…`, `stocks.py 47b7320e…`). 실서버 확인: `symbols=005930.KS` 200·1건(2.2초), `symbols=012510.KQ` 200·HOLD(이전 500 → 해소, 등락률 None 은 Yahoo 폴백 한계), 2종목 3.9초, 없는 코드 0건. 미커밋 |
 | 소요 | — | 종목당 약 2초(KIS 레인 대기 포함) → 전체 약 60~70초. 일괄 호출(32~54초)보다 길지만 진행이 보이고 중간 중지 가능. 줄이려면 6-19 권고 2(현재가 캐시) 또는 L21 env 적용 |
 
@@ -977,7 +977,7 @@ curl -sk --resolve pr.edumgt.co.kr:443:43.201.229.188 -o /dev/null -w '%{http_co
 | `app/services/aggressive_mode.py` | `get_intraday_indicators` 에 `as_of`·`price_source`(kis_live/last_close) 추가. 분봉이 없을 때 `action` 을 「관망」 → **「판단 불가」**(+`error`)로 바꿔 판단한 척하지 않게 |
 | `app/services/auto_trade.py` | `_signal_basis()` 신설, 사이클이 각 시그널에 `basis`(출처·봉 종류·봉 수·마지막 봉 시각)와 `error` 를 함께 기록. 지표 계산 실패 종목도 「판단 불가」 + 사유로 기록(종전에는 symbol·error 만 남아 화면에서 관망으로 보였다) |
 | `app/routes/stocks.py` | `/quant/auto/status` 가 `error` 있는 시그널을 `signal:"NONE"`(관망과 구분)으로 내고, 각 시그널에 `cycle_time` 부착 |
-| `public/js/robo.js` | `renderRoboRationale` 재작성: 카드마다 `📡 출처 · 봉 종류 · 봉 수 · HH:MM 기준 (N분 전)` 표시, NONE 은 「판단 불가」(빨강)로 맨 뒤 정렬, **reasons 가 비면 임의 문구를 만들지 않음**(종전 "관망 — 추세 확인 중"·"매수 시그널" 제거) |
+| `public/js/robo.js` | `renderRoboRationale` 재작성: 카드마다 ` 출처 · 봉 종류 · 봉 수 · HH:MM 기준 (N분 전)` 표시, NONE 은 「판단 불가」(빨강)로 맨 뒤 정렬, **reasons 가 비면 임의 문구를 만들지 않음**(종전 "관망 — 추세 확인 중"·"매수 시그널" 제거) |
 | 테스트 | `test_aggressive_mode.py` 2개(판단 불가 계약·데이터 출처), `test_auto_status_batch_merge.py` 1개(NONE·basis·cycle_time 전달), `test_kis_market_data.py` 단언 갱신. 전체 **250 passed** |
 
 **검증(서버 실측, 2026-10-08 10:05~10:17 KST)**: `QUANT_AGGRESSIVE_MODE=true` 로 5분봉 사용. `data_cache` 의 `candles:005930.KS:5d:5m` 에 삼성전자 5분봉이 실제로 적재돼 있고(267,500 → 266,500원, 봉별 거래량 8만~25만주), 마지막 봉 시각이 조회 시점과 1~4분 차이. 근거 문구는 `score_intraday()`·`_generate_signal()` 이 그 종가 배열로 계산한 RSI·MA5/MA20·모멘텀 수치 그대로다. 신호 경로에 난수·더미·하드코딩 데이터는 없다(`mock` 은 체결 브로커 이름일 뿐 시세와 무관).
@@ -993,7 +993,7 @@ curl -sk --resolve pr.edumgt.co.kr:443:43.201.229.188 -o /dev/null -w '%{http_co
 | `app/services/sector_indicators.py` (신설) | QUANT_STOCKS 31종목·3섹터를 펀더멘털(Yahoo quoteSummary)+2년 일봉에서 집계. 배수(PER·PBR·PSR·EV/EBITDA)는 **시총가중 조화평균 + 중위값** 동시 표기, 비율(ROE·ROA·마진·성장·D/E·유동비율)은 시총가중 산술평균, 가격은 **시총 비중 고정 섹터 인덱스**를 만들어 1/3/6/12개월 수익률·20일 변동성(연율)·52주 위치·RSI(14)·MA20/60 이격을 계산. 시장폭(20일선 위·60일선 위·1개월 상승 종목 비중), KOSPI(`^KS11`) 대비 초과수익, 섹터 간 상대점수(모멘텀30·수익성25·성장20·밸류15·안정성10, 백분위 가중합)와 판정(≥60 비중확대 / ≤40 비중축소), 수치를 인용한 근거 문장, 구성종목별 상세 지표 |
 | `app/routes/stocks.py` | `GET /api/stocks/sectors?force=` 신설(1시간 캐시, 실패 시 502). 모듈 `logger` 추가 |
 | `app/services/stock.py` | `get_candles` 응답에 `source` 기록(6-30과 공유). `get_fundamentals` 에 **`perBasis`**(trailing/forward) 추가 — 국내 종목은 Yahoo 가 trailingPE 를 거의 안 줘서 전부 forwardPE 로 채워지는데, 둘을 같은 'PER' 로 섞으면 판단이 달라진다 |
-| `public/app.html`·`public/js/company.js` | 뷰 재구성: 헤더(유니버스·계산시각·캐시 여부·새로고침/재계산) → 벤치마크 수익률 → **섹터 비교 표**(상대점수·판정·시총·PER·ROE·매출성장·3개월·vs KOSPI·20일선 위·RSI) → 섹터별 상세 카드(팩터 점수 막대 + 밸류/수익성/성장·안정성/가격·시장폭 4그룹 22개 지표 + 「📌 판단 근거」 + 「📡 데이터 출처」 + 구성종목 접이식 표 13열). 결측은 **N/A + 커버리지 표기**(지어내지 않음) |
+| `public/app.html`·`public/js/company.js` | 뷰 재구성: 헤더(유니버스·계산시각·캐시 여부·새로고침/재계산) → 벤치마크 수익률 → **섹터 비교 표**(상대점수·판정·시총·PER·ROE·매출성장·3개월·vs KOSPI·20일선 위·RSI) → 섹터별 상세 카드(팩터 점수 막대 + 밸류/수익성/성장·안정성/가격·시장폭 4그룹 22개 지표 + 「 판단 근거」 + 「 데이터 출처」 + 구성종목 접이식 표 13열). 결측은 **N/A + 커버리지 표기**(지어내지 않음) |
 | `public/js/core.js`·`completion.js` | 화면 설명을 실제 내용으로 교체, 평가를 42% "정적 목업" → 86% "재무·가격 API 연결" |
 | 테스트 | `tests/test_sector_indicators.py` 신설 4개(가중 집계의 결측·적자 제외, 백분위 방향, 섹터 인덱스 공통일자·비중, 일봉 결측 종목의 errors·점수·근거·구성종목 정렬). 전체 **261 passed** |
 
@@ -1001,7 +1001,7 @@ curl -sk --resolve pr.edumgt.co.kr:443:43.201.229.188 -o /dev/null -w '%{http_co
 
 **남은 제약(화면에 그대로 표기됨)**:
 - **PBR 커버리지 0** — Yahoo 가 국내 상장사 `priceToBook` 을 주지 않는다. 그래서 밸류 팩터에 PSR·EV/EBITDA 를 함께 넣었고 PBR 은 N/A 로 표시한다.
-- **PER 은 전량 forward** (`per_basis: {trailing: 0, forward: 11}`) — 카드의 📡 줄에 "PER 근거: 실적 n종목 / 전망 m종목" 으로 적는다.
+- **PER 은 전량 forward** (`per_basis: {trailing: 0, forward: 11}`) — 카드의  줄에 "PER 근거: 실적 n종목 / 전망 m종목" 으로 적는다.
 - **더존비즈온(012510.KQ) 일봉 없음** — Yahoo 가 `.KQ` 로는 빈 배열, `.KS` 는 404 를 준다(상장시장 변경 추정). 섹터 인덱스에서 제외하고 `basis.errors` 에 표기. 유니버스 수정은 사용자 판단 필요.
 - 섹터 인덱스 비중은 과거 시총 시계열이 없어 **현재 시총으로 고정**한 근사다(카드 집계 설명에 명시).
 - 섹터가 3개뿐이라 상대점수의 백분위가 거칠다(33/50/83 등). 자동차·금융·2차전지 등 섹터를 늘리려면 QUANT_STOCKS 유니버스 확장이 필요 — 이는 자동매매 대상 종목도 같이 바뀌므로 사용자 결정 사항.
@@ -1015,7 +1015,7 @@ curl -sk --resolve pr.edumgt.co.kr:443:43.201.229.188 -o /dev/null -w '%{http_co
 | `app/services/auto_trade.py` | `place_manual_kis_order()`·`ManualOrderBlocked`·`MANUAL_ORDER_MAX_QTY(10,000)` 신설. **자동매매와 같은 경로**(stock-coin-trade 게이트웨이 → `live_orders` 추적행 → 알림 → 감사로그 `order.manual_kis`)를 재사용하고, 게이트웨이 미설정 시 `kis_credentials` 직접 호출로 폴백. 가상계좌 체결은 만들지 않는다(사이클 포지션과 섞이면 성과 집계가 어긋남) |
 | 〃 가드 | 매수/매도 외 거부 · 수량 1~10,000 · `resolve_route()` 미연동 거부 · **실전(real) 환경 거부**(모의 Testbed 에서만) · 비상정지 거부 · 현재가 조회 실패 시 주문 안 함. **가격은 서버가 `stock.get_quote` 로 정한다**(클라이언트 값 불신) |
 | `app/routes/stocks.py` | `POST /api/stocks/quant/manual-order`(차단 사유는 422 + 사용자 문구), `GET /api/stocks/quant/order-readiness`(연동·환경·비상정지·장 운영시간·최대수량) |
-| `public/app.html` | 「전략 분석」 옆에 `💰 KIS 모의투자 거래` 버튼(분석 전 `disabled`). 공통 대기 모달 `#app-loading-modal`(모래시계+경과초), 주문 모달 `#kis-trade-modal`(종목·현재가·신호 / 매수·매도 / 수량 입력 + 1·5·10·50주 / 예상금액 / 주문가능 안내) |
+| `public/app.html` | 「전략 분석」 옆에 ` KIS 모의투자 거래` 버튼(분석 전 `disabled`). 공통 대기 모달 `#app-loading-modal`(모래시계+경과초), 주문 모달 `#kis-trade-modal`(종목·현재가·신호 / 매수·매도 / 수량 입력 + 1·5·10·50주 / 예상금액 / 주문가능 안내) |
 | `public/css/app.css` | `.app-modal`·`.app-modal-box` 공통 모달, `.app-hourglass` 회전(`prefers-reduced-motion` 존중), 대기 모달 z-index 10010(주문 모달 위), `button:disabled` 스타일 |
 | `public/js/indicator.js` | `showLoadingModal/hideLoadingModal`(100ms 간격 경과시간 갱신), 분석 핸들러를 try/finally 로 감싸 버튼 잠금·모달 해제. 성공 시 `_tradeCtx`(종목·현재가·신호) 저장하고 거래 버튼 활성화(현재가 없으면 비활성). 주문 모달: 열 때 readiness 조회해 불가 사유 표시·전송 버튼 잠금, 장외시간 경고, confirm 후 전송, Escape·배경 클릭으로 닫기 |
 | 테스트 | `tests/test_manual_kis_order.py` 신설 **11개**(side·수량 경계, 실전/미연동/비상정지/현재가없음 차단, 서버측 가격 사용과 게이트웨이 인자, 매도, 라우트 422 문구·바디 검증·결과 전달·readiness 사유). 전체 **272 passed** |
@@ -1024,11 +1024,11 @@ curl -sk --resolve pr.edumgt.co.kr:443:43.201.229.188 -o /dev/null -w '%{http_co
 
 ### 6-33. 2026-10-08 모의 투자 의사결정(#robo-decision) — 로그성 정보를 화면 하단으로 (사용자 요청)
 
-`#robo-decision-log` 가 상단 제어 카드 안에 있어, 판단 결과(「📊 최근 AI 투자 판단 근거」)보다 로그가 먼저 보였다.
+`#robo-decision-log` 가 상단 제어 카드 안에 있어, 판단 결과(「 최근 AI 투자 판단 근거」)보다 로그가 먼저 보였다.
 
 | 변경 | 내용 |
 |------|------|
-| `public/app.html` | 화면 순서를 **① 제어(제목·상태·시작/중지·계정·프로세스 안내) → ② 📊 최근 AI 투자 판단 근거 → ③ 🧾 실행 로그** 로 바꿈. 로그를 상단 카드에서 떼어 맨 아래 독립 카드로 옮기고, 로그 내용 설명 한 줄 추가(계좌 평가·체결·위험관리 생략·공격 모드 메모·정합성 점검). 상단 제어 바의 「로그 새로고침」 버튼도 로그 카드 헤더로 이동(중복 없음) |
+| `public/app.html` | 화면 순서를 **① 제어(제목·상태·시작/중지·계정·프로세스 안내) → ②  최근 AI 투자 판단 근거 → ③  실행 로그** 로 바꿈. 로그를 상단 카드에서 떼어 맨 아래 독립 카드로 옮기고, 로그 내용 설명 한 줄 추가(계좌 평가·체결·위험관리 생략·공격 모드 메모·정합성 점검). 상단 제어 바의 「로그 새로고침」 버튼도 로그 카드 헤더로 이동(중복 없음) |
 
 id(`robo-decision-log`·`robo-decision-refresh`)는 그대로라 `robo.js` 의 바인딩·렌더 로직은 변경 없음. 전체 **272 passed**(백엔드 영향 없음), robo.js 문법 검사 통과.
 
@@ -1114,10 +1114,10 @@ id(`robo-decision-log`·`robo-decision-refresh`)는 그대로라 `robo.js` 의 �
 
 | 파일 | 원본 | 깨진 배포본 | 복원본 | 복원본 + common.css(2개) |
 |------|------|------------|--------|------------------------|
-| fd `app.css` | 24 | **0** | 22 | **24 ✓** |
-| iv `investment-native/styles.css` | 45 | **17** | 43 | **45 ✓** |
-| st `style.css` | 24 | 22 | 22 | **24 ✓** |
-| st `kis-practice.css` | 8 | **0** | 8 | **8 ✓**(이 파일엔 타이틀 블록이 없었다) |
+| fd `app.css` | 24 | **0** | 22 | **24 ** |
+| iv `investment-native/styles.css` | 45 | **17** | 43 | **45 ** |
+| st `style.css` | 24 | 22 | 22 | **24 ** |
+| st `kis-practice.css` | 8 | **0** | 8 | **8 **(이 파일엔 타이틀 블록이 없었다) |
 
 수정한 CSS 9개 전부 파싱 오류 0개. 직전 커밋 대비 diff 에서 의도한 제거(가이드 주석 7줄·타이틀 고정·공통 푸터) 외의 변화가 없음을 확인했다.
 
@@ -1402,7 +1402,7 @@ Yahoo quoteSummary 원문을 직접 찍었다(AAPL·삼성전자 동일):
 | 3분기(11014) | 121,661억 | 235,274억 | **3개월** / 누적 |
 | 사업보고서(11011) | **436,011억(연간)** | 빈 값 | **연간** — 3개월이 아니다 |
 
-검산: 66,853 + 46,761 = 113,614 ≈ 반기누적 113,613, +121,661 = 235,274 ✓.
+검산: 66,853 + 46,761 = 113,614 ≈ 반기누적 113,613, +121,661 = 235,274 .
 → 분기보고서는 기존 구현(3개월 우선)이 맞았고, **사업보고서를 '3개월' 로 표시하던 것이 버그**였다.
 `_parse_statements(rows, reprt_code)` 로 보고서 코드를 받아 11011 이면 기준을 `연간` 으로 표시하고,
 `thstrm_add_amount`(누적)과 `thstrm_nm`(기간명)도 함께 담도록 고쳤다.
@@ -1539,7 +1539,7 @@ st 공개 조회 계약(`rows[].trade_date`, `nextOffset`)은 라이브 응답�
 
 | 파일 | 내용 |
 |---|---|
-| `public/js/core.js` | `compareTrayMetrics(x)`: 항목의 구조화 지표(`kind`·`symbol`·`period`·`metrics`)를 읽고, 예전 항목(요약 문자열만)은 정규식으로 수익률·보유 대비·MDD·샤프·CV·정확도를 뽑는다. `compareTrayAnalysis(list)`: 표 아래에 **📊 비교 분석** 블록 — ① 백테스트 순위표(샤프 순, 지표별 1위 ★, 수익률·MDD 막대, 수익/MDD 비율 추가) ② ML 모델 표(검증 정확도 순, CV−검증 격차) ③ "읽는 법"(수익률 1위 vs 샤프 1위 불일치, 수익률 1위가 MDD 최악이면 경고, 단순 보유를 이긴 개수, 모든 샤프 < 0.5, 같은 종목 전략 간 최선) ④ "주의"(매매 60회 이상 → 비용 민감, 종목 혼재, 기간 상이, 엔진·화면 상이, ML 과적합 격차 5%p·정확도 55% 미만·폴드 편차 5% 초과, ML 정확도와 수익률 단위 차이) ⑤ 지표 뜻 각주. `compareTrayCopy()`: 표와 메모를 Markdown 으로 클립보드 복사(불가 시 prompt) |
+| `public/js/core.js` | `compareTrayMetrics(x)`: 항목의 구조화 지표(`kind`·`symbol`·`period`·`metrics`)를 읽고, 예전 항목(요약 문자열만)은 정규식으로 수익률·보유 대비·MDD·샤프·CV·정확도를 뽑는다. `compareTrayAnalysis(list)`: 표 아래에 ** 비교 분석** 블록 — ① 백테스트 순위표(샤프 순, 지표별 1위 , 수익률·MDD 막대, 수익/MDD 비율 추가) ② ML 모델 표(검증 정확도 순, CV−검증 격차) ③ "읽는 법"(수익률 1위 vs 샤프 1위 불일치, 수익률 1위가 MDD 최악이면 경고, 단순 보유를 이긴 개수, 모든 샤프 < 0.5, 같은 종목 전략 간 최선) ④ "주의"(매매 60회 이상 → 비용 민감, 종목 혼재, 기간 상이, 엔진·화면 상이, ML 과적합 격차 5%p·정확도 55% 미만·폴드 편차 5% 초과, ML 정확도와 수익률 단위 차이) ⑤ 지표 뜻 각주. `compareTrayCopy()`: 표와 메모를 Markdown 으로 클립보드 복사(불가 시 prompt) |
 | `public/js/quant.js`·`paper.js`·`indicator.js`·`ml.js` | '비교에 추가' 4곳이 `kind`·`symbol`·`period`·`metrics`(수익률·보유·초과·샤프·MDD·승률·매매·노출·비용·손절/익절, ML 은 CV 평균/편차·검증 정확도)를 함께 저장. LEAN 요약에 보유 수익률 추가 |
 
 **검증**: JS 5개 `node --check` 통과. 분석 함수를 node 에서 스텁(escHtml)으로 실행해 새 형식 3건 + 예전 형식 백테스트/ML 2건으로 순위표·읽는 법 6건·주의 8건이 기대대로 나오는 것을 확인(빈 목록은 빈 문자열). 브라우저 렌더링은 확인하지 못했다.
@@ -1581,17 +1581,17 @@ st 공개 조회 계약(`rows[].trade_date`, `nextOffset`)은 라이브 응답�
   `kill_on`(스위치 ON + 자동매매 OFF + 감사 + `notify_risk_halt`, 알림 실패는 삼킴) · `kill_off`(스위치·사유만 비움, 재가동은 다음 사이클의
   `ensure_system_batch` 몫, 행 없으면 409 `no_row`). 결과는 `system_status()` + `action`.
 - `app/routes/kis_monitor.py` `POST /api/quant/kis/batch/control {action, reason}` → 409/400 으로 변환. 로그인 필수.
-- `public/app.html` kis-monitor 헤더 우측: `#kism-run-badge`(🟢 실행 중 / ⭕ 대기·정지 / 🛑 비상 정지·사유) + `▶ 자동매매 시작` · `🛑 비상 정지` ·
+- `public/app.html` kis-monitor 헤더 우측: `#kism-run-badge`( 실행 중 / ⭕ 대기·정지 /  비상 정지·사유) + `▶ 자동매매 시작` · ` 비상 정지` ·
   `비상 정지 해제`(비상 정지일 때만 표시). `public/js/kis_monitor.js` `renderRunState`(monitor 응답의 `batch` 로 60초마다 갱신) + `batchControl`.
   시작 버튼은 비상 정지 상태면 confirm 후 `kill_off` → `start` 를 연달아 보낸다.
 - 테스트: `tests/test_kis_batch.py` control 9건, `tests/test_kis_monitor_route.py` 라우트 3건 (`.venv/bin/python -m pytest tests/test_kis_batch.py tests/test_kis_monitor_route.py` 35 passed).
 
 **배포 (미완)**: 에이전트의 fd 서버 배포 명령이 자동 모드 분류기(Production Deploy)에 막혀 **사용자가 직접 실행**해야 한다. Python 변경이라
 `fin-ai-app` 재시작 필요(worker/beat 는 `control` 을 안 부르므로 재시작 불필요, 소스 동기화만). 명령은 `deploy/fd-kis-batch-control.sh` 참고.
-배포 후 `#kis-monitor` 상단 배지가 🛑 로 보이면 `▶ 자동매매 시작` → confirm 으로 해제+시작.
+배포 후 `#kis-monitor` 상단 배지가  로 보이면 `▶ 자동매매 시작` → confirm 으로 해제+시작.
 
 **정정(같은 날, 사용자 피드백 "GNB 버튼 안 보임")**: 요청 위치는 kis-monitor 카드가 아니라 **모든 화면 공통 상단 GNB**(탭 "투자 인디케이터" 와 시세 티커 사이)였다.
-- `public/app.html` `#gnb .gnb-right` 맨 앞에 `#gnb-kis-ctl`(배지 `#gnb-kis-badge` + `▶ 자동매매 시작` / `🛑 비상 정지` / `해제`) 추가, kis-monitor 카드의 버튼은 제거(원복).
+- `public/app.html` `#gnb .gnb-right` 맨 앞에 `#gnb-kis-ctl`(배지 `#gnb-kis-badge` + `▶ 자동매매 시작` / ` 비상 정지` / `해제`) 추가, kis-monitor 카드의 버튼은 제거(원복).
 - `public/js/kis_batch_ctl.js` 신규(`initBatchControl` · `loadBatchState` · `renderBatchState`), `main.js` boot 에서 초기화 + 60초 폴링. `kis_monitor.js` 는 /monitor 응답의 `batch` 로 같은 배지를 갱신.
 - `GET /api/quant/kis/batch/status` 신규(system_status 만, /monitor 조립 없이 가볍게). `public/css/app.css` `#gnb-kis-ctl` 스타일, 900px 이하에서 버튼 숨김(배지만).
 - 테스트 36 passed. 배포 파일에 `app.css`·`main.js`·`kis_batch_ctl.js` 추가(`deploy/fd-kis-batch-control.sh`).
@@ -1717,3 +1717,16 @@ st 공개 조회 계약(`rows[].trade_date`, `nextOffset`)은 라이브 응답�
 **전체 시스템 적용 범위**: env 덮어쓰기는 프로세스 전역 `settings` 라 배치(시스템 사용자)와 사용자 계정 자동매매 사이클이 모두 다음 사이클부터 따른다. 행 값(전략·쿨다운·일 주문·일손실)은 배치 계정 행. 설정별 성과 표에도 같은 프로필로 나타난다.
 **검증**: 관련 테스트 전부 통과(아래 실행 결과). 시드 데이터: 합격 전략 없음 → 권장 B(손실 가속·과매매), 합격 전략 주입 → 권장 C(수동 종목 069500.KS). 브라우저 미실행.
 **배포(미완, 사용자)**: 6-53 과 함께 push. DB 변경 없음(캐시 문서 2건 추가).
+
+### 6-56. 2026-10-14 대시보드(#dashboard) 하단 「기능 바로가기」 메뉴 제거 (사용자 요청)
+
+**요구**: `https://fd.edumgt.co.kr/app.html#dashboard` 로보 어드바이저·투자 인디케이터 두 카드 하단의 「기능 바로가기」(GNB 메뉴 반복 링크) 제거.
+
+| 변경 | 내용 |
+|------|------|
+| `public/app.html` | 두 카드의 `<h3>기능 바로가기</h3>` + `#overview-robo-features` / `#overview-indicator-features` 2줄 삭제 |
+| `public/js/dashboard.js` | `features()` 와 `loadDashboard()` 의 두 `innerHTML` 대입 삭제, 이제 안 쓰는 `GNB_MENUS` import 제거 |
+| `public/css/app.css` | `.overview-features`·`.overview-feature*` 규칙 5줄 삭제 |
+
+**검증**: 세 파일에 `overview-feature`·`기능 바로가기` 참조 0건(tests/·shared-css/ 에도 없음). 브라우저 미실행(node 없음, 괄호 균형만 확인).
+**배포(미완, 사용자)**: `deploy/fd-dashboard-shortcuts.sh`. 정적 파일만이라 재시작 없음. 서버는 현재 HEAD 본과 동일(md5 확인). 로컬 `app.html` 에는 **미배포 인디케이터 작업**(TradingView 차트·Pine 편집기, `indicator.js`·`indicator-chart.js` 미커밋)이 섞여 있어 스크립트는 HEAD 본에서 바로가기 2줄만 뺀 `app.html` 을 보낸다. 커밋 시엔 작업 트리 그대로 커밋해도 됨(인디케이터 작업은 별도 항목).

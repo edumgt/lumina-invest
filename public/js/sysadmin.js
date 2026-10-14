@@ -31,7 +31,7 @@ async function loadSystemDashboard() {
     // 서비스 상태
     svcEl.innerHTML = (d.services || []).map(s => `
       <div class="card flex items-center gap-3">
-        <span class="text-xl">${s.ok ? "🟢" : "🔴"}</span>
+        <span class="text-xl">${s.ok ? "<i class=\"fa-solid fa-circle-check\" aria-hidden=\"true\"></i>" : "<i class=\"fa-solid fa-circle-xmark\" aria-hidden=\"true\"></i>"}</span>
         <div>
           <div class="font-medium text-sm">${escHtml(s.name)}</div>
           <div class="text-xs text-slate-400">${s.ok ? `응답 ${s.ms}ms` : "연결 실패"}</div>
@@ -46,7 +46,7 @@ async function loadSystemDashboard() {
     } else {
       contEl.innerHTML = d.containers.map(c => `
         <div class="card flex items-center gap-3">
-          <span class="text-lg">${c.up ? "🟩" : "🟥"}</span>
+          <span class="text-lg">${c.up ? "<i class=\"fa-solid fa-circle-check\" aria-hidden=\"true\"></i>" : "<i class=\"fa-solid fa-circle-xmark\" aria-hidden=\"true\"></i>"}</span>
           <div class="flex-1 grid grid-cols-4 gap-2 text-sm">
             <div><span class="text-xs text-slate-500">이름</span><br>${escHtml(c.name)}</div>
             <div><span class="text-xs text-slate-500">이미지</span><br><span class="font-mono text-xs">${escHtml(c.image)}</span></div>

@@ -401,7 +401,7 @@ async def notify_insufficient_funds(
     """예수금 부족으로 주문 실패 알림."""
     label = "매수" if side == "buy" else "매도"
     html = (
-        "🚨 <b>주문 실패 – 예수금 부족</b>\n\n"
+        " <b>주문 실패 – 예수금 부족</b>\n\n"
         f"종목: <code>{symbol}</code>\n"
         f"구분: {label}\n"
         f"수량: {quantity:,}주 × {price:,.0f}원\n"
@@ -427,18 +427,17 @@ async def notify_order_placed(
     user_id: str | None = None,
 ) -> None:
     """주문 접수 알림."""
-    emoji = "📈" if side == "buy" else "📉"
     label = "매수" if side == "buy" else "매도"
     broker_line = f"\n증권사: {broker}" if broker else ""
     html = (
-        f"{emoji} <b>주문 접수</b>\n\n"
+        f"<b>주문 접수</b>\n\n"
         f"종목: <code>{symbol}</code>\n"
         f"구분: {label}\n"
         f"수량: {quantity:,}주 × {price:,.0f}원\n"
         f"총액: {quantity * price:,.0f}원{broker_line}"
     )
     plain = (
-        f"{emoji} [주문 접수] {label}\n"
+        f"[주문 접수] {label}\n"
         f"종목: {symbol}\n"
         f"수량: {quantity:,}주 × {price:,.0f}원 / 총 {quantity * price:,.0f}원{broker_line}"
     )
@@ -457,7 +456,7 @@ async def notify_order_filled(
     label = "매수" if side == "buy" else "매도"
     env_label = "KIS 모의" if environment == "paper" else "KIS 실전"
     html = (
-        f"✅ <b>체결 확정</b> ({env_label})\n\n"
+        f" <b>체결 확정</b> ({env_label})\n\n"
         f"종목: <code>{symbol}</code>\n"
         f"구분: {label}\n"
         f"체결: {quantity:,}주 × 평균 {price:,.0f}원\n"
@@ -478,7 +477,7 @@ async def notify_order_error(
     """주문 오류 알림."""
     label = "매수" if side == "buy" else "매도"
     html = (
-        "❌ <b>주문 오류</b>\n\n"
+        " <b>주문 오류</b>\n\n"
         f"종목: <code>{symbol}</code>\n"
         f"구분: {label}\n"
         f"수량: {quantity:,}주 × {price:,.0f}원\n"
@@ -496,7 +495,7 @@ async def notify_order_error(
 async def notify_auto_trade_started(user_id: str | None = None) -> None:
     """자동매매 시작 알림."""
     minutes = max(1, int(settings.QUANT_CYCLE_SEC) // 60)
-    html  = f"🤖 <b>자동매매 시작</b>\n\n{minutes}분 주기로 퀀트 신호를 분석합니다."
+    html  = f" <b>자동매매 시작</b>\n\n{minutes}분 주기로 퀀트 신호를 분석합니다."
     plain = f"[자동매매] 시작 – {minutes}분 주기로 퀀트 신호를 분석합니다."
     await dispatch(plain, html_message=html, subject="[매매 알림] 자동매매 시작", user_id=user_id)
 
@@ -518,16 +517,15 @@ async def notify_auto_trade_executed(
     user_id: str | None = None,
 ) -> None:
     """자동매매 체결 알림."""
-    emoji = "📈" if action == "buy" else "📉"
     label = "매수" if action == "buy" else "매도"
     html = (
-        f"{emoji} <b>[자동매매] {label} 체결</b>\n\n"
+        f"<b>[자동매매] {label} 체결</b>\n\n"
         f"종목: {name} (<code>{symbol}</code>)\n"
         f"수량: {quantity:,}주 × {price:,.0f}원\n"
         f"사유: {reason}"
     )
     plain = (
-        f"{emoji} [자동매매] {label} 체결\n"
+        f"[자동매매] {label} 체결\n"
         f"종목: {name} ({symbol})\n"
         f"수량: {quantity:,}주 × {price:,.0f}원\n"
         f"사유: {reason}"
@@ -543,7 +541,7 @@ async def notify_auto_trade_executed(
 async def notify_risk_halt(reason: str, day_pnl_pct: float | None = None, user_id: str | None = None) -> None:
     """위험관리 비상 정지 알림 (일손실 한도 초과 등)."""
     pnl_txt = f"\n당일 손익: {day_pnl_pct:+.2f}%" if day_pnl_pct is not None else ""
-    html  = f"🛑 <b>[위험관리] 자동매매 비상 정지</b>\n\n사유: {reason}{pnl_txt}\n\n설정 화면에서 비상 정지를 해제해야 재시작됩니다."
+    html  = f" <b>[위험관리] 자동매매 비상 정지</b>\n\n사유: {reason}{pnl_txt}\n\n설정 화면에서 비상 정지를 해제해야 재시작됩니다."
     plain = f"[위험관리] 자동매매 비상 정지\n사유: {reason}{pnl_txt}\n설정 화면에서 비상 정지를 해제해야 재시작됩니다."
     await dispatch(plain, html_message=html, subject="[위험관리] 자동매매 비상 정지", user_id=user_id)
 
@@ -551,6 +549,6 @@ async def notify_risk_halt(reason: str, day_pnl_pct: float | None = None, user_i
 async def notify_risk_skip(symbol: str, name: str, side: str, reason: str, user_id: str | None = None) -> None:
     """위험관리 규칙으로 주문을 생략했음을 알린다 (중복 주문·한도 초과)."""
     label = "매수" if side == "buy" else "매도"
-    html  = f"⚠️ <b>[위험관리] {label} 주문 생략</b>\n\n종목: {name} (<code>{symbol}</code>)\n사유: {reason}"
+    html  = f" <b>[위험관리] {label} 주문 생략</b>\n\n종목: {name} (<code>{symbol}</code>)\n사유: {reason}"
     plain = f"[위험관리] {label} 주문 생략 – {name} ({symbol})\n사유: {reason}"
     await dispatch(plain, html_message=html, subject=f"[위험관리] {label} 주문 생략 – {name}", user_id=user_id)

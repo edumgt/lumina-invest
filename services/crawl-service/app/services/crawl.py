@@ -170,7 +170,7 @@ async def crawl_github_docs(
 
             stored = await _store_qdrant(chunks, meta, ollama)
             await _upsert_crawled_doc(db, url, f["name"], content, f"github:{owner}/{repo}")
-            log.append(f"  ✓ {f['name']} → {len(chunks)}청크 (Qdrant {stored}건)")
+            log.append(f"   {f['name']} → {len(chunks)}청크 (Qdrant {stored}건)")
             total += len(chunks)
 
     return total
@@ -205,7 +205,7 @@ async def crawl_url(
     meta = {"url": url, "title": title_text, "source": "web"}
     stored = await _store_qdrant(chunks, meta, ollama)
     await _upsert_crawled_doc(db, url, title_text, text, "web")
-    log.append(f"✓ {title_text[:50]} → {len(chunks)}청크 (Qdrant {stored}건)")
+    log.append(f" {title_text[:50]} → {len(chunks)}청크 (Qdrant {stored}건)")
     return len(chunks)
 
 
@@ -269,7 +269,7 @@ async def crawl_naver_stock(
     }
     stored = await _store_qdrant(chunks, meta, ollama)
     await _upsert_crawled_doc(db, url, meta["title"], text, meta["source"])
-    log.append(f"✓ {meta['title']} → {len(chunks)}청크 (Qdrant {stored}건)")
+    log.append(f" {meta['title']} → {len(chunks)}청크 (Qdrant {stored}건)")
     return len(chunks)
 
 

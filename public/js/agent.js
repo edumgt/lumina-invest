@@ -1,3 +1,4 @@
+import { setIconText } from "/js/icons.js";
 /* 금융정보 Agent: AI 채팅, CB 분석, 금융상품, 뉴스/RAG, 크롤링
  * app.html 인라인 스크립트에서 분리됨. 엔트리는 main.js */
 import { api, getMe, setToast, escHtml, fmt, fmtPct, colorPct } from "/js/common.js";
@@ -79,7 +80,7 @@ function appendAssistantMsg(answer, steps, meta = {}) {
       </div>`;
     }).join("");
     stepsHtml = `<div class="mt-2 border-t border-white/10 pt-2">
-      <button class="steps-btn text-xs text-slate-500 hover:text-slate-300" data-target="${msgId}-steps">▶ 추론 (${steps.length}단계)</button>
+      <button class="steps-btn text-xs text-slate-500 hover:text-slate-300" data-target="${msgId}-steps"><i class="fa-solid fa-play" aria-hidden="true"></i> 추론 (${steps.length}단계)</button>
       <div id="${msgId}-steps" class="hidden mt-1">${items}</div>
     </div>`;
   }
@@ -92,7 +93,7 @@ function appendAssistantMsg(answer, steps, meta = {}) {
     btn.addEventListener("click", () => {
       const p = document.getElementById(btn.dataset.target);
       p?.classList.toggle("hidden");
-      btn.textContent = p?.classList.contains("hidden") ? "▶ 추론" : "▼ 추론";
+      setIconText(btn, p?.classList.contains("hidden") ? "<i class=\"fa-solid fa-play\" aria-hidden=\"true\"></i> 추론" : "▼ 추론");
     });
   });
   document.getElementById("chat-messages").appendChild(d);

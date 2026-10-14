@@ -1,5 +1,7 @@
-/* 투자 인디케이터: 기본 전략, 커스텀 인디케이터(Pine/Python 생성·저장), 성과 검증, 증권사 API 자동화
+import { setIconText } from "/js/icons.js";
+/* 투자 인디케이터: 기본 전략, 커스텀 인디케이터(Pine 생성·저장), 성과 검증, 증권사 API 자동화
  * app.html 인라인 스크립트에서 분리됨. 엔트리는 main.js */
+import { renderIndicatorChart, clearIndicatorChart } from "/js/indicator-chart.js";
 import { checkPineV6 } from "/js/pine-lint.js";
 import { api, getMe, setToast, escHtml, fmt, fmtPct, colorPct } from "/js/common.js";
 import { compareTrayAdd, renderCompareTrayAll, tt } from "/js/core.js";
@@ -142,12 +144,15 @@ document.getElementById("ind-load-btn").addEventListener("click", async () => {
   const tradeBtn = document.getElementById("ind-trade-btn");
 
   // 결과가 뜨기 전까지는 대기 모달로 경과 시간을 보여 주고, 거래 버튼은 잠가 둔다.
+  clearIndicatorChart("선택한 종목의 실제 데이터를 불러오는 중…");
   loadBtn.disabled = true;
   if (tradeBtn) { tradeBtn.disabled = true; tradeBtn.title = "전략 분석을 먼저 실행하세요"; }
   showLoadingModal("전략 분석 중…", `${symbolLabel} · ${period} 지표 계산`);
   try {
     const ind = await api(`/api/stocks/quant/indicators?symbol=${encodeURIComponent(symbol)}&period=${encodeURIComponent(period)}`);
+    if (symbol !== document.getElementById("ind-symbol").value || period !== document.getElementById("ind-period").value) return;
     if (ind.error) throw new Error(ind.error);
+    renderIndicatorChart(ind, symbolLabel);
     const last = (values) => values?.[values.length - 1];
     const rsi = ind.current_rsi ?? 50;
     const price = ind.current_price ?? 0;
@@ -166,7 +171,7 @@ document.getElementById("ind-load-btn").addEventListener("click", async () => {
     ].map(c => `<div class="card" style="padding:14px;"><div class="text-xs" style="color:var(--text-mute);">${c.label}</div><div style="font-size:20px;font-weight:700;margin:4px 0;color:${c.color};">${c.value}</div><div style="font-size:12px;color:${c.color};">${c.sub}</div></div>`).join("");
 
     const rows = [];
-    if (useMA5 && useMA20) rows.push(["MA5 vs MA20", `${fmt(Math.round(ma5))} vs ${fmt(Math.round(ma20))}`, golden?"골든크로스 ✅":"데드크로스 ❌", golden?"매수":"매도"]);
+    if (useMA5 && useMA20) rows.push(["MA5 vs MA20", `${fmt(Math.round(ma5))} vs ${fmt(Math.round(ma20))}`, golden?"골든크로스 <i class=\"fa-solid fa-check\" aria-hidden=\"true\"></i>":"데드크로스 <i class=\"fa-solid fa-xmark\" aria-hidden=\"true\"></i>", golden?"매수":"매도"]);
     if (useRsi)  rows.push(["RSI(14)", rsi.toFixed(1), rsi<30?"과매도(매수기회)":rsi>70?"과매수(매도주의)":"중립", rsi<30?"매수":rsi>70?"매도":"홀드"]);
     rows.push(["볼린저밴드", "±2σ", chgPct>2?"상단 돌파":chgPct<-2?"하단 이탈":"밴드 내", chgPct>2?"매도":chgPct<-2?"매수":"홀드"]);
 
@@ -183,7 +188,7 @@ document.getElementById("ind-load-btn").addEventListener("click", async () => {
         <span class="badge-sell">매도 신호: ${sellCount}개</span>
         <span class="badge-hold">중립: ${rows.length-buyCount-sellCount}개</span>
       </div>
-      <p class="text-xs mt-2" style="color:var(--text-dim);">종합: ${buyCount > sellCount ? "📈 매수 우위 — 진입 고려" : sellCount > buyCount ? "📉 매도 우위 — 익절 고려" : "⏸ 중립 — 관망 권장"}</p>`;
+      <p class="text-xs mt-2" style="color:var(--text-dim);">종합: ${buyCount > sellCount ? "<i class=\"fa-solid fa-chart-line\" aria-hidden=\"true\"></i> 매수 우위 — 진입 고려" : sellCount > buyCount ? "<i class=\"fa-solid fa-arrow-trend-down\" aria-hidden=\"true\"></i> 매도 우위 — 익절 고려" : "<i class=\"fa-solid fa-pause\" aria-hidden=\"true\"></i> 중립 — 관망 권장"}</p>`;
 
     document.getElementById("ind-strategy-result").classList.remove("hidden");
 
@@ -194,6 +199,7 @@ document.getElementById("ind-load-btn").addEventListener("click", async () => {
       tradeBtn.title = price ? `${symbolLabel} KIS 모의투자 주문` : "현재가를 가져오지 못해 주문할 수 없습니다";
     }
   } catch(e) {
+    clearIndicatorChart(`차트 조회 실패: ${e.message}`);
     _tradeCtx = null;
     setToast(e.message, "error");
   } finally {
@@ -248,42 +254,21 @@ plotshape(buy_signal,  style=shape.triangleup,   location=location.belowbar, col
 plotshape(sell_signal, style=shape.triangledown, location=location.abovebar, color=color.red,   size=size.small, title="Sell")`;
 }
 
-function generatePythonCode() {
-  const name   = document.getElementById("ci-name").value || "MyIndicator";
-  const base   = document.getElementById("ci-base").value || "rsi_ma";
-  const short  = document.getElementById("ci-short").value || 5;
-  const mid    = document.getElementById("ci-mid").value || 20;
-  const rsiLen = document.getElementById("ci-rsi").value || 14;
-  const buyTh  = document.getElementById("ci-buy-th").value || 35;
-  const pySignal = base === "macd_bb"
-    ? `    macd = ta.macd(df["Close"])["MACD_12_26_9"]\n    macd_sig = ta.macd(df["Close"])["MACDs_12_26_9"]\n    bb = ta.bbands(df["Close"], length=${mid})\n    df["buy_signal"] = (macd > macd_sig) & (macd.shift(1) <= macd_sig.shift(1)) & (df["Close"] < bb.iloc[:, 1])\n    df["sell_signal"] = (macd < macd_sig) & (macd.shift(1) >= macd_sig.shift(1))`
-    : base === "volume_rsi"
-    ? `    vol_ma = df["Volume"].rolling(${mid}).mean()\n    df["buy_signal"] = (df["rsi"] < ${buyTh}) & (df["Volume"] > vol_ma)\n    df["sell_signal"] = df["rsi"] > ${100 - parseInt(buyTh)}`
-    : base === "triple_ma"
-    ? `    ma_long = ta.sma(df["Close"], length=${parseInt(mid) * 2})\n    df["buy_signal"] = df["golden_cross"] & (df["ma_mid"] > ma_long)\n    df["sell_signal"] = df["dead_cross"] | (df["ma_mid"] < ma_long)`
-    : `    df["buy_signal"]  = df["golden_cross"] & (df["rsi"] < ${buyTh})\n    df["sell_signal"] = df["dead_cross"]   | (df["rsi"] > ${100 - parseInt(buyTh)})`;
-
-  return `import pandas as pd
-import pandas_ta as ta
-
-def ${name.replace(/[^a-zA-Z0-9_]/g,"_")}(df: pd.DataFrame) -> pd.DataFrame:
-    """커스텀 인디케이터: ${name}"""
-    df["ma_short"] = ta.sma(df["Close"], length=${short})
-    df["ma_mid"]   = ta.sma(df["Close"], length=${mid})
-    df["rsi"]      = ta.rsi(df["Close"], length=${rsiLen})
-
-    df["golden_cross"] = (df["ma_short"] > df["ma_mid"]) & (df["ma_short"].shift(1) <= df["ma_mid"].shift(1))
-    df["dead_cross"]   = (df["ma_short"] < df["ma_mid"]) & (df["ma_short"].shift(1) >= df["ma_mid"].shift(1))
-
-    # 선택 기반: ${base}
-${pySignal}
-    df["signal"] = "HOLD"
-    df.loc[df["buy_signal"],  "signal"] = "BUY"
-    df.loc[df["sell_signal"], "signal"] = "SELL"
-    return df`;
+function syncPineLines() {
+  const editor = document.getElementById("ci-pine-code");
+  const lines = document.getElementById("ci-pine-lines");
+  lines.textContent = editor.value.split("\n").map((_, i) => i + 1).join("\n");
+  lines.scrollTop = editor.scrollTop;
 }
-
+document.getElementById("ci-pine-code").addEventListener("scroll", syncPineLines);
+document.getElementById("ci-pine-code").addEventListener("input", syncPineLines);
+document.getElementById("ci-download-pine").addEventListener("click", () => {
+  const url = URL.createObjectURL(new Blob([document.getElementById("ci-pine-code").value], { type: "text/plain;charset=utf-8" }));
+  const a = document.createElement("a"); a.href = url; a.download = "indicator-v6.pine"; a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+});
 function renderPineCheck() {
+  syncPineLines();
   const editor = document.getElementById("ci-pine-code");
   const output = document.getElementById("ci-pine-check-result");
   const { diagnostics, errors } = checkPineV6(editor.value);
@@ -313,16 +298,12 @@ document.getElementById("ci-pine-code").addEventListener("input", () => {
 document.getElementById("ci-generate-btn").addEventListener("click", () => {
   document.getElementById("ci-pine-code").value = generatePineCode();
   renderPineCheck();
-  document.getElementById("ci-python-code").textContent = generatePythonCode();
 });
-document.getElementById("ci-copy-pine").addEventListener("click", () => {
-  navigator.clipboard.writeText(document.getElementById("ci-pine-code").value);
-  setToast("PineScript 복사됨", "ok");
+document.getElementById("ci-copy-pine").addEventListener("click", async () => {
+  try { await navigator.clipboard.writeText(document.getElementById("ci-pine-code").value); setToast("Pine Script 복사됨", "ok"); }
+  catch { setToast("복사 권한을 확인하거나 .pine 다운로드를 사용하세요", "error"); }
 });
-document.getElementById("ci-copy-py").addEventListener("click", () => {
-  navigator.clipboard.writeText(document.getElementById("ci-python-code").textContent);
-  setToast("Python 코드 복사됨", "ok");
-});
+
 document.getElementById("ci-test-btn").addEventListener("click", async () => {
   const name = document.getElementById("ci-name").value || "MyIndicator";
   const base = document.getElementById("ci-base").value || "rsi_ma";
@@ -359,11 +340,8 @@ document.getElementById("ci-test-btn").addEventListener("click", async () => {
 // 초기 코드 생성
 generatePineCode && (() => {
   const pine = generatePineCode();
-  const py   = generatePythonCode();
   const pineEl = document.getElementById("ci-pine-code");
-  const pyEl   = document.getElementById("ci-python-code");
   if (pineEl) { pineEl.value = pine; renderPineCheck(); }
-  if (pyEl)   pyEl.textContent   = py;
 })();
 
 // ── 커스텀 인디케이터 저장/불러오기 ──────────────────────────────────
@@ -570,7 +548,7 @@ function renderIbtDetail() {
   const benchmark = data.results.find(r=>r.strategy === 'buy_hold');
   if (!result) return;
   const xai = result.explanation;
-  const conditions = (rows = []) => rows.map(r=>`<li class="rounded-lg p-3 mb-2" style="background:var(--surf2);overflow-wrap:anywhere;"><strong style="color:${r.matched ? 'var(--green)' : 'var(--text-mute)'};">${r.matched ? '✓ 충족' : '○ 미충족'} · ${escHtml(r.label)}</strong><div class="mt-1">조건: ${escHtml(r.rule)}</div><div style="color:var(--text-dim);">관측값: ${escHtml(r.observed)}</div></li>`).join('');
+  const conditions = (rows = []) => rows.map(r=>`<li class="rounded-lg p-3 mb-2" style="background:var(--surf2);overflow-wrap:anywhere;"><strong style="color:${r.matched ? 'var(--green)' : 'var(--text-mute)'};">${r.matched ? '<i class="fa-solid fa-check" aria-hidden="true"></i> 충족' : '○ 미충족'} · ${escHtml(r.label)}</strong><div class="mt-1">조건: ${escHtml(r.rule)}</div><div style="color:var(--text-dim);">관측값: ${escHtml(r.observed)}</div></li>`).join('');
   const gap = ibtNum(result.excess_return_pct);
   const relation = gap === null ? '비교 데이터 없음' : gap > 0 ? `단순 보유보다 ${gap.toFixed(1)}%p 높은 수익률` : gap < 0 ? `단순 보유보다 ${Math.abs(gap).toFixed(1)}%p 낮은 수익률` : '단순 보유와 같은 수익률';
   document.getElementById('ibt-strategy-detail').innerHTML = `
@@ -608,7 +586,7 @@ async function loadIndicatorApiSettings() {
       if (t) t.value = data.broker;
     }
     const status = document.getElementById("iapi-status");
-    if (status) status.textContent = data?.connected ? "✅ 연결됨" : "연결되지 않음";
+    if (status) setIconText(status, data?.connected ? "<i class=\"fa-solid fa-check\" aria-hidden=\"true\"></i> 연결됨" : "연결되지 않음");
   } catch {}
 }
 
@@ -623,7 +601,7 @@ document.getElementById("iapi-save-btn")?.addEventListener("click", async () => 
   try {
     await api("/api/broker/settings", { method:"POST", body });
     setToast("API 설정 저장됨", "ok");
-    document.getElementById("iapi-status").textContent = "✅ 저장 완료";
+    setIconText(document.getElementById("iapi-status"), "<i class=\"fa-solid fa-check\" aria-hidden=\"true\"></i> 저장 완료");
   } catch(e) { setToast(e.message, "error"); }
 });
 document.getElementById("iapi-test-btn")?.addEventListener("click", async () => {

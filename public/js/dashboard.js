@@ -1,13 +1,9 @@
 /* 로그인 후 통합 대시보드. 개별 조회 실패는 해당 지표에만 표시한다. */
 import { api, escHtml, setToast } from '/js/common.js';
-import { GNB_MENUS } from '/js/core.js';
 
 let loading = false;
 const metric = (label, value, note = '') => `<div class="overview-metric"><span>${escHtml(label)}</span><strong>${escHtml(value)}</strong><small>${escHtml(note)}</small></div>`;
 const number = (value, suffix = '', digits = 1) => value !== null && value !== undefined && Number.isFinite(Number(value)) ? Number(value).toLocaleString('ko-KR', { maximumFractionDigits: digits }) + suffix : '데이터 없음';
-function features(key) {
-  return GNB_MENUS[key].items.filter(item => item.key !== 'dashboard').map(item => `<a class="overview-feature" href="#${item.key}"><i class="${item.icon}"></i><span>${escHtml(item.label)}</span><i class="fa-solid fa-arrow-right"></i></a>`).join('');
-}
 async function fill(id, request, render) {
   const el = document.getElementById(id);
   el.innerHTML = '<p class="overview-note" role="status">지표를 불러오는 중입니다…</p>';
@@ -24,8 +20,6 @@ export async function loadDashboard() {
   loading = true;
   const button = document.getElementById('overview-refresh');
   button.disabled = true;
-  document.getElementById('overview-robo-features').innerHTML = features('agent');
-  document.getElementById('overview-indicator-features').innerHTML = features('company');
   loadKisQuickstart();
   try {
     await Promise.allSettled([

@@ -1,3 +1,4 @@
+import { setIconText } from "/js/icons.js";
 /* 미국주식 대시보드·차트·주문·포트폴리오
  * app.html 인라인 스크립트에서 분리됨. 엔트리는 main.js */
 import { api, getMe, setToast, escHtml, fmt, fmtPct, colorPct } from "/js/common.js";
@@ -239,10 +240,10 @@ document.getElementById("alpaca-save")?.addEventListener("click", ()=>{
   const paper  = document.getElementById("alpaca-paper").checked;
   const statusEl = document.getElementById("alpaca-status");
   if (!key || !secret) {
-    statusEl.textContent = "⚠️ API 키가 없어 Mockup 모드로 동작합니다.";
+    setIconText(statusEl, "<i class=\"fa-solid fa-triangle-exclamation\" aria-hidden=\"true\"></i> API 키가 없어 Mockup 모드로 동작합니다.");
     statusEl.style.color = "var(--text-mute)";
   } else {
-    statusEl.textContent = `✅ 저장됨 – ${paper?"Paper Trading":"Live"} 모드 (Mockup 적용중)`;
+    setIconText(statusEl, `<i class="fa-solid fa-check" aria-hidden="true"></i> 저장됨 – ${paper?"Paper Trading":"Live"} 모드 (Mockup 적용중)`);
     statusEl.style.color = "var(--green)";
   }
   setToast("Alpaca 설정 저장 완료", "ok");

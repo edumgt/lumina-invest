@@ -5,12 +5,10 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>로그인 | Lumina Invest</title>
   <link rel="icon" href="/favicon.ico" />
-  <link rel="preconnect" href="https://cdn.jsdelivr.net" />
-  <link rel="stylesheet" as="style" onload="this.rel='stylesheet'"
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
+  <link rel="stylesheet"
         href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
-  <noscript>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
-  </noscript>
+  <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -20,10 +18,6 @@
       color: #0f172a;
       font-family: 'Pretendard Variable', 'Pretendard', -apple-system, sans-serif;
       font-size: 18px;
-      font-feature-settings: "kern" 1;
-      -webkit-font-smoothing: antialiased;
-      -moz-osx-font-smoothing: grayscale;
-      text-rendering: optimizeLegibility;
       word-break: keep-all;
       display: flex;
       align-items: center;
@@ -132,11 +126,12 @@
     .form-footer a:hover { text-decoration: underline; }
   </style>
 <link rel="stylesheet" href="https://www.edumgt.co.kr/css/common.css?v=20261012-common-3" />
+  <link rel="stylesheet" href="/css/font-rendering.css" />
 </head>
 <body data-view="login">
   <div class="login-wrap">
     <div class="brand">
-      <div class="brand-icon"><i class="fa-solid fa-chart-mixed"></i></div>
+      <div class="brand-icon"><i class="fa-solid fa-chart-line"></i></div>
       <div class="brand-name">Lumina Invest</div>
       <div class="brand-sub">AI 기반 금융 분석 · 퀀트 매매 플랫폼</div>
     </div>

@@ -50,7 +50,7 @@ def nav_to(page, gnb_key, view_key):
 def shot(page, name):
     out = OUT / f"{name}.png"
     page.screenshot(path=str(out))
-    print(f"  ✓ {out.name}")
+    print(f"   {out.name}")
 
 def main():
     with sync_playwright() as p:
@@ -84,7 +84,7 @@ def main():
                 time.sleep(1.5)
                 shot(page, name)
             except Exception as e:
-                print(f"  ✗ {name}: {e}")
+                print(f"   {name}: {e}")
 
         browser.close()
     print(f"\n완료: {OUT}")

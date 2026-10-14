@@ -24,10 +24,10 @@ document.getElementById("mlc-run-btn")?.addEventListener("click", async () => {
     document.getElementById("mlc-best").textContent = `최고 모델: ${data.best_model} (CV ${(data.models[0].cv_mean * 100).toFixed(1)}%)`;
     const cards = document.getElementById("mlc-summary-cards");
     const top3 = data.models.slice(0, 3);
-    const medals = ["🥇","🥈","🥉"];
+    const medals = ["<i class=\"fa-solid fa-medal\" aria-hidden=\"true\"></i>","<i class=\"fa-solid fa-medal\" aria-hidden=\"true\"></i>","<i class=\"fa-solid fa-medal\" aria-hidden=\"true\"></i>"];
     cards.innerHTML = top3.map((m, i) => `
       <div class="px-4 py-3 rounded text-sm" style="background:var(--bg);border:1px solid var(--border);">
-        ${medals[i]} <strong>${escHtml(m.name)}</strong><br>
+        ${medals[i]} ${i + 1}위 <strong>${escHtml(m.name)}</strong><br>
         <span class="text-xs text-slate-400">CV ${(m.cv_mean * 100).toFixed(1)}%</span>
       </div>
     `).join("");
