@@ -72,6 +72,13 @@ services:
       QUANT_AGGRESSIVE_MODE: ${QUANT_AGGRESSIVE_MODE:-true}          # 5분봉 공격 모드 (2026-10-06). .env 로 끌 수 있다
       KIS_PAPER_BATCH_ENABLED: ${KIS_PAPER_BATCH_ENABLED:-true}      # 로그인 무관 KIS 모의투자 배치. .env 로 끌 수 있다
 
+  streamlit:
+    image: lumina-invest-streamlit:fd
+    ports: !override []
+    environment:
+      LUMINA_API_BASE: http://app:8000
+      LUMINA_PUBLIC_BASE: https://fd.edumgt.co.kr
+
   qdrant:
     image: qdrant/qdrant:latest
     restart: unless-stopped

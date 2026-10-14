@@ -101,6 +101,23 @@ services:
       ollama:
         condition: service_started
 
+  # Streamlit UI (6-60): FastAPI(app) 를 호출하는 별도 프런트. 로컬은 http://localhost:8501/ui/ , fd 는 Caddy /ui* → streamlit:8501
+  streamlit:
+    build:
+      context: .
+      dockerfile: Dockerfile.streamlit
+    image: lumina-invest-streamlit:local
+    restart: unless-stopped
+    environment:
+      LUMINA_API_BASE: http://app:8000
+      LUMINA_PUBLIC_BASE: ${PUBLIC_BASE_URL:-http://localhost:8000}
+    ports:
+      - "8501:8501"
+    depends_on:
+      - app
+    networks:
+      - shared-net
+
   ingest:
     build:
       context: .

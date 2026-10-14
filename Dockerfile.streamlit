@@ -1,0 +1,11 @@
+# lumina-invest Streamlit UI (6-60). API 이미지와 분리 — streamlit_app/ 만 담는다.
+FROM python:3.12-slim
+WORKDIR /app
+COPY streamlit_app/requirements.txt ./streamlit_app/requirements.txt
+RUN pip install --no-cache-dir -r streamlit_app/requirements.txt
+COPY streamlit_app/ ./streamlit_app/
+ENV LUMINA_API_BASE=http://app:8000 \
+    STREAMLIT_SERVER_HEADLESS=true \
+    STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
+EXPOSE 8501
+CMD ["streamlit", "run", "streamlit_app/app.py", "--server.port", "8501", "--server.address", "0.0.0.0", "--server.baseUrlPath", "ui", "--server.enableXsrfProtection", "false"]

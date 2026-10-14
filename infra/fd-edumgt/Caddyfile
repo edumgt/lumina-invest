@@ -1,5 +1,9 @@
 fd.edumgt.co.kr {
     encode zstd gzip
+    # Streamlit UI (6-60): /ui/* 는 streamlit 컨테이너로 (baseUrlPath=ui, 웹소켓 포함). 아래 GET 핸들보다 먼저 매칭돼야 한다.
+    handle /ui* {
+        reverse_proxy streamlit:8501
+    }
     @read_requests method GET HEAD
     handle @read_requests {
         reverse_proxy app:8000 {

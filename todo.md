@@ -1919,3 +1919,22 @@ SageMaker를 활용해 매일 예측을 수행하고, 그 결과를 검증하며
 
 * [ ] **모델 재학습 주기 설정**
 * 주 1회 또는 월 1회 신규 데이터를 반영한 SageMaker 모델 재학습 루프 안정화
+### 6-60. 2026-10-14 Streamlit 기반 UI 1차 (사용자 요청: 4개 저장소를 순서대로 Streamlit 으로, lumina-invest 부터)
+
+**방식**: FastAPI(app.main)와 기존 `public/` 화면은 그대로 두고, 같은 API 를 호출하는 **별도 Streamlit 프런트**(`streamlit_app/`)를 추가. 서버 라우트가 쿠키 세션(`fin_session`)만 받으므로 `/api/auth/login` 의 Set-Cookie 를 Streamlit 세션 상태에 보관해 매 호출에 붙인다(JWT Bearer 는 화면 라우트가 안 받음). 운영은 별도 컨테이너 `streamlit`(8501, baseUrlPath=ui) + Caddy `handle /ui*` → `https://fd.edumgt.co.kr/ui/`.
+
+| 파일 | 내용 |
+|------|------|
+| `streamlit_app/app.py` | 진입점. GNB 6묶음(core.js GNB_MENUS)과 같은 순서로 `st.navigation` 섹션 구성(+ 투자 인디케이터 › 기업 대시보드). 미로그인은 로그인 페이지만 |
+| `streamlit_app/api.py` | httpx 클라이언트(쿠키 세션, 401 시 세션 해제, 오류 → ApiError), login/logout, 기존 화면 링크 |
+| `streamlit_app/ui.py` | 원/퍼센트 표기, KPI 격자, 표, 오류 표시 |
+| `streamlit_app/pages/` | **전용 페이지 7개**: 통합 대시보드(`/api/dashboard/accounts` 탭·KIS 연동·자동매매 상태·리밸런싱), AI 투자 상담(`/api/chat`, st.chat_message, 비동기 poll_url 폴링), KIS 모의투자결과(`/kis/monitor`·`/kis/orders` 필터), 전략설정(필드 메타 → 위젯 자동 생성, 바뀐 값만 POST, 초기화·스펙·HP 설명), 설정별 성과, 수익률 검증(실시간 평가액·KPI·plotly 평가액/일변화 차트·표·스냅샷·방안 승인·가이드·붙여넣기 적재), 기업 대시보드(검색·펀더멘탈·DART 근거). **나머지 18개 메뉴**는 `generic.py` 가 관련 GET API 를 표/JSON 으로 보여주고 기존 화면 링크를 제공(리밸런싱·모의계좌·코인·대체자산·크롤링 목록·스크리닝·포트폴리오·브로커 설정 매핑) |
+| `streamlit_app/requirements.txt`·`Dockerfile.streamlit` | API 이미지와 분리(streamlit·plotly·httpx·pandas) |
+| `docker-compose.yml`·`compose.fd.yml` | `streamlit` 서비스(로컬 8501 노출, fd 는 포트 없음·shared-net·`LUMINA_API_BASE=http://app:8000`) |
+| `infra/fd-edumgt/Caddyfile` | `handle /ui* { reverse_proxy streamlit:8501 }` 를 GET 핸들 앞에(웹소켓 포함) |
+| `tests/test_streamlit_app.py` | 5개 — AppTest 헤드리스(로그인 화면·로그인 실패 오류·로그인 후 GNB·대시보드 KPI·기업 대시보드 DART 표기), API 클라이언트(쿠키 전달·쿼리·오류 매핑·로그인 쿠키 저장) |
+| `deploy/fd-streamlit.sh` | 소스 갱신 → `streamlit` 이미지 빌드·기동(app/celery 무관) → Caddy reload(바인드 마운트라 파일 갱신 + reload) → `/ui/` 200 확인 |
+
+**검증**: 테스트 5개 통과. 로컬 `streamlit run ... --server.baseUrlPath ui` 로 `/ui/` 200·`/ui/_stcore/health` ok 확인. `docker compose config`·`caddy validate` 통과. 브라우저 미실행. 로컬 venv 에 streamlit 1.65.0·plotly 7.1.0 설치(uv).
+**배포(미완, 사용자)**: `bash deploy/fd-streamlit.sh`. 또는 main push 시 deploy.yml 의 `compose up -d --build` 가 streamlit 컨테이너를 올리지만 **Caddy 는 reload 가 안 되므로** `docker exec lumina-invest-proxy-1 caddy reload --config /etc/caddy/Caddyfile` 또는 스크립트 실행 필요.
+**다음**: ① 나머지 메뉴(입력·실행이 있는 리밸런싱·모의주문·크롤링·백테스트) 전용 페이지로 승격 ② 같은 방식으로 domain-rag-lab(pr) → stock-coin-trade(st) → stock-kms-portal(iv) 순서 진행. pr·iv 에는 이미 데모 `streamlit_app.py` 가 있어 그것을 운영 UI 로 확장하는 형태가 된다.
