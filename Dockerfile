@@ -20,6 +20,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # App source
 COPY app/ ./app/
+# Fail the build if deployment omitted the required market catalog.
+RUN python -c 'import json; from pathlib import Path; [json.loads((Path("app/data") / name).read_text()) for name in ("korea-master-layouts.json", "korea-universe.json", "legacy-trading-symbols.json", "legacy-sector-themes.json")]'
 COPY public/ ./public/
 COPY prompts/ ./prompts/
 COPY alembic/ ./alembic/
