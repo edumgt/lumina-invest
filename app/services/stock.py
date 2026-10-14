@@ -182,7 +182,7 @@ async def get_fundamentals(symbol: str) -> dict:
     """
     # v4: 통화 필드(currency/priceUnit/...)와 DART 블록(assets/dartOpSeries/...)이 추가돼
     # 예전 캐시는 그 값이 없다. 키를 올려 구버전 캐시가 그대로 표시되는 일을 막는다.
-    cache_key = f"fundamentals:v5:{symbol}"   # v5: DART 계산 EPS·BPS·PER·PBR(valuationSource) 추가(6-52)
+    cache_key = f"fundamentals:v6:{symbol}"   # v6: DART 계산 ROE·ROA·이익률·부채비율·배당(profitabilitySource/dividendSource) 추가(6-57)
     cached = await cache_get(cache_key, max_age_hours=6)
     if cached is not None:
         return cached
@@ -264,6 +264,11 @@ async def get_fundamentals(symbol: str) -> dict:
         revenue.append(_eok(_raw(q, "totalRevenue")))
         op.append(_eok(_raw(q, "operatingIncome")))
         net.append(_eok(_raw(q, "netIncome")))
+
+    # Yahoo 는 국내 소형주의 분기 순이익을 0 으로, 영업이익을 빈 값으로 보낸다(2026-10-14 아모텍 실측: net=[0,0,0,0], op=[null]*4).
+    # 네 분기 모두 0 이면서 영업이익이 전부 없는 조합은 '자료 없음' 이지 '0원' 이 아니다 → N/A 로 돌린다.
+    if net and all(v == 0 for v in net) and all(v is None for v in op):
+        net = [None] * len(net)
 
     bs_list = r.get("balanceSheetHistory", {}).get("balanceSheetStatements", [])
     bs = bs_list[0] if bs_list else {}
@@ -376,7 +381,15 @@ async def _overlay_dart(fundamentals: dict, symbol: str, eok, fin_cur: str | Non
         logger.warning("DART 주당 지표 실패 %s: %s", symbol, exc)
         ps = None
     _apply_dart_valuation(fundamentals, ps)
+    # 배당은 재무제표 유무와 별개(사업보고서 alotMatter)라 먼저 시도한다.
+    try:
+        dv = await dart.dividend_info(symbol)
+    except Exception as exc:
+        logger.warning("DART 배당 실패 %s: %s", symbol, exc)
+        dv = None
+    _apply_dart_dividend(fundamentals, dv)
     if not d:
+        _apply_dart_profitability(fundamentals, None)
         return
     period = f"{d['year']} {d['reportName']}"
     pref = f" · 보통주({d.get('stockCode')}) 기준 회사 재무제표" if d.get("isPreferred") else ""
@@ -406,6 +419,57 @@ async def _overlay_dart(fundamentals: dict, symbol: str, eok, fin_cur: str | Non
         "period": period, "fsDiv": d["fsDiv"], "corpCode": d["corpCode"],
         "source": d["source"], "opBasis": d.get("opBasis"),
     }
+    # 수익성 지표·배당 — Yahoo 가 비운 항목만 DART 계산값으로 채운다(항목 단위 폴백).
+    try:
+        pm = await dart.profitability_metrics(symbol)
+    except Exception as exc:
+        logger.warning("DART 수익성 지표 실패 %s: %s", symbol, exc)
+        pm = None
+    _apply_dart_profitability(fundamentals, pm, pref)
+
+
+_PROFIT_KEYS = {"roe": "roe", "roa": "roa", "opMargin": "opMargin", "netMargin": "netMargin", "debt": "debtRatio"}
+
+
+def _apply_dart_profitability(fundamentals: dict, pm: dict | None, pref: str = "") -> None:
+    """ROE·ROA·영업이익률·순이익률·부채비율: Yahoo 값이 없으면 DART 계산값. 어느 항목을 어디서 받았는지 profitabilityBasis 에 남긴다.
+    Yahoo 의 debt(debtToEquity)는 '총차입금 ÷ 자본' 이고 DART 부채비율은 '부채총계 ÷ 자본총계' 라 정의가 다르다 → 기준에 밝힌다."""
+    yahoo = {k: fundamentals.get(k) for k in _PROFIT_KEYS}
+    fundamentals["yahooProfitability"] = yahoo
+    basis: dict[str, str] = {k: "Yahoo Finance financialData" + (" · 총차입금 ÷ 자본(%)" if k == "debt" else "")
+                             for k, v in yahoo.items() if v is not None}
+    filled: list[str] = []
+    if pm:
+        for key, src in _PROFIT_KEYS.items():
+            if yahoo.get(key) is None and pm.get(src) is not None:
+                fundamentals[key] = pm[src]
+                basis[key] = f"DART 계산 · {pm['bases'].get(src, '')}"
+                filled.append(key)
+    fundamentals["profitabilityBasis"] = basis
+    fundamentals["profitabilityNotes"] = list((pm or {}).get("notes") or [])
+    fundamentals["profitabilitySource"] = (f"DART 계산 · {pm.get('period')} {pm.get('fsDiv') or ''}{pref}" if filled else
+                                           "Yahoo Finance financialData" if any(v is not None for v in yahoo.values()) else None)
+    fundamentals["profitabilityFilled"] = filled
+
+
+def _apply_dart_dividend(fundamentals: dict, dv: dict | None) -> None:
+    """DPS·배당수익률: Yahoo 가 없으면 DART 사업보고서 연간 배당. 수익률은 DPS ÷ 현재가(공시 수익률은 결산일 주가 기준이라 참고만)."""
+    fundamentals["yahooDividend"] = {"div": fundamentals.get("div"), "divYield": fundamentals.get("divYield")}
+    if fundamentals.get("div") is not None or fundamentals.get("divYield") is not None:
+        fundamentals["dividendSource"] = "Yahoo Finance summaryDetail"
+        return
+    if not dv or dv.get("dps") is None:
+        fundamentals["dividendSource"] = None
+        return
+    price = fundamentals.get("price")
+    dps = float(dv["dps"])
+    fundamentals["div"] = dps
+    fundamentals["divYield"] = round(dps / float(price) * 100, 2) if price and dps > 0 else (0.0 if dps == 0 else None)
+    if fundamentals.get("payoutRatio") is None and dv.get("payoutRatio") is not None:
+        fundamentals["payoutRatio"] = dv["payoutRatio"]
+    fundamentals["divYieldReported"] = dv.get("yieldReported")
+    fundamentals["dividendSource"] = (f"DART {dv['year']} {dv['reportName']} · {dv.get('stockKind') or '보통주'} 주당 현금배당금"
+                                      + (" · 현금배당 없음" if dv.get("noDividend") else " · 수익률 = DPS ÷ 현재가"))
 
 
 async def get_candles(symbol: str, period: str = "1y", interval: str = "1d", max_age_hours: float = 6) -> dict:

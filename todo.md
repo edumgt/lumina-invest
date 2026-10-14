@@ -1730,3 +1730,17 @@ st 공개 조회 계약(`rows[].trade_date`, `nextOffset`)은 라이브 응답�
 
 **검증**: 세 파일에 `overview-feature`·`기능 바로가기` 참조 0건(tests/·shared-css/ 에도 없음). 브라우저 미실행(node 없음, 괄호 균형만 확인).
 **배포(미완, 사용자)**: `deploy/fd-dashboard-shortcuts.sh`. 정적 파일만이라 재시작 없음. 서버는 현재 HEAD 본과 동일(md5 확인). 로컬 `app.html` 에는 **미배포 인디케이터 작업**(TradingView 차트·Pine 편집기, `indicator.js`·`indicator-chart.js` 미커밋)이 섞여 있어 스크립트는 HEAD 본에서 바로가기 2줄만 뺀 `app.html` 을 보낸다. 커밋 시엔 작업 트리 그대로 커밋해도 됨(인디케이터 작업은 별도 항목).
+
+### 6-57. 2026-10-14 #company-dashboard 펀더멘탈 N/A — DART 계산 수익성 지표·배당 + 순이익 계정명 보강 (사용자 보고: 아모텍)
+
+**원인(실측)**: ① Yahoo quoteSummary 가 코스닥 소형주(아모텍 052710)의 `financialData`(ROE·ROA·영업이익률·부채비율)·`summaryDetail`(배당)·`trailingEps` 를 전부 null 로, 분기 순이익은 0, 영업이익은 null 로 보낸다(캐시 `fundamentals:v5:052710.KQ` 확인). 기존 DART 보강 범위는 재무상태표·영업이익·EPS/BPS 까지라 수익성 4개와 배당은 N/A 로 남았다. ② DART 순이익 계정명 목록에 `반기순이익(손실)` 이 없어(아모텍 반기보고서 표기) 순이익이 None → "EPS 계산 불가: 당기 누적 순이익 없음". 분기 표의 영업이익 N/A 는 Yahoo 행이고 DART 분기 영업이익 표는 그 아래 별도로 그려지므로 설계대로.
+
+| 변경 | 내용 |
+|------|------|
+| `app/services/dart.py` | `_IS_TARGETS.netIncome` 에 `분기순이익(손실)`·`반기순이익(손실)`·`당기/분기/반기순손실` 추가. `_parse_statements` 가 손익 3항목 모두 `{op,revenue,net}Cumulative`·`…PrevCumulative` 를 담음(사업보고서는 연간=누적). 범용 `ttm_amount(latest, prev_annual, key)`(기존 `ttm_net_income` 은 위임). **`profitability_metrics(symbol)`**: ROE = TTM 순이익 ÷ 기말 지배주주지분(없으면 자본총계), ROA = ÷ 자산총계, 영업이익률 = TTM 영업이익 ÷ TTM 매출, 순이익률, 부채비율 = 부채총계 ÷ 자본총계(%). 값 하나라도 없으면 그 지표 None + notes. 24h 캐시 `dart:profit:v1`. **`dividend_info(symbol)`**: 최근 사업보고서 `alotMatter`(배당에 관한 사항) → 주당 현금배당금(보통주/우선주 심볼이면 우선주)·공시 수익률·배당성향·총액. `-` 면 **현금배당 없음 = DPS 0** (행 자체가 없으면 None). 24h 캐시 `dart:dividend:v1`. 캐시 키 `dart:fin:v3`·`dart:pershare:v2` 로 올림 |
+| `app/services/stock.py` | `fundamentals:v6`. `_overlay_dart` 에 `_apply_dart_dividend`(Yahoo div/divYield 가 없을 때만, 수익률 = DPS ÷ 현재가, 공시 수익률은 `divYieldReported`)·`_apply_dart_profitability`(roe/roa/opMargin/netMargin/debt **항목 단위** 폴백, `profitabilityBasis{항목: 출처·식}`·`profitabilitySource`·`profitabilityNotes`·`yahooProfitability`). Yahoo `debt`(총차입금÷자본)와 DART 부채비율(부채총계÷자본총계)은 정의가 달라 기준에 명시. Yahoo 분기 순이익이 네 분기 모두 0 이고 영업이익이 전부 null 이면 '자료 없음' 으로 보고 순이익 행을 N/A 로(0원 오표기 방지) |
+| `public/js/company.js` | 수익성 카드: DART 계산 항목에 `DART` 꼬리표, 부채비율 DART 값은 `%`, 아래 `profitabilityBasisLine`(출처·항목별 식·불가 사유). 밸류에이션 카드 아래 `dividendBasisLine`(DART 사업보고서 연도·주식 종류·현금배당 없음/DPS÷현재가·공시 수익률) |
+| 테스트 | `tests/test_dart_profitability.py` 14개(손실 계정명 변형, 항목별 누적, 범용 TTM, 수익성 지표·캐시·결측 사유·자본총계 폴백, 배당 파싱(보통/우선/없음/행 없음)·연도 소급·캐시, 항목 단위 폴백, 배당 수익률 계산·Yahoo 우선) |
+
+**검증**: DART·stock 관련 테스트 126개 통과(`tests/test_dart_*.py test_company_fundamentals_resilience.py test_sector_indicators.py …`). 새 `dart.py` 를 fd 컨테이너 안에서 파일을 건드리지 않고 실행(stdin exec)해 실측: 아모텍 EPS -237.13(TTM, 적자 → PER N/A 가 맞음), ROE -2.16% · ROA -0.94% · 영업이익률 0.14% · 부채비율 128.96%, DPS 0(현금배당 없음). 삼성전자 ROE 26.67% · 영업이익률 36.88% · DPS 1,668원(우선주 1,669원 · 공시 수익률 1.5/1.9%). 브라우저 미실행.
+**배포(미완, 사용자)**: `deploy/fd-dart-profitability.sh`(app·worker·beat 재시작, DB 변경 없음). 로컬 작업 트리에 다른 세션의 미커밋 변경(`app.html`·`core.js`·`formula.js`·`formula-guide.js`)이 있으나 이 배포 파일 목록에는 포함되지 않는다.

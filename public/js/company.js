@@ -162,6 +162,27 @@ function dartOpTable(d) {
   </div>`;
 }
 
+// 수익성 지표 근거(6-57). Yahoo 가 비운 항목은 DART 재무제표로 계산한 값이며, 항목별 출처와 식을 아래 줄에 밝힌다.
+function profitabilityBasisLine(d) {
+  const basis = d.profitabilityBasis || {};
+  const notes = (d.profitabilityNotes || []).map(n => `<div>· ${escHtml(n)}</div>`).join("");
+  const labels = { roe: "ROE", roa: "ROA", opMargin: "영업이익률", netMargin: "순이익률", debt: "부채비율" };
+  const dartItems = Object.entries(basis).filter(([, v]) => String(v).startsWith("DART"))
+    .map(([k, v]) => `<div>· ${labels[k] || k}: ${escHtml(String(v).replace(/^DART 계산 · /, ""))}</div>`).join("");
+  if (!d.profitabilitySource) {
+    return `<div class="text-xs mt-2" style="color:var(--text-mute);">ROE·ROA·영업이익률·부채비율: Yahoo 값이 없으면 DART 재무제표(국내 상장사)로 계산합니다. 이 종목은 두 출처 모두 값이 없습니다.${notes}</div>`;
+  }
+  const dart = d.profitabilitySource.startsWith("DART");
+  return `<div class="text-xs mt-2" style="color:var(--text-mute);">근거: ${escHtml(d.profitabilitySource)}${dart ? " · 분모는 기말 잔액(평균 아님) · 'DART' 표시 항목이 계산값, 나머지는 Yahoo financialData" : ""}${dartItems}${notes}</div>`;
+}
+// 배당 근거(6-57). Yahoo summaryDetail 이 비면 DART 사업보고서 '배당에 관한 사항'(연간 주당 현금배당금)으로 채운다.
+function dividendBasisLine(d) {
+  if (!d.dividendSource) {
+    return (d.div == null && d.divYield == null) ? `<div class="text-xs mt-1" style="color:var(--text-mute);">배당: Yahoo·DART 모두 값이 없습니다.</div>` : "";
+  }
+  const reported = d.divYieldReported != null ? ` · 공시 수익률(결산일 주가 기준) ${escHtml(String(d.divYieldReported))}%` : "";
+  return `<div class="text-xs mt-1" style="color:var(--text-mute);">배당 근거: ${escHtml(d.dividendSource)}${reported}</div>`;
+}
 // EPS·BPS·PER·PBR 근거(6-52). DART 계산값이 우선이고 Yahoo 는 폴백 — 어느 쪽인지 카드 라벨과 밸류에이션 아래 줄에 밝힌다.
 function valuationTag(d) {
   if (!d.valuationSource) return "";
@@ -211,21 +232,23 @@ function renderCompanyData(d) {
       <span style="font-size:12px; color:var(--text-dim);">${k}</span>
       <span style="font-size:13px; font-weight:600;">${v}</span>
     </div>
-  `).join("") + valuationBasisLine(d);
+  `).join("") + valuationBasisLine(d) + dividendBasisLine(d);
 
   // 수익성
   const profRows = [
     ["ROE (자기자본이익률)", d.roe!=null ? `${d.roe}%` : "N/A"],
     ["ROA (총자산이익률)", d.roa!=null ? `${d.roa}%` : "N/A"],
     ["영업이익률", d.opMargin!=null ? `${d.opMargin}%` : "N/A"],
-    ["부채비율(D/E)", d.debt!=null ? `${d.debt}` : "N/A"],
+    ["부채비율(D/E)", d.debt!=null ? `${d.debt}${(d.profitabilityBasis?.debt || "").startsWith("DART") ? "%" : ""}` : "N/A"],
   ];
-  document.getElementById("co-profitability").innerHTML = profRows.map(([k,v]) => `
+  const profTag = key => (d.profitabilityBasis?.[key] || "").startsWith("DART") ? ` <span style="font-size:10px;color:var(--text-mute);">DART</span>` : "";
+  const profKeys = ["roe", "roa", "opMargin", "debt"];
+  document.getElementById("co-profitability").innerHTML = profRows.map(([k,v], i) => `
     <div class="flex justify-between items-center" style="padding:7px 0; border-bottom:1px solid var(--border);">
       <span style="font-size:12px; color:var(--text-dim);">${k}</span>
-      <span style="font-size:13px; font-weight:600;">${v}</span>
+      <span style="font-size:13px; font-weight:600;">${v}${profTag(profKeys[i])}</span>
     </div>
-  `).join("");
+  `).join("") + profitabilityBasisLine(d);
 
   // 분기 실적
   const qs = d.quarters || [];

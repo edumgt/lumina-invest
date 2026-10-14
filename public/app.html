@@ -667,7 +667,7 @@
             <option value="rsi">RSI 과매도 매수</option>
             <option value="bollinger">볼린저 밴드 회귀</option>
           </select></div>
-          <div><label for="bt-cost" class="text-xs" style="color:var(--text-mute);">수수료+슬리피지 (bp)</label>
+          <div><label for="bt-cost" class="text-xs" style="color:var(--text-mute);">수수료+체결 가격 차이 (bp)</label>
           <input id="bt-cost" class="input w-24" type="number" value="10" min="0" max="500" /></div>
           <button id="bt-load" class="btn-primary">백테스트 실행</button>
         </div>
@@ -1166,12 +1166,31 @@
         <div class="card">
           <div class="flex flex-wrap items-center justify-between gap-2 mb-1">
             <h2 class="text-lg font-semibold"><i class="fa-solid fa-calculator" aria-hidden="true"></i> 자유 산식 커스텀 지표</h2>
-            <div class="flex gap-2"><button id="fx-toggle-ref" class="btn-secondary text-xs">함수 레퍼런스</button><button id="fx-new" class="btn-secondary text-xs">새 지표</button></div>
+            <div class="flex gap-2"><button id="fx-toggle-ref" class="btn-secondary text-xs">함수 뜻·사용 예시</button><button id="fx-new" class="btn-secondary text-xs">새 지표</button></div>
           </div>
-          <p class="text-xs mb-2" style="color:var(--text-mute);">가격·거래량·변동성 함수를 자유롭게 조합한 산식을 쓰고 정규화(zscore·normalize·rank)까지 적용합니다. 저장할 때마다 산식이 바뀌면 버전이 올라가고, 계산 결과는 (버전·종목·기간) 별로 저장되어 재사용됩니다. 모든 함수는 과거 봉만 참조합니다(shift ≥ 1).</p>
-          <div id="fx-templates" class="flex flex-wrap gap-1 mb-2"></div>
+          <p class="text-sm mb-3" style="color:var(--text-dim);">가격이나 거래량에서 무엇을 보고, 어떤 조건에 매수·매도할지 정하는 화면입니다. 아래에서 예시를 선택하면 산식이 자동으로 채워집니다.</p>
+          <ol class="text-sm mb-3" style="line-height:1.8;">
+            <li><strong>1. 조건 만들기</strong> — 쉬운 예시를 선택하고 숫자를 바꿉니다.</li>
+            <li><strong>2. 차트로 확인</strong> — 종목·기간을 정한 뒤 ‘산식 확인’과 ‘차트·성과 보기’를 누릅니다.</li>
+            <li><strong>3. 내 지표로 저장</strong> — 결과를 확인한 뒤 저장합니다. 조건을 바꿔 다시 저장하면 새 버전으로 남습니다.</li>
+          </ol>
+          <div class="rounded-lg p-3 mb-3" style="background:var(--surf2);border:1px solid var(--border);">
+            <h3 class="text-sm font-semibold mb-2"><i class="fa-solid fa-sliders" aria-hidden="true"></i> 숫자만 바꿔 조건 만들기</h3>
+            <div class="grid md:grid-cols-4 gap-2">
+              <div><label for="fx-easy-kind" class="text-xs">보고 싶은 지표</label><select id="fx-easy-kind" class="input"><option value="rsi">RSI — 최근 상승·하락 강도</option><option value="gap">평균 가격과의 거리</option><option value="cross">단기·장기 평균선 교차</option></select></div>
+              <div><label id="fx-easy-n-label" for="fx-easy-n" class="text-xs">계산 기간 (거래일)</label><input id="fx-easy-n" type="number" class="input" min="2" max="250" step="1" value="14" /></div>
+              <div><label id="fx-easy-a-label" for="fx-easy-a" class="text-xs">매수 기준 (미만)</label><input id="fx-easy-a" type="number" class="input" value="30" step="1" /></div>
+              <div><label id="fx-easy-b-label" for="fx-easy-b" class="text-xs">매도 기준 (초과)</label><input id="fx-easy-b" type="number" class="input" value="70" step="1" /></div>
+            </div>
+            <p id="fx-easy-summary" class="text-sm mt-2" role="status" aria-live="polite"></p>
+            <p id="fx-easy-example" class="text-xs mt-2" style="color:var(--text-dim);"></p>
+            <button id="fx-easy-apply" type="button" class="btn-primary text-xs mt-2">이 조건을 입력칸에 적용</button>
+            <p class="text-xs mt-2" style="color:var(--text-mute);">적용하면 현재 입력한 지표·매수·매도 조건을 바꿉니다. 계산과 저장은 아래 버튼으로 실행합니다. 숫자 예시는 이해를 위한 가정이며 실제 시세가 아닙니다.</p>
+          </div>
+          <h3 class="text-sm font-semibold mb-2">조합 예시로 시작하기</h3>
+          <div id="fx-templates" class="grid md:grid-cols-2 gap-2 mb-3"></div>
           <div id="fx-ref" class="hidden mb-3">
-            <ul id="fx-rules" class="text-xs list-disc ml-5 mb-2" style="color:var(--text-dim);"></ul>
+            <div class="text-xs mb-2"><label for="fx-ref-target">예시를 적용할 입력칸</label> <select id="fx-ref-target" class="input" style="width:auto;"><option value="fx-indicator">차트에 표시할 지표</option><option value="fx-buy">매수 조건</option><option value="fx-sell">매도 조건</option></select><p class="mt-1">‘이 예시로 바꾸기’를 누르면 선택한 입력칸 전체를 바꿉니다. 가격은 close(종가), 거래량은 volume, 기간은 거래일 수입니다. 매수·매도에는 숫자만 넣는 대신 rsi(close, 14) &lt; 30처럼 비교 조건을 붙이세요. and는 두 조건을 모두, or는 하나 이상을 만족한다는 뜻입니다.</p></div><ul id="fx-rules" class="text-xs list-disc ml-5 mb-2" style="color:var(--text-dim);"></ul>
             <div id="fx-functions" class="grid md:grid-cols-3 gap-2"></div>
           </div>
           <div class="grid lg:grid-cols-2 gap-4">
@@ -1181,20 +1200,20 @@
                 <div><label class="text-xs font-semibold" style="color:var(--text-dim);">이름</label><input id="fx-name" class="input mt-1" placeholder="예) 변동성 정규화 모멘텀" /></div>
                 <div><label class="text-xs font-semibold" style="color:var(--text-dim);">설명</label><input id="fx-desc" class="input mt-1" placeholder="무엇을 측정하는 지표인지" /></div>
               </div>
-              <div><label class="text-xs font-semibold" style="color:var(--text-dim);">indicator 산식 (필수)</label><textarea id="fx-indicator" class="input mt-1 font-mono text-xs" rows="2" placeholder="zscore(close, n)"></textarea></div>
+              <div><label class="text-xs font-semibold" style="color:var(--text-dim);">차트에 표시할 지표 (필수)</label><textarea id="fx-indicator" class="input mt-1 font-mono text-xs" rows="2" placeholder="zscore(close, n)"></textarea></div>
               <div class="grid grid-cols-2 gap-2">
-                <div><label class="text-xs font-semibold" style="color:var(--text-dim);">buy 조건 (선택)</label><textarea id="fx-buy" class="input mt-1 font-mono text-xs" rows="2" placeholder="zscore(close, n) < -2"></textarea></div>
-                <div><label class="text-xs font-semibold" style="color:var(--text-dim);">sell 조건 (선택)</label><textarea id="fx-sell" class="input mt-1 font-mono text-xs" rows="2" placeholder="zscore(close, n) > 0"></textarea></div>
+                <div><label class="text-xs font-semibold" style="color:var(--text-dim);">매수할 조건 (선택)</label><textarea id="fx-buy" class="input mt-1 font-mono text-xs" rows="2" placeholder="zscore(close, n) < -2"></textarea></div>
+                <div><label class="text-xs font-semibold" style="color:var(--text-dim);">매도할 조건 (선택)</label><textarea id="fx-sell" class="input mt-1 font-mono text-xs" rows="2" placeholder="zscore(close, n) > 0"></textarea></div>
               </div>
               <div class="grid grid-cols-2 gap-2">
-                <div><label class="text-xs font-semibold" style="color:var(--text-dim);">params (JSON)</label><input id="fx-params" class="input mt-1 font-mono text-xs" placeholder='{"n": 20}' /></div>
+                <div><label class="text-xs font-semibold" style="color:var(--text-dim);">산식에서 쓸 숫자 설정 (고급·JSON)</label><input id="fx-params" class="input mt-1 font-mono text-xs" placeholder='{"n": 20}' /></div>
                 <div><label class="text-xs font-semibold" style="color:var(--text-dim);">버전 메모</label><input id="fx-note" class="input mt-1 text-xs" placeholder="예) 기간 20→30, 거래량 필터 추가" /></div>
               </div>
               <div class="flex flex-wrap gap-2 items-center">
-                <button id="fx-validate" class="btn-secondary text-xs">검증</button>
+                <button id="fx-validate" class="btn-secondary text-xs">산식 확인</button>
                 <button id="fx-save" class="btn-primary text-xs">새 지표로 저장</button>
               </div>
-              <div id="fx-validate-result" class="text-xs" style="color:var(--text-dim);"></div>
+              <p class="text-xs" style="color:var(--text-mute);">매수·매도 조건은 만족/미충족으로 판단합니다. 매수 조건을 비우면 지표만 관찰합니다. 수정한 산식은 저장 전에도 미리보기 계산에 반영되며, 저장된 조건 그대로 계산하면 결과 이력에 남습니다.</p><div id="fx-validate-result" class="text-xs" style="color:var(--text-dim);"></div>
             </div>
             <div class="space-y-2">
               <h3 class="text-sm font-semibold">계산 조건</h3>
@@ -1202,11 +1221,11 @@
                 <div><label class="text-xs" style="color:var(--text-mute);">종목</label><input id="fx-symbol" class="input" value="005930.KS" /></div>
                 <div><label class="text-xs" style="color:var(--text-mute);">기간</label><select id="fx-period" class="input"><option value="1y">1년</option><option value="2y" selected>2년</option><option value="5y">5년</option><option value="10y">10년</option></select></div>
                 <div class="flex items-end"><label class="text-xs flex items-center gap-1"><input id="fx-use-cache" type="checkbox" checked /> 오늘 저장된 결과 재사용</label></div>
-                <div><label class="text-xs" style="color:var(--text-mute);">수수료 (bp)</label><input id="fx-cost" type="number" class="input" value="10" min="0" /></div>
-                <div><label class="text-xs" style="color:var(--text-mute);">슬리피지 (bp)</label><input id="fx-slip" type="number" class="input" value="5" min="0" /></div>
+                <div><label class="text-xs" style="color:var(--text-mute);">수수료 (bp · 10bp = 0.1%)</label><input id="fx-cost" type="number" class="input" value="10" min="0" /></div>
+                <div><label class="text-xs" style="color:var(--text-mute);">체결 가격 차이 (bp)</label><input id="fx-slip" type="number" class="input" value="5" min="0" /></div>
                 <div><label class="text-xs" style="color:var(--text-mute);">손절 % / 익절 %</label><div class="flex gap-1"><input id="fx-sl" type="number" class="input" placeholder="5" step="0.5" /><input id="fx-tp" type="number" class="input" placeholder="15" step="0.5" /></div></div>
               </div>
-              <button id="fx-compute" class="btn-green"><i class="fa-solid fa-play" aria-hidden="true"></i> 계산 실행 (저장된 지표면 결과 저장)</button>
+              <button id="fx-compute" class="btn-green"><i class="fa-solid fa-play" aria-hidden="true"></i> 차트·성과 보기</button>
               <h3 class="text-sm font-semibold mt-2">저장된 산식 지표</h3>
               <div id="fx-list" class="space-y-1 max-h-[260px] overflow-y-auto"></div>
             </div>
@@ -2099,7 +2118,7 @@
               <input id="ci-buy-th" type="number" class="input mt-1" value="35" min="10" max="50" />
             </div>
             <div>
-              <label class="text-xs font-semibold" style="color:var(--text-dim);">수수료+슬리피지 (bp)</label>
+              <label class="text-xs font-semibold" style="color:var(--text-dim);">수수료+체결 가격 차이 (bp)</label>
               <input id="ci-cost" type="number" class="input mt-1" value="15" min="0" max="500" />
             </div>
             <div>
@@ -2169,7 +2188,7 @@
           <div class="rounded-lg p-3 text-xs mb-3" style="background:var(--surf2);"><strong>기준 전략: 단순 보유</strong> · 처음 매수 후 계속 보유 · 동일한 진입 비용 반영 · 손절·익절 미적용</div>
           <details class="mb-4"><summary class="cursor-pointer text-sm">거래 비용·손절·익절 설정</summary>
             <div class="grid md:grid-cols-4 gap-3 mt-3 text-xs">
-              <div><label for="ibt-cost">수수료 (bp)</label><input id="ibt-cost" type="number" min="0" max="500" step="1" class="input" value="10" style="width:100%" /></div>
+              <div><label for="ibt-cost">수수료 (bp · 10bp = 0.1%)</label><input id="ibt-cost" type="number" min="0" max="500" step="1" class="input" value="10" style="width:100%" /></div>
               <div><label for="ibt-slip">체결 가격 차이 (bp)</label><input id="ibt-slip" type="number" min="0" max="500" step="1" class="input" value="5" style="width:100%" /></div>
               <div><label for="ibt-sl">손절 (%)</label><input id="ibt-sl" type="number" min="0.1" max="90" step="0.1" class="input" placeholder="비우면 미적용" style="width:100%" /></div>
               <div><label for="ibt-tp">익절 (%)</label><input id="ibt-tp" type="number" min="0.1" max="500" step="0.1" class="input" placeholder="비우면 미적용" style="width:100%" /></div>

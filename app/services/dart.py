@@ -68,8 +68,12 @@ _BS_TARGETS = {
 _IS_TARGETS = {
     "operatingIncome": ("영업이익", "영업이익(손실)", "영업손익"),
     "revenue": ("매출액", "수익(매출액)", "영업수익"),
-    "netIncome": ("당기순이익", "당기순이익(손실)", "분기순이익", "반기순이익"),
+    # 실측(2026-10-14 아모텍 052710 CFS): 반기보고서는 "반기순이익(손실)", 1·3분기는 "당기순이익(손실)" 로 온다.
+    "netIncome": ("당기순이익", "당기순이익(손실)", "분기순이익", "반기순이익", "분기순이익(손실)", "반기순이익(손실)",
+                  "당기순손실", "분기순손실", "반기순손실"),
 }
+# 누적 칸 이름: _parse_statements 가 손익 항목마다 `<prefix>Cumulative`·`<prefix>PrevCumulative` 를 함께 담는다(TTM 계산용).
+_IS_CUM_PREFIX = {"operatingIncome": "op", "revenue": "revenue", "netIncome": "net"}
 
 _lock = asyncio.Lock()
 
@@ -208,8 +212,9 @@ def _parse_statements(rows: list[dict], reprt_code: str = "") -> dict:
     """
     annual = reprt_code == "11011"
     out: dict[str, int | None] = {k: None for k in (*_BS_TARGETS, *_IS_TARGETS)}
-    extra: dict[str, object] = {"opBasis": None, "opCumulative": None, "periodName": None,
-                                "netCumulative": None, "netPrevCumulative": None}   # EPS(TTM) 계산용 — 당기 누적 · 전기 동기간 누적
+    extra: dict[str, object] = {"opBasis": None, "periodName": None}
+    for prefix in _IS_CUM_PREFIX.values():          # TTM 계산용 — 당기 누적 · 전기 동기간 누적(사업보고서는 연간 = 누적)
+        extra[f"{prefix}Cumulative"] = extra[f"{prefix}PrevCumulative"] = None
     for row in rows:
         div = str(row.get("sj_div") or "").upper()
         name = _norm(row.get("account_nm"))
@@ -226,14 +231,15 @@ def _parse_statements(rows: list[dict], reprt_code: str = "") -> dict:
                         value = _amount(row, "thstrm_add_amount")
                         basis = "누적"
                     out[key] = value
-                    if key == "operatingIncome" and value is not None:
+                    if value is None:
+                        continue
+                    prefix = _IS_CUM_PREFIX[key]
+                    # 사업보고서는 thstrm_amount 가 연간이라 누적 칸이 비어 있다 → 연간 금액을 누적으로 쓴다
+                    extra[f"{prefix}Cumulative"] = value if annual else _amount(row, "thstrm_add_amount")
+                    extra[f"{prefix}PrevCumulative"] = _amount(row, "frmtrm_amount") if annual else _amount(row, "frmtrm_add_amount")
+                    if key == "operatingIncome":
                         extra["opBasis"] = basis
-                        extra["opCumulative"] = _amount(row, "thstrm_add_amount")
                         extra["periodName"] = str(row.get("thstrm_nm") or "").strip() or None
-                    if key == "netIncome" and value is not None:
-                        # 사업보고서는 thstrm_amount 가 연간이라 누적 칸이 비어 있다 → 연간 금액을 누적으로 쓴다
-                        extra["netCumulative"] = value if annual else _amount(row, "thstrm_add_amount")
-                        extra["netPrevCumulative"] = _amount(row, "frmtrm_amount") if annual else _amount(row, "frmtrm_add_amount")
     return {**out, **extra}
 
 
@@ -278,7 +284,7 @@ async def latest_financials(symbol: str, lookback: int = 5) -> dict | None:
     if not code:
         return None
     code = base_stock_code(code)[0]          # 우선주는 보통주(회사) 캐시를 공유
-    cache_key = f"dart:fin:v2:{code}"
+    cache_key = f"dart:fin:v3:{code}"   # v3: revenue/op 누적 추가(6-57)
     cached = await cache_get(cache_key, max_age_hours=FIN_TTL_HOURS)
     if cached is not None:
         return cached or None
@@ -427,19 +433,28 @@ async def shares_outstanding(symbol: str, year: int, quarter: int) -> dict | Non
     return result or None
 
 
-def ttm_net_income(latest: dict, prev_annual: dict | None) -> tuple[int | None, str]:
-    """최근 4개 분기 순이익. 사업보고서면 연간 그대로, 분·반기면 당기 누적 + 전기 연간 − 전기 동기간 누적.
-    셋 중 하나라도 없으면 (None, 사유) — 연환산 같은 추정은 하지 않는다."""
+_TTM_LABEL = {"netIncome": "순이익", "operatingIncome": "영업이익", "revenue": "매출액"}
+
+
+def ttm_amount(latest: dict, prev_annual: dict | None, key: str = "netIncome") -> tuple[int | None, str]:
+    """최근 4개 분기 합(TTM). 사업보고서면 연간 그대로, 분·반기면 당기 누적 + 전기 연간 − 전기 동기간 누적.
+    셋 중 하나라도 없으면 (None, 사유) — 연환산 같은 추정은 하지 않는다. key: netIncome·operatingIncome·revenue."""
+    label = _TTM_LABEL.get(key, key)
     if latest.get("quarter") == 4:
-        ni = latest.get("netIncome")
-        return (ni, "연간") if ni is not None else (None, "순이익 없음")
-    cum, prev_cum = latest.get("netCumulative"), latest.get("netPrevCumulative")
-    prev_year = (prev_annual or {}).get("netIncome")
+        value = latest.get(key)
+        return (value, "연간") if value is not None else (None, f"{label} 없음")
+    prefix = _IS_CUM_PREFIX[key]
+    cum, prev_cum = latest.get(f"{prefix}Cumulative"), latest.get(f"{prefix}PrevCumulative")
+    prev_year = (prev_annual or {}).get(key)
     if cum is None:
-        return None, "당기 누적 순이익 없음"
+        return None, f"당기 누적 {label} 없음"
     if prev_year is None or prev_cum is None:
         return None, "전기 사업보고서 또는 전기 동기간 누적 없음"
     return cum + prev_year - prev_cum, "최근 4개 분기 합산(TTM)"
+
+
+def ttm_net_income(latest: dict, prev_annual: dict | None) -> tuple[int | None, str]:
+    return ttm_amount(latest, prev_annual, "netIncome")
 
 
 async def per_share_metrics(symbol: str) -> dict | None:
@@ -451,7 +466,7 @@ async def per_share_metrics(symbol: str) -> dict | None:
     if not code:
         return None
     base, preferred = base_stock_code(code)
-    cache_key = f"dart:pershare:v1:{base}"
+    cache_key = f"dart:pershare:v2:{base}"   # v2: 반기순이익(손실) 등 계정명 보강(6-57)
     cached = await cache_get(cache_key, max_age_hours=FIN_TTL_HOURS)
     if cached is not None:
         return ({**cached, "isPreferred": preferred} if cached else None)
@@ -491,3 +506,143 @@ async def per_share_metrics(symbol: str) -> dict | None:
     }
     await cache_set(cache_key, result)
     return {**result, "isPreferred": preferred}
+
+
+# ── 수익성 지표 · 배당 (6-57) ─────────────────────────────────────────────────
+# Yahoo quoteSummary 는 코스닥 소형주(2026-10-14 아모텍 실측)의 financialData(ROE·ROA·영업이익률·부채비율)와
+# summaryDetail(배당)을 전부 비워 보낸다. 이미 받고 있는 DART 재무제표로 직접 계산한다 — 비율 정의는 아래에 밝힌다.
+#   ROE = TTM 순이익 ÷ 지배기업 소유주 귀속 자본(없으면 자본총계)   ROA = TTM 순이익 ÷ 자산총계
+#   영업이익률 = TTM 영업이익 ÷ TTM 매출액   순이익률 = TTM 순이익 ÷ TTM 매출액   부채비율 = 부채총계 ÷ 자본총계
+# 분모가 기말 잔액(평균 아님)이라는 점을 라벨에 적는다. 값이 하나라도 없으면 그 지표는 None — 추정하지 않는다.
+def _ratio(numer: int | None, denom: int | None) -> float | None:
+    if numer is None or denom is None or denom == 0:
+        return None
+    return round(numer / denom * 100, 2)
+
+
+async def profitability_metrics(symbol: str) -> dict | None:
+    """ROE·ROA·영업이익률·순이익률·부채비율(%) 과 근거. 가격 무관 → 24h 캐시.
+    반환 {roe, roa, opMargin, netMargin, debtRatio, bases{...}, notes[], period, fsDiv, source} 또는 None."""
+    if not is_enabled() or not is_krx(symbol):
+        return None
+    code = stock_code_of(symbol)
+    if not code:
+        return None
+    base = base_stock_code(code)[0]
+    cache_key = f"dart:profit:v1:{base}"
+    cached = await cache_get(cache_key, max_age_hours=FIN_TTL_HOURS)
+    if cached is not None:
+        return cached or None
+    try:
+        latest = await latest_financials(symbol)
+        if not latest:
+            await cache_set(cache_key, {})
+            return None
+        year, quarter = int(latest["year"]), int(latest["quarter"])
+        prev_annual = None if quarter == 4 else await fetch_financials(symbol, year - 1, 4)
+    except (DartError, httpx.HTTPError) as exc:
+        logger.warning("DART 수익성 지표 조회 실패 %s: %s", symbol, exc)
+        return None
+    ni, ni_basis = ttm_amount(latest, prev_annual, "netIncome")
+    op, op_basis = ttm_amount(latest, prev_annual, "operatingIncome")
+    rev, rev_basis = ttm_amount(latest, prev_annual, "revenue")
+    equity_owners, equity = latest.get("equityOwners"), latest.get("equity")
+    roe_denom = equity_owners if equity_owners is not None else equity
+    roe_denom_label = "지배기업 소유주 귀속 자본" if equity_owners is not None else "자본총계(비지배지분 포함)"
+    notes: list[str] = []
+    if ni is None:
+        notes.append(f"ROE·ROA·순이익률 계산 불가: {ni_basis}")
+    if op is None or rev is None:
+        notes.append(f"영업이익률 계산 불가: {op_basis if op is None else rev_basis}")
+    result = {
+        "roe": _ratio(ni, roe_denom), "roa": _ratio(ni, latest.get("assets")),
+        "opMargin": _ratio(op, rev), "netMargin": _ratio(ni, rev),
+        "debtRatio": _ratio(latest.get("liabilities"), equity),
+        "bases": {"roe": f"{ni_basis} 순이익 ÷ 기말 {roe_denom_label}", "roa": f"{ni_basis} 순이익 ÷ 기말 자산총계",
+                  "opMargin": f"{op_basis} 영업이익 ÷ {rev_basis} 매출액", "netMargin": f"{ni_basis} 순이익 ÷ {rev_basis} 매출액",
+                  "debtRatio": "기말 부채총계 ÷ 자본총계"},
+        "notes": notes, "period": f"{latest['year']} {latest['reportName']}", "fsDiv": latest.get("fsDiv"),
+        "stockCode": latest.get("stockCode"), "source": "DART 계산 · fnlttSinglAcntAll",
+    }
+    await cache_set(cache_key, result)
+    return result
+
+
+# alotMatter(배당에 관한 사항) 실측(2026-10-14 삼성전자·아모텍): se=구분, stock_knd=보통주/우선주/-, thstrm=당기, frmtrm=전기.
+# 사업보고서(11011) 의 당기 값이 그 해 연간 배당이다. 분·반기보고서의 당기는 기중 누계라 쓰지 않는다. 배당이 없으면 '-' 로 온다.
+_DIV_FIELDS = {"주당현금배당금(원)": "dps", "현금배당수익률(%)": "yieldReported", "(연결)현금배당성향(%)": "payoutRatio",
+               "현금배당금총액(백만원)": "totalCashDividendMillion", "주당액면가액(원)": "parValue"}
+
+
+def _parse_dividends(rows: list[dict], preferred: bool = False) -> dict | None:
+    """alotMatter 행 → {dps, yieldReported, payoutRatio, totalCashDividendMillion, parValue, stockKind, noDividend}.
+    주식 종류 행은 보통주(우선주 심볼이면 우선주)만 본다. 행 자체가 없으면 None."""
+    want_kind = "우선주" if preferred else "보통주"
+    out: dict = {}
+    seen_dps_row = False
+    for row in rows:
+        field = _DIV_FIELDS.get(_norm(row.get("se")))
+        if not field:
+            continue
+        kind = _norm(row.get("stock_knd")) or "-"
+        if kind not in ("-", "") and kind != want_kind:
+            continue
+        if field in out:
+            continue
+        raw = str(row.get("thstrm") or "").strip()
+        if field == "dps":
+            seen_dps_row = True
+        if not raw or raw in ("-", "–"):
+            out[field] = None
+            continue
+        try:
+            out[field] = float(raw.replace(",", ""))
+        except ValueError:
+            out[field] = None
+    if not out:
+        return None
+    for field in _DIV_FIELDS.values():
+        out.setdefault(field, None)
+    # '주당 현금배당금' 행이 있는데 '-' 면 그 해 현금배당이 없다는 뜻 → 0 으로 확정한다(행이 없으면 모른다).
+    if seen_dps_row and out.get("dps") is None:
+        out["dps"], out["noDividend"] = 0.0, True
+    else:
+        out["noDividend"] = False
+    out["stockKind"] = want_kind
+    return out
+
+
+async def dividend_info(symbol: str, lookback_years: int = 2) -> dict | None:
+    """최근 사업보고서의 연간 배당(DART alotMatter). 반환 {dps, yieldReported, payoutRatio, ..., year, reportName, source} 또는 None.
+    배당수익률은 호출자가 현재가로 다시 계산한다(공시 수익률은 결산일 주가 기준)."""
+    if not is_enabled() or not is_krx(symbol):
+        return None
+    resolved = await resolve_corp(symbol)
+    if not resolved:
+        return None
+    corp, code, preferred = resolved
+    cache_key = f"dart:dividend:v1:{code}:{'p' if preferred else 'c'}"
+    cached = await cache_get(cache_key, max_age_hours=FIN_TTL_HOURS)
+    if cached is not None:
+        return cached or None
+    from datetime import datetime, timedelta, timezone
+    now = datetime.now(timezone(timedelta(hours=9)))
+    for year in range(now.year - 1, now.year - 1 - lookback_years, -1):
+        try:
+            body = await _get_json("alotMatter.json", {"corp_code": corp, "bsns_year": str(year), "reprt_code": "11011"})
+        except DartError as exc:
+            if exc.status == "013":
+                continue
+            logger.warning("DART 배당 조회 실패 %s %d: %s", symbol, year, exc)
+            return None
+        except httpx.HTTPError as exc:
+            logger.warning("DART 배당 통신 실패 %s: %s", symbol, exc)
+            return None
+        parsed = _parse_dividends(body.get("list") or [], preferred)
+        if parsed:
+            result = {**parsed, "year": year, "reportName": "사업보고서", "stockCode": code,
+                      "source": "금융감독원 전자공시(DART) alotMatter"}
+            await cache_set(cache_key, result)
+            return result
+    await cache_set(cache_key, {})
+    return None
