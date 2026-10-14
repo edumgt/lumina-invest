@@ -228,6 +228,8 @@ def run_cycle(broker_row, intraday, portfolio=()):
         slots.append((symbol, side, cooldown)); return True
     with patch.object(auto_trade, "get_session_factory", return_value=Factory(db)), \
          patch.object(auto_trade, "QUANT_STOCKS", STOCKS), \
+         patch("app.services.korea_market_scan.candidate_stocks", AsyncMock(return_value=STOCKS)), \
+         patch("app.services.korea_universe.refresh_master", AsyncMock()), \
          patch.object(ag, "get_intraday_indicators", intraday), \
          patch.object(auto_trade, "get_quant_indicators", AsyncMock(side_effect=AssertionError("일봉 지표를 쓰면 안 된다"))), \
          patch.object(auto_trade, "_execute_virtual_trade", virtual_trade), \

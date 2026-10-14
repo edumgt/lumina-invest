@@ -28,9 +28,10 @@ async function loadSettings() {
       ? `<span class="badge-sell"><i class="fa-solid fa-circle-stop" aria-hidden="true"></i> 비상 정지 ON${cfg.risk_halt_reason ? " · " + escHtml(cfg.risk_halt_reason) : ""}</span>`
       : `<span class="badge-buy">정상</span>`;
     const selected = new Set(cfg.selected_symbols || []);
-    document.querySelectorAll(".quant-symbol").forEach((el) => {
-      el.checked = selected.has(el.value);
-    });
+    document.getElementById('quant-manual-list').innerHTML = (cfg.stocks || []).map(s=>`<label class="flex items-center gap-2 quant-stock-row" data-search="${escHtml((s.name+' '+s.symbol).toLowerCase())}"><input type="checkbox" class="quant-symbol w-4 h-4" value="${escHtml(s.symbol)}" ${selected.has(s.symbol)?'checked':''} /><span>${escHtml(s.name)} <small>${escHtml(s.market)}</small></span></label>`).join('');
+    const filterManual = () => {const q=document.getElementById('quant-manual-search').value.toLowerCase().trim();document.querySelectorAll('.quant-stock-row').forEach(row=>{row.style.display=row.dataset.search.includes(q)?'':'none';});};
+    document.getElementById('quant-manual-search').oninput=filterManual;
+    filterManual();
     toggleManualSymbols();
     managedBrokers = new Set(cfg.managed_brokers || ["kis"]);
     lastKisManaged = cfg.kis_managed || null;

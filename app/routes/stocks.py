@@ -94,8 +94,36 @@ async def quant_indicators(
 
 
 @router.get("/stocks/quant/list")
-async def quant_stock_list():
-    return {"stocks": QUANT_STOCKS}
+async def quant_stock_list(q: str = "", market: str = "", sector: str = "", offset: int = Query(0, ge=0), limit: int | None = Query(None, ge=1, le=5000)):
+    from app.services.korea_universe import master_info, refresh_master
+    await refresh_master()
+    rows = [r for r in QUANT_STOCKS if (not q or q.lower() in (r['name']+' '+r['symbol']).lower())
+            and (not market or r['market']==market.upper()) and (not sector or r['sector']==sector)]
+    return {"stocks": rows[offset:offset+limit] if limit else rows[offset:], "total": len(rows), "offset":offset, "universe":master_info()}
+
+
+@router.get("/stocks/universe/status")
+async def korea_universe_status():
+    from app.services.korea_market_scan import get_scan
+    doc = await get_scan()
+    return {k:v for k,v in doc.items() if k!='entries'}
+
+
+@router.get("/stocks/universe/candidates")
+async def korea_candidates(limit: int = Query(40, ge=1, le=200)):
+    from app.services.korea_market_scan import candidate_stocks, get_scan
+    doc = await get_scan()
+    from app.services.data_cache import cache_get_many
+    stocks = await candidate_stocks(limit)
+    values = await cache_get_many([f'korea:indicator:{s["symbol"]}' for s in stocks],max_age_hours=96)
+    return {"stocks":stocks, "indicators":{s['symbol']:values.get(f'korea:indicator:{s["symbol"]}') for s in stocks}, "coverage":doc['coverage'], "updated_at":doc.get('updated_at')}
+
+
+@router.post("/stocks/universe/scan")
+async def start_korea_scan(force: bool = False, _user=Depends(get_current_user)):
+    from app.tasks.sync_tasks import sync_korea_market
+    task = sync_korea_market.delay(force=force)
+    return {"task_id":task.id, "status":"queued", "message":"주문 없이 종목 마스터·일봉·지표를 갱신합니다."}
 
 
 @router.get("/stocks/search")
@@ -112,6 +140,9 @@ async def stock_search(q: str = Query(..., min_length=1)):
     돌려준다. 예전에는 그 400이 502로 바뀌어 한글 검색이 전부 실패했는데, 이제 ①이
     국내 종목을 받아내고 ②가 실패해도 빈 결과로 처리한다(검색창에 오류를 띄우지 않는다).
     """
+    local = [s for s in QUANT_STOCKS if q.lower() in (s["name"]+" "+s["symbol"]).lower()]
+    if local:
+        return {"results":[{"symbol":s["symbol"],"name":s["name"],"exchange":s["market"],"type":"주식"} for s in local[:20]],"source":"official_korea_master"}
     stored = await ohlcv_catalog.search(q)
     if stored:
         return {"results": stored, "source": "ohlcv"}
@@ -191,6 +222,13 @@ async def stock_signals(
     symbols: str | None = Query(None, description="쉼표 구분 종목 코드. 주면 그 종목만(화면의 1종목씩 진행용)"),
 ):
     """선택한 패턴 모델을 적용한 대표 종목 스크리닝. `symbols` 로 부분 집합만 계산할 수 있다."""
+    from app.services.korea_market_scan import get_scan
+    snapshot = await get_scan()
+    if not symbols:
+        rows = [e.get('patterns',{}).get(model) for e in snapshot['entries'].values() if e.get('status')=='ready']
+        rows = [r for r in rows if r and not r.get('error') and r.get('confidence',0)>=min_confidence
+                and (signal=='all' or r.get('signal','').lower()==signal)]
+        return {"signals":rows, "coverage":snapshot['coverage'], "updated_at":snapshot.get('updated_at'), "source":"completed_daily_batch"}
     universe = QUANT_STOCKS
     if symbols:
         wanted = {x.strip().upper() for x in symbols.split(",") if x.strip()}

@@ -177,3 +177,20 @@ def quant_equity_snapshot() -> dict:
     result = asyncio.run(_async())
     logger.info("[beat] quant_equity_snapshot 완료: %s", result)
     return result
+
+
+@celery_app.task(name="sync.korea_market", time_limit=150, soft_time_limit=130)
+def sync_korea_market(force: bool = False) -> dict:
+    """Collect/compute one all-market chunk. No broker order path is called."""
+    async def run():
+        from app.database.postgres import connect_postgres, close_postgres
+        from app.lib.redis_cache import connect_redis, close_redis
+        from app.services.korea_market_scan import run_scan_chunk
+        await connect_postgres()
+        await connect_redis()
+        try:
+            return await run_scan_chunk(force=force)
+        finally:
+            await close_redis()
+            await close_postgres()
+    return asyncio.run(run())

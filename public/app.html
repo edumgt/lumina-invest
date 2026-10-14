@@ -780,13 +780,9 @@
           </div>
           <div id="quant-manual-symbols-wrap" class="hidden">
             <label class="text-xs text-slate-400 block mb-2">직접 선택 종목</label>
-            <div class="grid grid-cols-2 md:grid-cols-3 gap-2 text-sm">
-              <label class="flex items-center gap-2"><input type="checkbox" class="quant-symbol w-4 h-4" value="005930.KS" /><span>삼성전자</span></label>
-              <label class="flex items-center gap-2"><input type="checkbox" class="quant-symbol w-4 h-4" value="000660.KS" /><span>SK하이닉스</span></label>
-              <label class="flex items-center gap-2"><input type="checkbox" class="quant-symbol w-4 h-4" value="035420.KS" /><span>NAVER</span></label>
-              <label class="flex items-center gap-2"><input type="checkbox" class="quant-symbol w-4 h-4" value="005380.KS" /><span>현대차</span></label>
-              <label class="flex items-center gap-2"><input type="checkbox" class="quant-symbol w-4 h-4" value="051910.KS" /><span>LG화학</span></label>
-            </div>
+            <input id="quant-manual-search" class="input mb-2" placeholder="코스피·코스닥 종목명·코드 검색" aria-label="직접 거래할 종목 검색" />
+            <p class="text-xs mb-2" style="color:var(--text-mute);">전체 주식에서 선택할 수 있습니다. 동시 거래할 직접 선택 종목은 기존 위험관리 기준인 최대 10개입니다. 거래정지·관리·정리매매 또는 게이트웨이 미지원 종목은 신규 매수에서 제외됩니다.</p>
+            <div id="quant-manual-list" class="grid grid-cols-2 md:grid-cols-3 gap-2 text-sm" style="max-height:280px;overflow:auto;"></div>
           </div>
           <div class="grid md:grid-cols-2 gap-3">
             <div>
@@ -1152,10 +1148,16 @@
     <div class="view" data-view="company-compare">
       <div class="card">
         <h2 class="text-lg font-semibold mb-1"><i class="fa-solid fa-clipboard-list" aria-hidden="true"></i> 투자 지표 비교 분석</h2>
-        <p class="text-xs mb-4" style="color:var(--text-mute);">KIS 모의투자 분석 후보 30개 종목을 세로 행, 펀더멘털 지표 30개를 가로 열로 비교합니다. 열 제목으로 정렬·필터를 사용하고 가로로 스크롤하여 전체 지표를 확인하세요.</p>
+        <p class="text-xs mb-4" style="color:var(--text-mute);">코스피·코스닥 전체 주식에서 종목을 검색하고 시장·업종으로 선택합니다. 한 페이지에 30종목을 세로 행, 펀더멘털 지표를 가로 열로 비교합니다. 열 제목으로 정렬·필터를 사용하고 가로로 스크롤하여 전체 지표를 확인하세요.</p>
         <div class="flex items-center justify-between gap-2 mb-3"><p id="co-compare-status" class="text-xs" role="status" aria-live="polite"></p><button id="co-compare-refresh" class="btn-secondary text-xs">새로고침</button></div>
         <p class="text-xs mb-3" style="color:var(--text-mute);">출처: Yahoo Finance · 정상 캐시 최대 6시간 · 갱신 실패 시 최대 7일 이내의 이전 자료를 표시합니다. 조회 상태가 ‘가격만 조회’ 또는 ‘조회 불가’이면 재무 지표는 N/A입니다. 지표별 결산 기간은 다를 수 있습니다. D/E는 차입금 기준입니다.</p>
-        <div id="co-compare-table" style="height:70vh;min-height:400px;width:100%;" aria-label="종목별 펀더멘털 AG Grid 비교"></div>
+        <div class="flex flex-wrap gap-2 mb-2">
+              <input id="co-compare-query" class="input" style="max-width:220px;" placeholder="전체 주식에서 종목명·코드 검색" aria-label="비교 종목 검색" />
+              <select id="co-compare-market" class="input" style="width:auto;" aria-label="시장"><option value="">전체 시장</option><option value="KOSPI">코스피</option><option value="KOSDAQ">코스닥</option></select>
+              <select id="co-compare-sector" class="input" style="max-width:220px;" aria-label="업종"><option value="">전체 업종</option></select>
+              <button id="co-compare-prev" class="btn-secondary text-xs">이전 30종목</button><span id="co-compare-page" class="text-xs"></span><button id="co-compare-next" class="btn-secondary text-xs">다음 30종목</button>
+            </div>
+            <div id="co-compare-table" style="height:70vh;min-height:400px;width:100%;" aria-label="종목별 펀더멘털 AG Grid 비교"></div>
       </div>
     </div>
 
@@ -1439,7 +1441,7 @@
                 </select>
                 <p id="rb-source-note" class="text-xs mt-1" style="color:var(--text-mute);"></p></div>
             </div>
-            <h4 class="font-semibold text-xs mb-1" style="color:var(--text-dim);">섹터 목표 비중 (%) — KIS 투자 유니버스 3개 섹터</h4>
+            <h4 class="font-semibold text-xs mb-1" style="color:var(--text-dim);">섹터 목표 비중 (%) — 코스피·코스닥 공식 업종</h4>
             <p class="text-xs mb-2" style="color:var(--text-mute);">섹터 비중이 1차 배분입니다. 섹터 안에서는 아래 종목 목표(있으면)를 먼저 채우고, 나머지는 해당 섹터의 보유 종목에 균등 배분합니다. 보유가 없는 섹터는 유니버스 종목으로 채웁니다. 합계가 100% 미만이면 나머지는 현금.</p>
             <div id="rb-sector-inputs" class="grid grid-cols-3 gap-2 mb-3"></div>
             <h4 class="font-semibold text-xs mb-1" style="color:var(--text-dim);">종목 목표 비중 (선택 — 섹터 안에서 특정 종목을 고정)</h4>
@@ -1996,11 +1998,12 @@
       <div class="space-y-4">
         <div class="card">
           <h2 class="text-lg font-semibold mb-1"><i class="fa-solid fa-chart-line" aria-hidden="true"></i> 기본 인디케이터 전략 설계</h2>
+          <p id="korea-universe-status" class="text-xs mb-2" role="status"></p><div class="flex gap-2 mb-2"><button id="korea-universe-refresh" type="button" class="btn-secondary text-xs">수집 상태 새로고침</button><button id="korea-universe-scan" type="button" class="btn-secondary text-xs">전종목 데이터 다시 수집</button></div>
           <p class="text-xs mb-4" style="color:var(--text-mute);">MA, RSI, MACD 등 기본 기술적 인디케이터를 조합하여 매매 전략을 설계합니다</p>
           <div class="grid md:grid-cols-4 gap-3 mb-4">
             <div>
               <label class="text-xs font-semibold" style="color:var(--text-dim);">종목</label>
-              <select id="ind-symbol" class="input mt-1">
+              <input id="ind-stock-search" class="input mt-1" placeholder="전체 주식 종목명·코드 검색" aria-label="인디케이터 종목 검색" /><select id="ind-symbol" class="input mt-1">
                 <option value="005930.KS">삼성전자</option>
                 <option value="000660.KS">SK하이닉스</option>
                 <option value="035420.KS">NAVER</option>

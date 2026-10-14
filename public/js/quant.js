@@ -32,12 +32,10 @@ async function loadSignalCards() {
   const el = document.getElementById("signal-cards");
   el.innerHTML = "<div class='col-span-5 text-slate-400 text-xs'>시그널 로딩 중...</div>";
   try {
-    const { stocks } = await api("/api/stocks/quant/list");
-    const results = await Promise.allSettled(
-      stocks.map(s => api(`/api/stocks/quant/indicators?symbol=${encodeURIComponent(s.symbol)}&period=2y`))
-    );
+    const { stocks, indicators = {} } = await api("/api/stocks/universe/candidates?limit=40");
+    if(!stocks.length){el.innerHTML="<div class='col-span-5 text-slate-400 text-xs'>신선한 일봉·거래량 기준을 충족한 후보가 없습니다. 전종목 수집 상태를 확인하세요.</div>";return;}
     el.innerHTML = stocks.map((s, i) => {
-      const r = results[i].status === "fulfilled" ? results[i].value : null;
+      const r = indicators[s.symbol];
       const sig = r?.signal || {};
       const price = r?.current_price;
       const rsiV = r?.current_rsi;
@@ -52,7 +50,7 @@ async function loadSignalCards() {
         <div class="text-slate-400 text-xs">${escHtml(s.symbol)}</div>
         <div class="mt-1 font-medium">${fmt(price)}</div>
         <div class="mt-1 text-xs font-semibold">${escHtml(sig.action || "-")}</div>
-        <div class="text-xs text-slate-500">RSI: ${rsiV?.toFixed(1) ?? "-"}</div>
+        <div class="text-xs text-slate-500">RSI: ${rsiV?.toFixed(1) ?? "-"}</div><div class="text-xs text-slate-500">일봉 기준 ${r?.as_of ? escHtml(new Date(r.as_of * 1000).toISOString().slice(0,10)) : "-"} · ${escHtml(r?.source || "미수집")}</div>
       </div>`;
     }).join("");
   } catch (e) {

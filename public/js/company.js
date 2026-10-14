@@ -315,6 +315,12 @@ const COMPARE_METRICS = [
   ["현금흐름", "잉여현금흐름 (TTM)", "freeCashflow", "억원"],
 ];
 let compareRun = 0;
+let compareOffset = 0;
+let compareTotal = 0;
+let compareFilterTimer;
+for (const id of ["co-compare-query", "co-compare-market", "co-compare-sector"]) document.getElementById(id)?.addEventListener(id.endsWith("query") ? "input" : "change", () => { clearTimeout(compareFilterTimer); compareOffset = 0; compareFilterTimer = setTimeout(loadCompanyCompare, 350); });
+document.getElementById("co-compare-prev")?.addEventListener("click", () => { compareOffset = Math.max(0, compareOffset - 30); loadCompanyCompare(); });
+document.getElementById("co-compare-next")?.addEventListener("click", () => { if(compareOffset + 30 < compareTotal) { compareOffset += 30; loadCompanyCompare(); } });
 let compareGrid = null;
 async function loadCompanyCompare() {
   const run = ++compareRun;
@@ -328,9 +334,16 @@ async function loadCompanyCompare() {
   compareGrid = null;
   el.innerHTML = "";
   try {
-    const { stocks } = await api("/api/stocks/quant/list");
+    const params = new URLSearchParams({limit:30,offset:compareOffset,q:document.getElementById('co-compare-query').value,market:document.getElementById('co-compare-market').value,sector:document.getElementById('co-compare-sector').value});
+    const { stocks, total, universe } = await api(`/api/stocks/quant/list?${params}`);
+    compareTotal = total;
+    const sectorSelect = document.getElementById('co-compare-sector');
+    if (sectorSelect.options.length===1) for(const name of universe?.sectors || []) {const o=document.createElement('option'); o.value=name; o.textContent=name; sectorSelect.append(o);}
+    document.getElementById('co-compare-page').textContent = `${total ? compareOffset+1 : 0}~${Math.min(compareOffset+30,total)} / ${total}종목`;
+    document.getElementById('co-compare-prev').disabled = compareOffset===0;
+    document.getElementById('co-compare-next').disabled = compareOffset+30>=total;
     if (run !== compareRun) return;
-    const companies = stocks.slice(0, 30);
+    const companies = stocks;
     const results = {};
     let done = 0, failed = 0;
     if (!window.agGrid) throw new Error("AG Grid를 불러오지 못했습니다. 페이지를 새로고침하세요.");
@@ -599,7 +612,7 @@ async function loadCompanySector(force = false) {
   const cards = document.getElementById("co-sector-cards");
   const meta = document.getElementById("co-sector-meta");
   if (!cards) return;
-  cards.innerHTML = `<div class="card text-xs" style="color:var(--text-mute);">섹터 지표를 계산하는 중… (실제 펀더멘털·일봉 조회, 최초 수십 초)</div>`;
+  cards.innerHTML = `<div class="card text-xs" style="color:var(--text-mute);">전종목 배치 결과에서 업종 지표를 집계하는 중…</div>`;
   try {
     const d = await api(`/api/stocks/sectors${force ? "?force=true" : ""}`);
     if (meta) {
@@ -608,6 +621,7 @@ async function loadCompanySector(force = false) {
         + (d.from_cache ? " · 캐시(1시간) 사용 — 최신값은 재계산" : " · 방금 재계산");
     }
     document.getElementById("co-sector-bench").innerHTML = d.benchmark ? secBenchRow(d.benchmark) : "";
+    if (meta && d.coverage) meta.insertAdjacentHTML('beforeend', `<span> · 일봉 분석 ${Number(d.coverage.ready || 0)} / ${Number(d.coverage.total || 0)} · 미수집 ${Number(d.coverage.not_processed || 0)} · 오래된 자료 ${Number(d.coverage.stale || 0)} · 배치 갱신 ${d.batch_updated_at ? escHtml(new Date(d.batch_updated_at).toLocaleString('ko-KR', {timeZone:'Asia/Seoul'})) : '대기'}</span>`);
     document.getElementById("co-sector-table").innerHTML = secComparisonTable(d.sectors || []);
     document.getElementById("co-sector-rule").textContent = d.verdict_rule || "";
     cards.innerHTML = (d.sectors || []).map(secCard).join("");

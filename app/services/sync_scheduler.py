@@ -157,37 +157,10 @@ async def _sync_us_stocks() -> None:
     logger.info("[sync] us_stocks: %d items", len(enriched))
 
 
-async def _sync_stock_candles() -> None:
-    """Warm the candle + indicator cache for the full quant universe (~30 stocks).
-
-    Runs on every sync cycle (hourly). Concurrency is capped so we don't hammer
-    Yahoo Finance with 30+ simultaneous requests; get_candles() already caches
-    its own result via data_cache, so this just keeps that cache fresh for the
-    robo-advisor / auto-trade scans that read from the same universe.
-    """
-    from app.services.stock import get_candles
-    sem = asyncio.Semaphore(6)
-
-    async def _warm_candles(sym: str) -> None:
-        async with sem:
-            try:
-                data = await get_candles(sym, period="2y", interval="1d")
-                if data.get("candles"):
-                    logger.info("[sync] candles %s: %d bars", sym, len(data["candles"]))
-            except Exception as e:
-                logger.warning("[sync] candles %s failed: %s", sym, e)
-
-    async def _warm_indicators(sym: str) -> None:
-        async with sem:
-            try:
-                data = await get_quant_indicators(sym, period="2y")
-                if not data.get("error"):
-                    await cache_set(f"indicators:{sym}:2y", data)
-            except Exception as e:
-                logger.warning("[sync] indicators %s failed: %s", sym, e)
-
-    await asyncio.gather(*(_warm_candles(s["symbol"]) for s in QUANT_STOCKS))
-    await asyncio.gather(*(_warm_indicators(s["symbol"]) for s in QUANT_STOCKS))
+async def _sync_stock_candles() -> dict:
+    """A bounded, checkpointed chunk; all-market collection never blocks a full cycle."""
+    from app.services.korea_market_scan import run_scan_chunk
+    return await run_scan_chunk()
 
 
 # ── Public sync entrypoint ────────────────────────────────────────────────────
@@ -220,7 +193,7 @@ async def sync_all(force: bool = False) -> dict:
                 errors.append(f"{fn.__name__}: {e}")
 
         # Candles are cached separately — run them too but don't block result
-        asyncio.create_task(_sync_stock_candles())
+        # All-market collection runs in its dedicated Celery task; no orphaned DB work.
 
         _last_sync = datetime.now(timezone.utc)
         _last_sync_ok = not errors

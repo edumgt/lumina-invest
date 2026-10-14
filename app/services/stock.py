@@ -14,47 +14,8 @@ from app.services.data_cache import cache_get, cache_set, cache_info
 YAHOO_CHART = "https://query2.finance.yahoo.com/v8/finance/chart"
 HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; FinAgent/1.0)"}
 
-# 국내 상장사 퀀트 스크리닝 대상 유니버스 — 3개 섹터(반도체 · IT · K뷰티) 31종목 (2026-10-06 조정).
-# 실제 추천/자동매매/스크리닝은 이 유니버스 전체를 스캔해 데이터 기반으로 종목을 선정한다 —
-# 화면에 노출되는 개별 종목은 매 요청마다 계산된 스코어에 따라 달라질 수 있다.
-# 심볼은 Yahoo 표기(.KS=코스피, .KQ=코스닥). 브로커/게이트웨이는 접미사를 떼고 KRX 6자리 코드로 보낸다.
-QUANT_SECTORS = ("반도체", "IT", "K뷰티")
-QUANT_STOCKS = [
-    # ── 반도체 (12) ──
-    {"symbol": "005930.KS", "name": "삼성전자", "sector": "반도체"},
-    {"symbol": "000660.KS", "name": "SK하이닉스", "sector": "반도체"},
-    {"symbol": "042700.KS", "name": "한미반도체", "sector": "반도체"},
-    {"symbol": "000990.KS", "name": "DB하이텍", "sector": "반도체"},
-    {"symbol": "108320.KS", "name": "LX세미콘", "sector": "반도체"},
-    {"symbol": "014680.KS", "name": "한솔케미칼", "sector": "반도체"},
-    {"symbol": "058470.KQ", "name": "리노공업", "sector": "반도체"},
-    {"symbol": "039030.KQ", "name": "이오테크닉스", "sector": "반도체"},
-    {"symbol": "403870.KQ", "name": "HPSP", "sector": "반도체"},
-    {"symbol": "240810.KQ", "name": "원익IPS", "sector": "반도체"},
-    {"symbol": "036930.KQ", "name": "주성엔지니어링", "sector": "반도체"},
-    {"symbol": "357780.KQ", "name": "솔브레인", "sector": "반도체"},
-    # ── IT (10) ──
-    {"symbol": "035420.KS", "name": "NAVER", "sector": "IT"},
-    {"symbol": "035720.KS", "name": "카카오", "sector": "IT"},
-    {"symbol": "018260.KS", "name": "삼성에스디에스", "sector": "IT"},
-    {"symbol": "064400.KS", "name": "LG CNS", "sector": "IT"},
-    {"symbol": "259960.KS", "name": "크래프톤", "sector": "IT"},
-    {"symbol": "036570.KS", "name": "엔씨소프트", "sector": "IT"},
-    {"symbol": "307950.KS", "name": "현대오토에버", "sector": "IT"},
-    {"symbol": "012510.KQ", "name": "더존비즈온", "sector": "IT"},
-    {"symbol": "293490.KQ", "name": "카카오게임즈", "sector": "IT"},
-    {"symbol": "263750.KQ", "name": "펄어비스", "sector": "IT"},
-    # ── K뷰티 (9) ──
-    {"symbol": "090430.KS", "name": "아모레퍼시픽", "sector": "K뷰티"},
-    {"symbol": "051900.KS", "name": "LG생활건강", "sector": "K뷰티"},
-    {"symbol": "192820.KS", "name": "코스맥스", "sector": "K뷰티"},
-    {"symbol": "161890.KS", "name": "한국콜마", "sector": "K뷰티"},
-    {"symbol": "278470.KS", "name": "에이피알", "sector": "K뷰티"},
-    {"symbol": "257720.KQ", "name": "실리콘투", "sector": "K뷰티"},
-    {"symbol": "237880.KQ", "name": "클리오", "sector": "K뷰티"},
-    {"symbol": "018290.KQ", "name": "브이티", "sector": "K뷰티"},
-    {"symbol": "241710.KQ", "name": "코스메카코리아", "sector": "K뷰티"},
-]
+# Master lists mutate in place so existing module imports stay synchronized.
+from app.services.korea_universe import STOCKS as QUANT_STOCKS, SECTORS as QUANT_SECTORS
 
 MARKET_INDICES = [
     {"symbol": "^KS11", "name": "KOSPI"},
@@ -601,6 +562,11 @@ def _calc_bollinger(closes: list[float], period: int = 20, std_mult: float = 2.0
 async def get_quant_indicators(symbol: str, period: str = "2y") -> dict:
     """기술적 지표 + AI 매매 시그널."""
     data = await get_candles(symbol, period=period)
+    return calculate_quant_indicators(symbol, data)
+
+
+def calculate_quant_indicators(symbol: str, data: dict) -> dict:
+    """Pure calculation shared by the all-market batch and on-demand analysis."""
     candles = data.get("candles", [])
     if len(candles) < 20:
         return {"symbol": symbol, "error": "데이터 부족"}

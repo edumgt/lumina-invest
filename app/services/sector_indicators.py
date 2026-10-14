@@ -9,7 +9,7 @@ QUANT_STOCKS 유니버스(실제 자동매매가 쓰는 종목)를 섹터로 묶
   - 집계 방식을 숨기지 않는다: 배수(PER/PBR/PSR/EV·EBITDA)는 시가총액 가중 조화평균
     (= 섹터를 하나의 기업으로 합친 것과 같은 의미)과 중위값을 함께 낸다. 비율(ROE·마진 등)은
     시가총액 가중 산술평균. 가격 지표는 시총 가중 섹터 인덱스를 만들어 그 시계열에서 계산한다.
-  - 점수·판정은 예측이 아니라 '3개 섹터 내 상대 순위'다. 가중치를 SCORE_WEIGHTS 로 공개한다.
+  - 점수·판정은 예측이 아니라 '공식 업종 내 상대 순위'다. 가중치를 SCORE_WEIGHTS 로 공개한다.
 """
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ from app.services.stock import (
 
 logger = logging.getLogger(__name__)
 
-CACHE_KEY = "sector_indicators:v1"
+CACHE_KEY = "sector_indicators:korea:v2"
 CACHE_HOURS = 1.0
 BENCHMARK = {"symbol": "^KS11", "name": "KOSPI"}
 _CONCURRENCY = 6
@@ -318,10 +318,28 @@ async def sector_overview(*, force: bool = False) -> dict:
     if not force:
         cached = await cache_get(CACHE_KEY, max_age_hours=CACHE_HOURS)
         if cached is not None:
-            return {**cached, "from_cache": True}
+            if len(QUANT_STOCKS) <= 100:
+                return {**cached, "from_cache": True}
+            from app.services.korea_market_scan import get_scan
+            latest = await get_scan()
+            if cached.get('batch_updated_at') == latest.get('updated_at'):
+                return {**cached, "from_cache": True}
 
     sem = asyncio.Semaphore(_CONCURRENCY)
-    members = await asyncio.gather(*[_load_member(s, sem) for s in QUANT_STOCKS])
+    if len(QUANT_STOCKS) > 100:
+        from app.services.data_cache import cache_get_many
+        from app.services.korea_market_scan import get_scan
+        cached_members = await cache_get_many([f'korea:member:{s["symbol"]}' for s in QUANT_STOCKS], max_age_hours=96)
+        members = [cached_members.get(f'korea:member:{s["symbol"]}') or {**s, 'cap':s.get('market_cap_eok'), 'errors':['일봉·재무 배치 미수집']} for s in QUANT_STOCKS]
+        scan = await get_scan()
+        for member in members:
+            if scan.get('entries',{}).get(member['symbol'],{}).get('status') != 'ready':
+                for key in list(member):
+                    if key == '_closes' or key.startswith('ret_') or key in ('rsi14','above_ma20','above_ma60'):
+                        member.pop(key,None)
+    else:
+        members = await asyncio.gather(*[_load_member(s, sem) for s in QUANT_STOCKS])
+        scan = {}
 
     bench_candles = await get_candles(BENCHMARK["symbol"], period="2y")
     bench_closes = _closes_by_date(bench_candles.get("candles"))
@@ -383,6 +401,11 @@ async def sector_overview(*, force: bool = False) -> dict:
     for i, s in enumerate(ranked, 1):
         s["momentum_rank"] = i
     for s in sectors:
+        if len(QUANT_STOCKS) > 100:
+            fund_covered = s.get('profitability',{}).get('coverage',0)
+            s['data_status'] = 'complete' if s['price']['priced']==s['count'] and fund_covered==s['count'] else 'partial'
+            if s['price']['priced'] < s['count']*0.5 or s['score']['covered_weight'] < 60:
+                s['verdict'] = '판단 불가'
         s["rationale"] = _rationale(s, sectors, bench)
     sectors.sort(key=lambda s: (s["score"]["total"] is None, -(s["score"]["total"] or 0)))
 
@@ -390,8 +413,9 @@ async def sector_overview(*, force: bool = False) -> dict:
         "as_of": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "benchmark": bench,
         "universe": {"symbols": len(QUANT_STOCKS), "sectors": list(QUANT_SECTORS)},
+        "coverage":scan.get("coverage"), "batch_updated_at":scan.get("updated_at"),
         "score_weights": SCORE_WEIGHTS,
-        "verdict_rule": "상대 점수 ≥60 비중확대 · 41~59 중립 · ≤40 비중축소 (3개 섹터 내 상대 순위이며 수익률 예측이 아님)",
+        "verdict_rule": "상대 점수 ≥60 비중확대 · 41~59 중립 · ≤40 비중축소 (공식 업종 내 상대 순위, 자료 부족 시 판단 불가)",
         "sectors": sectors,
     }
     await cache_set(CACHE_KEY, out)

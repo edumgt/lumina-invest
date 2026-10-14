@@ -55,6 +55,8 @@ async def lifespan(app: FastAPI):
         print("[fin-agent] Neo4j 연결 및 그래프 시드 완료")
     except Exception as e:
         print(f"[WARN] Neo4j 연결 실패 (그래프 기능 비활성): {e}")
+    from app.services.korea_universe import refresh_master
+    await refresh_master()
     start_sync_scheduler()
     print("[fin-agent] 서버 시작 완료. JWT + PostgreSQL + 대화이력 기능 활성화")
     yield

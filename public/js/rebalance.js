@@ -17,7 +17,7 @@ const sideBadge = (s) => s === "BUY" ? `<span class="badge-buy">매수</span>` :
 let weightChart = null;
 let targetRows = [];   // 종목 목표 [{symbol, name, weight_pct}] (SECTOR: 항목은 sectorTargets 로 분리)
 let sectorTargets = {}; // {반도체: 40, IT: 35, K뷰티: 25}
-const SECTORS = ["반도체", "IT", "K뷰티"];
+let SECTORS = [];
 const SECTOR_PREFIX = "SECTOR:";
 let lastProposal = null;
 
@@ -149,8 +149,11 @@ async function savePlan() {
 /* ── 현황 ────────────────────────────────────────────────── */
 async function loadStatus() {
   try {
+    const catalog = await api("/api/stocks/quant/list?limit=1");
+    SECTORS = catalog.universe?.sectors || [];
     const r = await api("/api/rebalance/status");
     const { plan, snapshot: s, triggers } = r;
+    SECTORS = [...new Set([...SECTORS, ...(plan?.targets || []).filter(t=>t.symbol?.startsWith(SECTOR_PREFIX)).map(t=>t.symbol.slice(SECTOR_PREFIX.length))])];
     fillPlanForm(plan);
     $("rb-kpis").innerHTML = [
       kpi("총 자산 (현금+주식)", won(s.total_asset)),

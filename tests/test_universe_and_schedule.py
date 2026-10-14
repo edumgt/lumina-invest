@@ -1,4 +1,4 @@
-"""유니버스(반도체·IT·K뷰티 31종목)와 5분 자동매매 주기의 정합성."""
+"""유니버스(코스피·코스닥 주식)와 5분 자동매매 주기의 정합성."""
 import re
 from collections import Counter
 
@@ -8,19 +8,19 @@ from app.services import auto_trade, kis_quickstart
 from app.services.brokers.stock_coin_trade_gateway import normalize_symbol
 
 
-def test_universe_three_sectors_about_thirty():
-    assert set(QUANT_SECTORS) == {"반도체", "IT", "K뷰티"}
-    assert 28 <= len(QUANT_STOCKS) <= 35
-    by_sector = Counter(s["sector"] for s in QUANT_STOCKS)
-    assert set(by_sector) == set(QUANT_SECTORS)
-    assert all(v >= 8 for v in by_sector.values()), by_sector
+def test_universe_covers_both_markets_and_official_industries():
+    assert {s["market"] for s in QUANT_STOCKS} == {"KOSPI", "KOSDAQ"}
+    assert len(QUANT_STOCKS) > 2000
+    assert {s["sector"] for s in QUANT_STOCKS} == set(QUANT_SECTORS)
+    assert len(QUANT_SECTORS) > 10
+    assert all(s["security_type"] in {"ST", "FS", "DR", "RT"} for s in QUANT_STOCKS)
 
 
 def test_universe_symbols_unique_and_krx_format():
     symbols = [s["symbol"] for s in QUANT_STOCKS]
     assert len(symbols) == len(set(symbols))
     for sym in symbols:
-        assert re.fullmatch(r"\d{6}\.(KS|KQ)", sym), sym
+        assert re.fullmatch(r"[0-9A-Z]{6}\.(KS|KQ)", sym), sym
         assert normalize_symbol(sym) == sym[:6]     # 게이트웨이는 6자리 코드로 보낸다
     assert all(s["name"] for s in QUANT_STOCKS)
 

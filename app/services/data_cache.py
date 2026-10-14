@@ -87,3 +87,18 @@ async def cache_info(key: str) -> dict | None:
         }
     except Exception:
         return None
+
+
+async def cache_get_many(keys: list[str], max_age_hours: float = 24) -> dict:
+    """Fetch persisted analysis in one DB query rather than one query per equity."""
+    if not keys:
+        return {}
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=max_age_hours)
+    try:
+        async with get_session_factory()() as db:
+            result = await db.execute(select(DataCache.key, DataCache.data).where(
+                DataCache.key.in_(keys), DataCache.updated_at >= cutoff))
+            return dict(result.all())
+    except Exception as exc:
+        logger.warning('Bulk cache read unavailable: %s', type(exc).__name__)
+        return {}

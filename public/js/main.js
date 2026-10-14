@@ -1,3 +1,4 @@
+import { loadKoreaUniverse } from "/js/korea-universe.js";
 /* 엔트리: 부트스트랩, 뷰 활성화 디스패치
  * app.html 인라인 스크립트에서 분리됨. 엔트리는 main.js */
 import { api, getMe, redirectToLogin, setToast, escHtml, fmt, fmtPct, colorPct } from "/js/common.js";
@@ -37,6 +38,7 @@ async function boot() {
     initPaperViews();                      // 모의투자 · LEAN 백테스트 버튼 바인딩 (js/paper.js)
     initRebalanceView();                   // 리밸런싱 엔진 버튼 바인딩 (js/rebalance.js)
     initTradingViewView();                 // TradingView 연동 (js/tradingview.js)
+    loadKoreaUniverse();
     initFormulaView();                     // 자유 산식 지표 (js/formula.js)
     const hash = location.hash.replace("#", "");
     navigate(hash && document.querySelector(`[data-view="${hash}"]`) ? hash : "dashboard");

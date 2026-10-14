@@ -218,7 +218,7 @@ let screenWaitOpen = false;   // 스크리닝 대기 모달이 열려 있는지
 function renderScreenIdle() {
   const cards = document.getElementById("screen-signal-cards");
   if (cards && !cards.innerHTML.trim()) {
-    cards.innerHTML = `<div class="col-span-5 text-xs" style="color:var(--text-mute);padding:10px 4px;">조건을 고르고 <b>「스크리닝 실행」</b>을 누르면 대표 31종목을 계산합니다. 보통 30초 안팎 걸리며, 실행 중에는 모래시계 창에 대기 시간이 표시됩니다.</div>`;
+    cards.innerHTML = `<div class="col-span-5 text-xs" style="color:var(--text-mute);padding:10px 4px;">조건을 고르고 <b>「스크리닝 실행」</b>을 누르면 전종목 배치 분석 결과에서 조건을 찾습니다. 수집 진행률과 자료 기준일을 함께 확인하세요.</div>`;
   }
 }
 
@@ -330,51 +330,17 @@ async function loadRoboScreening() {
   const confidence = document.getElementById("screen-confidence")?.value || "65";
   const minConf = parseInt(confidence, 10) || 0;
   screenRunning = true;
-  let stocks = [];
+  const t0 = startScreenHourglass(model, signal, confidence, 0);
   try {
-    ({ stocks } = await api(`/api/quant/ml/stocks`));
-  } catch (e) {
-    screenRunning = false;
-    const status = document.getElementById("screen-status");
-    if (status) { status.style.color = "var(--red)"; setIconText(status, `<i class="fa-solid fa-xmark" aria-hidden="true"></i> 종목 목록 조회 실패 — ${e?.message || ""}`); }
-    return;
-  }
-  const total = stocks.length;
-  const t0 = startScreenHourglass(model, signal, confidence, total);
-  const passed = [];
-  let checked = 0, errors = 0, stopped = false;
-  try {
-    for (let i = 0; i < total; i++) {
-      const stock = stocks[i];
-      if (screenStopRequested) { stopped = true; screenProgressStep(checked, total, stock, "stopped"); break; }
-      screenProgressStep(checked, total, stock, "checking");
-      try {
-        const { signals } = await api(`/api/stocks/signals?symbols=${encodeURIComponent(stock.symbol)}&signal=all&min_confidence=0&model=${encodeURIComponent(model)}`);
-        const row = signals?.[0];
-        const ok = row && (signal === "all" || String(row.signal).toLowerCase() === signal) && row.confidence >= minConf;
-        if (ok) { passed.push(row); screenProgressStep(checked + 1, total, stock, "pass", row); }
-        else screenProgressStep(checked + 1, total, stock, "skip", row);
-      } catch (e) {
-        errors++;
-        screenProgressStep(checked + 1, total, stock, "error");
-      }
-      checked++;
-      document.querySelectorAll("[data-progress]").forEach(el => { el.textContent = `${checked} / ${total}`; });
-      const sorted = sortScreenRows(passed);   // 한 종목 끝날 때마다 화면 반영
-      renderScreenSignalCards(sorted);
-      renderScreenTable(sorted);
-      if (checked < total && !screenStopRequested) await new Promise(r => setTimeout(r, 80));
-    }
-    const sorted = sortScreenRows(passed);
-    renderScreenSignalCards(sorted);
-    renderScreenTable(sorted);
-    const cond = `${model} / ${SIGNAL_LABEL[signal] || signal} / 신뢰도 ${confidence}% 이상`;
-    const errTxt = errors ? ` · 오류 ${errors}` : "";
-    if (stopped) stopScreenHourglass(t0, `중지 — ${checked}/${total}종목 검사, ${sorted.length}종목 통과 (${cond})${errTxt}`);
-    else stopScreenHourglass(t0, `완료 — ${total}종목 검사, ${sorted.length}종목 통과 (${cond})${errTxt}`, errors > 0 && sorted.length === 0);
-  } catch (e) {
-    stopScreenHourglass(t0, `실패 — ${e?.message || "시그널 조회 오류"}`, true);
-  } finally { screenRunning = false; screenStopRequested = false; }
+    const data = await api(`/api/stocks/signals?signal=${encodeURIComponent(signal)}&model=${encodeURIComponent(model)}&min_confidence=${minConf}`);
+    if(screenStopRequested) {stopScreenHourglass(t0, '조회 중지');return;}
+    const rows = sortScreenRows(data.signals || []);
+    renderScreenSignalCards(rows.slice(0, 40)); renderScreenTable(rows);
+    const c = data.coverage || {};
+    stopScreenHourglass(t0, `전종목 ${c.total ?? '-'} · 일봉 분석 ${c.ready ?? 0} · 미수집 ${c.not_processed ?? 0} · 자료 부족 ${c.partial ?? 0} · 조회 실패 ${c.unavailable ?? 0} · 오래된 자료 ${c.stale ?? 0} · 조건 충족 ${rows.length}종목 · 갱신 ${data.updated_at ? new Date(data.updated_at).toLocaleString('ko-KR', {timeZone:'Asia/Seoul'}) : '배치 대기'}`);
+  } catch(e) {stopScreenHourglass(t0, e.message, true);}
+  finally {screenRunning=false;screenStopRequested=false;}
+
 }
 
 function renderScreenSignalCards(signals) {

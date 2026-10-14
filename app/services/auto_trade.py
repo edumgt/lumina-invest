@@ -826,9 +826,28 @@ async def _run_quant_cycle(user_id: str = "quant_system") -> None:
 
         price_map: dict[str, float] = {}
         indicator_map: dict[str, dict] = {}
+        from app.services.korea_market_scan import candidate_stocks
+        from app.services.korea_universe import refresh_master
+        await refresh_master()
+        held = (await db.execute(select(Portfolio).where(Portfolio.user_id == uid, Portfolio.book == PORTFOLIO_BOOK_QUANT, Portfolio.quantity > 0))).scalars().all()
+        held_symbols = {p.symbol for p in held}
+        candidates = await candidate_stocks()
+        selected = set(selected_symbols) if symbol_source == "manual" else {s['symbol'] for s in candidates}
+        # Expanding analysis/paper scope does not authorize new real-order symbols.
+        if mode == "live" and not app_settings.QUANT_KOREA_ALLOW_LIVE_EXPANSION:
+            from pathlib import Path
+            import json
+            approved = set(json.loads((Path(__file__).resolve().parents[1] / 'data' / 'legacy-trading-symbols.json').read_text()))
+            selected &= approved
+            cycle_log['live_expansion_blocked'] = True
+        cycle_stocks = [s for s in QUANT_STOCKS if s['symbol'] in selected | held_symbols]
+        known = {s['symbol'] for s in cycle_stocks}
+        cycle_stocks += [{'symbol':p.symbol,'name':getattr(p,'name',None) or p.symbol,'sector':'기존 보유','buy_eligible':False} for p in held if p.symbol not in known]
+        cycle_log['universe_count'] = len(QUANT_STOCKS)
+        cycle_log['candidate_count'] = len(candidates)
         stock_map = {s["symbol"]: s for s in QUANT_STOCKS}
 
-        # 지표 선조회 — 순차로 돌면 안 된다. st 는 KIS 호출을 전역 1.05초 간격으로 직렬화하므로
+        # 후보·보유종목만 선조회 — 전종목 분석은 배치 스냅샷에서 수행한다. st 는 KIS 호출을 전역 1.05초 간격으로 직렬화하므로
         # 종목마다 KIS_CHART_TIMEOUT 을 통째로 소진하고(31종목 × 10초 = 310초) 사이클이 하드 타임리밋
         # (165초 = 주기 180초 − 15초, 중복 실행 방지 장치)에 걸려 죽는다 → 주문이 한 건도 나가지 않는다.
         # 동시에 보내면 st 처리량은 그대로여도 한 사이클이 약 31 × 1.05초 ≈ 35초에 전부 받는다.
@@ -842,11 +861,11 @@ async def _run_quant_cycle(user_id: str = "quant_system") -> None:
                         else await get_quant_indicators(symbol, "2y"))
 
         _prefetched = dict(zip(
-            [s["symbol"] for s in QUANT_STOCKS],
-            await asyncio.gather(*(_indicators_for(s["symbol"]) for s in QUANT_STOCKS), return_exceptions=True),
+            [s["symbol"] for s in cycle_stocks],
+            await asyncio.gather(*(_indicators_for(s["symbol"]) for s in cycle_stocks), return_exceptions=True),
         ))
 
-        for stock in QUANT_STOCKS:
+        for stock in cycle_stocks:
             try:
                 indicators = _prefetched.get(stock["symbol"])
                 if isinstance(indicators, BaseException):
@@ -870,12 +889,12 @@ async def _run_quant_cycle(user_id: str = "quant_system") -> None:
                 })
 
         if symbol_source == "manual":
-            target_symbols = [s for s in selected_symbols if s in stock_map]
-            if not target_symbols:
-                target_symbols = [s["symbol"] for s in QUANT_STOCKS[:ai_top_n]]
+            target_symbols = [s for s in selected_symbols if s in selected and s in stock_map and stock_map[s].get("buy_eligible", True) and stock_map[s].get("order_supported", True)]
         else:
             ranked = []
-            for stock in QUANT_STOCKS:
+            for stock in cycle_stocks:
+                if stock["symbol"] not in selected or not stock.get("buy_eligible", True):
+                    continue
                 indicators = indicator_map.get(stock["symbol"], {})
                 sig = indicators.get("signal", {})
                 score = sig.get("score", 0)

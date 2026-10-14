@@ -71,7 +71,8 @@ async def ml_cluster(
     _user=Depends(get_current_user),
 ):
     """종목 군집화 (KMeans)."""
-    targets = body.symbols or [s["symbol"] for s in QUANT_STOCKS]
+    from app.services.korea_market_scan import candidate_stocks
+    targets = body.symbols or [s["symbol"] for s in await candidate_stocks()]
     stocks_data = []
     for sym in targets:
         data = await get_candles(sym, period=body.period, interval="1d")
@@ -160,7 +161,8 @@ async def robo_allocation(
             "batch": batch,
         }
 
-    screened = await asyncio.gather(*(_screen(s) for s in QUANT_STOCKS))
+    from app.services.korea_market_scan import candidate_stocks
+    screened = await asyncio.gather(*(_screen(s) for s in await candidate_stocks()))
     picks = [p for p in screened if p is not None]
 
     if not picks:

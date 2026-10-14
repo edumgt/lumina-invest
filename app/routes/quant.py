@@ -56,7 +56,8 @@ async def run_batch_pipeline(
     _user=Depends(get_current_user),
 ):
     """여러 종목 파이프라인 일괄 실행."""
-    targets = body.symbols or [s["symbol"] for s in QUANT_STOCKS]
+    from app.services.korea_market_scan import candidate_stocks
+    targets = body.symbols or [s["symbol"] for s in await candidate_stocks()]
     results = []
     for sym in targets:
         candle_data = await get_candles(sym, period=body.period, interval="1d")

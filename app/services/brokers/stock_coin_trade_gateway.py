@@ -101,7 +101,7 @@ def normalize_symbol(symbol: str) -> str:
     for suffix in (".KS", ".KQ"):
         if code.endswith(suffix):
             code = code[: -len(suffix)]
-    if len(code) != 6 or not code.isdigit():
+    if len(code) != 6 or not code[0].isdigit() or not code.isalnum():
         raise GatewayError(f"KRX 6자리 종목코드가 아닙니다: {symbol}", "INVALID_SYMBOL", 400)
     return code
 

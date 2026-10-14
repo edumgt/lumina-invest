@@ -89,7 +89,7 @@ def test_monitor_assembles_everything(client):
     assert r.status_code == 200, r.text
     d = r.json()
     assert d["environment"] == "paper" and d["batch"]["running"] is True and d["aggressive"]["enabled"] is True and d["heartbeat_age_sec"] == 42.0
-    assert d["universe"]["count"] >= 28 and set(d["universe"]["sectors"]) == {"반도체", "IT", "K뷰티"}
+    assert d["universe"]["count"] > 2000 and {"전기·전자", "IT 서비스", "금융"} <= set(d["universe"]["sectors"])
     o = d["orders"]
     assert o["today_total"] == 3 and o["today_filled"] == 1 and o["fill_rate_pct"] == 33.3 and o["today_counts"] == {"FILLED": 1, "LOST": 1, "ACCEPTED": 1}
     assert [x["status"] for x in o["unresolved"]] == ["LOST"] and o["avg_slippage_pct"] == 0.3

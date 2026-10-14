@@ -38,7 +38,7 @@ def is_enabled() -> bool:
 
 def is_krx(symbol: str) -> bool:
     s = str(symbol or "").upper()
-    return s.endswith(".KS") or s.endswith(".KQ") or (len(s) == 6 and s.isdigit())
+    return s.endswith(".KS") or s.endswith(".KQ") or (len(s) == 6 and s.isalnum() and s[0].isdigit())
 
 
 def code_of(symbol: str) -> str:

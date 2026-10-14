@@ -53,19 +53,29 @@ def sector_name(symbol: str) -> str:
     return str(symbol)[len(SECTOR_PREFIX):] if is_sector_target(symbol) else ""
 
 
-def sector_of_symbol(symbol: str) -> str:
-    """lumina 심볼/6자리 코드 → 유니버스 섹터(반도체·IT·K뷰티), 없으면 '기타'."""
+def _legacy_themes() -> dict:
+    import json
+    from pathlib import Path
+    return json.loads((Path(__file__).resolve().parents[1] / 'data' / 'legacy-sector-themes.json').read_text())
+
+
+def sector_of_symbol(symbol: str, selected_sectors=None) -> str:
+    """Official industry, retaining existing saved theme plans without rewriting weights."""
     from app.services.stock import QUANT_STOCKS
     code = str(symbol)[:6]
-    for s in QUANT_STOCKS:
-        if s["symbol"][:6] == code:
-            return s["sector"]
-    return OTHER_SECTOR
+    for name, symbols in _legacy_themes().items():
+        if selected_sectors and name in selected_sectors and any(s[:6]==code for s in symbols):
+            return name
+    return next((s['sector'] for s in QUANT_STOCKS if s['symbol'][:6]==code), OTHER_SECTOR)
 
 
 def sector_universe(sector: str) -> list[dict]:
     from app.services.stock import QUANT_STOCKS
-    return [s for s in QUANT_STOCKS if s["sector"] == sector]
+    themes = _legacy_themes()
+    if sector in themes:
+        index = {s['symbol']:s for s in QUANT_STOCKS}
+        return [index[s] for s in themes[sector] if s in index]
+    return [s for s in QUANT_STOCKS if s['sector']==sector and s.get('buy_eligible',True) and s.get('order_supported',True)]
 
 
 def split_targets(targets: list[dict]) -> tuple[dict[str, float], dict[str, dict]]:
@@ -92,13 +102,13 @@ def effective_symbol_targets(targets: list[dict], held_symbols: list[str], rank_
     sectors, explicit = split_targets(targets)
     out: dict[str, dict] = {}
     for sym, t in explicit.items():
-        out[sym] = {"name": t["name"], "weight_pct": round(float(t["weight_pct"]), 4), "sector": sector_of_symbol(sym), "derived": False}
+        out[sym] = {"name": t["name"], "weight_pct": round(float(t["weight_pct"]), 4), "sector": sector_of_symbol(sym, sectors), "derived": False}
     for sector, W in sectors.items():
         E = sum(v["weight_pct"] for v in out.values() if v["sector"] == sector)
         R = max(0.0, W - E)
         if R <= 0:
             continue
-        members = [s for s in held_symbols if sector_of_symbol(s) == sector and s not in out]
+        members = [s for s in held_symbols if sector_of_symbol(s, sectors) == sector and s not in out]
         if not members:
             cands = sector_universe(sector)
             if rank_fn:
@@ -207,7 +217,7 @@ def normalize_targets(raw: list[dict]) -> list[dict]:
         if is_sector_target(raw_sym):
             from app.services.stock import QUANT_SECTORS
             name = raw_sym[len(SECTOR_PREFIX):].strip()
-            if name not in QUANT_SECTORS:
+            if name not in QUANT_SECTORS and name not in _legacy_themes():
                 raise RebalanceError(f"지원하지 않는 섹터입니다: {name} ({' / '.join(QUANT_SECTORS)})")
             symbol = f"{SECTOR_PREFIX}{name}"
         else:
@@ -228,11 +238,11 @@ def normalize_targets(raw: list[dict]) -> list[dict]:
     sectors, symbols = split_targets(items)
     # 섹터 목표가 있는 섹터의 명시 종목 합은 그 섹터 목표를 넘을 수 없다
     for sector, W in sectors.items():
-        E = sum(v["weight_pct"] for s, v in symbols.items() if sector_of_symbol(s) == sector)
+        E = sum(v["weight_pct"] for s, v in symbols.items() if sector_of_symbol(s, sectors) == sector)
         if E > W + 0.0001:
             raise RebalanceError(f"{sector} 섹터의 종목 비중 합({E:.1f}%)이 섹터 목표({W:.1f}%)를 초과합니다.")
     # 총합 = 섹터 목표 + (섹터 목표 없는 섹터의 종목 목표)
-    total = sum(sectors.values()) + sum(v["weight_pct"] for s, v in symbols.items() if sector_of_symbol(s) not in sectors)
+    total = sum(sectors.values()) + sum(v["weight_pct"] for s, v in symbols.items() if sector_of_symbol(s, sectors) not in sectors)
     if total > 100.0001:
         raise RebalanceError(f"목표 비중 합계가 100%를 초과합니다 ({total:.1f}%). 잔여분은 현금으로 배분됩니다.")
     return items
@@ -311,7 +321,7 @@ def apply_plan_update(plan: RebalancePlan, data: dict) -> RebalancePlan:
 
 def plan_to_dict(plan: RebalancePlan) -> dict:
     sectors, symbols = split_targets(plan.targets or [])
-    stock_total = sum(sectors.values()) + sum(v["weight_pct"] for s, v in symbols.items() if sector_of_symbol(s) not in sectors)
+    stock_total = sum(sectors.values()) + sum(v["weight_pct"] for s, v in symbols.items() if sector_of_symbol(s, sectors) not in sectors)
     return {
         "id": str(plan.id), "name": plan.name, "is_active": plan.is_active,
         "targets": plan.targets or [], "cash_weight_pct": round(100 - stock_total, 2),
@@ -361,7 +371,7 @@ async def snapshot(db: AsyncSession, user_id: uuid.UUID, plan: RebalancePlan, so
         rows.append({
             "symbol": sym,
             "name": (p["name"] if p else (eff.get(sym) or {}).get("name") or sym),
-            "sector": sector_of_symbol(sym),
+            "sector": sector_of_symbol(sym, sector_targets),
             "quantity": p["quantity"] if p else 0,
             "price": p["currentPrice"] if p else None,
             "current_amount": round(cur_amt, 2),
@@ -379,7 +389,7 @@ async def snapshot(db: AsyncSession, user_id: uuid.UUID, plan: RebalancePlan, so
     # 섹터 집계: 현재/목표/이탈 (섹터 목표가 없는 섹터의 목표 = 소속 종목 목표 합)
     from app.services.stock import QUANT_SECTORS
     sector_rows = []
-    for sector in list(QUANT_SECTORS) + [OTHER_SECTOR]:
+    for sector in list(dict.fromkeys(list(QUANT_SECTORS) + list(sector_targets) + [OTHER_SECTOR])):
         members = [r for r in rows if r["sector"] == sector]
         if not members and sector not in sector_targets:
             continue

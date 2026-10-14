@@ -38,6 +38,7 @@ celery_app.conf.update(
 
     # ── Celery Beat 주기 스케줄 ────────────────────────────────────────────────
     beat_schedule={
+        "sync-korea-market-chunks": {"task":"sync.korea_market", "schedule":60.0, "options":{"expires":55}},
         "sync-market-data-hourly": {
             "task": "sync.market_data",
             "schedule": 3600.0,           # 1시간
