@@ -1938,3 +1938,6 @@ SageMaker를 활용해 매일 예측을 수행하고, 그 결과를 검증하며
 **검증**: 테스트 5개 통과. 로컬 `streamlit run ... --server.baseUrlPath ui` 로 `/ui/` 200·`/ui/_stcore/health` ok 확인. `docker compose config`·`caddy validate` 통과. 브라우저 미실행. 로컬 venv 에 streamlit 1.65.0·plotly 7.1.0 설치(uv).
 **배포(미완, 사용자)**: `bash deploy/fd-streamlit.sh`. 또는 main push 시 deploy.yml 의 `compose up -d --build` 가 streamlit 컨테이너를 올리지만 **Caddy 는 reload 가 안 되므로** `docker exec lumina-invest-proxy-1 caddy reload --config /etc/caddy/Caddyfile` 또는 스크립트 실행 필요.
 **다음**: ① 나머지 메뉴(입력·실행이 있는 리밸런싱·모의주문·크롤링·백테스트) 전용 페이지로 승격 ② 같은 방식으로 domain-rag-lab(pr) → stock-coin-trade(st) → stock-kms-portal(iv) 순서 진행. pr·iv 에는 이미 데모 `streamlit_app.py` 가 있어 그것을 운영 UI 로 확장하는 형태가 된다.
+
+### 6-61. 2026-10-15 계약 문서 v0.7 사본 동기화 (stock-coin-trade 6-23 연동)
+`docs/contracts/kis-autotrade-api.md` 에 2-7 시세 `GET /quote/{symbol}`(iv 챗봇 CheckQuote 용, 읽기 전용) 추가·v0.7 표기. 3사본 md5 일치. lumina 코드 변경 없음(필요 시 `stock_coin_trade_gateway.py` 에 `get_quote` 추가 가능).
