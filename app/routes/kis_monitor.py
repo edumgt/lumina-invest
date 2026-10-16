@@ -6,6 +6,7 @@
 """
 from __future__ import annotations
 
+import json
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -83,7 +84,14 @@ def _origin(r: LiveOrder) -> str:
 
 def _order_dict(r: LiveOrder, emails: dict | None = None) -> dict:
     owner, origin = _owner(r), _origin(r)
+    try:
+        evidence = json.loads(getattr(r, "raw", "") or "{}")
+    except (ValueError, TypeError):
+        evidence = {}
+    lookup = evidence.get("lookup", "") if isinstance(evidence, dict) else ""
     return {
+        "execution_lookup": lookup,
+        "execution_evidence": "잔고 변화로 추정" if lookup == "holdings_inference" else "KIS 체결내역 미확인" if lookup in ("not_in_daily_ccld", "ambiguous_open_orders") else "앱 저장 기록",
         "owner": owner, "owner_label": OWNER_LABEL[owner],
         "origin": origin, "origin_label": ORIGIN_LABEL[origin], "origin_recorded": bool(getattr(r, "origin", "")),
         "is_human": origin in HUMAN_ORIGINS, "actor": "system" if owner == "batch" else ((emails or {}).get(r.user_id) or str(r.user_id)[:8]),
@@ -153,7 +161,11 @@ async def kis_monitor(limit: int = Query(50, ge=1, le=200), cycles: int = Query(
     filled_today = [r for r in today if r.status == "FILLED"]
     slips = [((float(r.avg_filled_price) / float(r.price)) - 1) * 100 for r in filled_today if r.price and r.avg_filled_price]
     pnl = realized_pnl(rows)
+    pending = [r for r in rows if r.status in ("PENDING", "ACCEPTED", "PARTIALLY_FILLED", "CANCEL_REQUESTED", "UNKNOWN", "LOST", "ERROR")]
     out["orders"] = {
+        "source": "app_order_log", "history_complete": False,
+        "unconfirmed_count": len(pending),
+        "oldest_unconfirmed_at": min((r.created_at for r in pending if r.created_at), default=None),
         "recent": [_order_dict(r, emails) for r in rows[:limit]],
         "today_counts": counts, "today_owner_counts": owner_counts, "today_origin_counts": origin_counts, "origin_labels": ORIGIN_LABEL,
         "today_total": len(today), "today_filled": len(filled_today),

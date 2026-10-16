@@ -209,3 +209,13 @@ def test_orders_origin_filter_and_counts(client):
     assert client.get("/api/quant/kis/orders?origin=nope").status_code == 422
     mon = client.get("/api/quant/kis/monitor").json()["orders"]
     assert mon["today_origin_counts"] == {"batch_auto": 2, "user_auto": 1, "manual": 1, "rebalance": 1}
+
+
+def test_order_evidence_marks_inferred_and_missing_execution():
+    r = order('005930.KS', 'BUY', 1, 'FILLED', avg=267750)
+    r.raw = '{"lookup":"holdings_inference"}'
+    assert km._order_dict(r)['execution_evidence'] == '잔고 변화로 추정'
+    r.raw = '{"lookup":"not_in_daily_ccld"}'
+    assert km._order_dict(r)['execution_evidence'] == 'KIS 체결내역 미확인'
+    r.raw = 'invalid'
+    assert km._order_dict(r)['execution_evidence'] == '앱 저장 기록'

@@ -73,7 +73,7 @@ function renderKpis(d) {
   el.innerHTML = [
     kpi("KIS 총평가", a.connected ? won(a.total) : "미연동", a.connected ? `현금 ${won(a.cash)} · 평가 ${won(a.invested)}` : (a.error || "")),
     kpi("계좌 평가손익", a.connected ? won(a.profit_loss) : "-", "KIS 기준(기존 보유 포함)", pnlColor(a.profit_loss)),
-    kpi("봇 실현손익", won(rp.total), `체결 완료 매도 기준 · 종목 ${Object.keys(rp.by_symbol || {}).length}`, pnlColor(rp.total)),
+    kpi("앱 기록 실현손익(참고)", won(rp.total), `KIS 전체 이력과 다를 수 있음 · 미확정 ${o.unconfirmed_count ?? 0}건`, pnlColor(rp.total)),
     kpi("당일 실주문", `${o.today_total ?? 0}건`, `체결 ${o.today_filled ?? 0} · 체결률 ${o.fill_rate_pct == null ? "-" : o.fill_rate_pct + "%"}`),
     kpi("당일 매수/매도", `${won(o.today_buy_amount)}`, `매도 ${won(o.today_sell_amount)} · 슬리피지 ${o.avg_slippage_pct == null ? "-" : o.avg_slippage_pct + "%"}`),
     kpi("미해소 주문", `${(o.unresolved || []).length}건`, "UNKNOWN / LOST / ERROR", (o.unresolved || []).length ? "var(--down, #e5484d)" : ""),
@@ -129,7 +129,7 @@ function renderHoldings(d) {
   const a = d.account || {}, note = document.getElementById("kism-holdings-note");
   currentHoldings = a.connected && Array.isArray(a.holdings) ? new Map(a.holdings.map(h => [holdingSymbol(h.symbol), h.quantity == null || !Number.isFinite(Number(h.quantity)) ? null : Number(h.quantity)])) : null;
   const rows = a.connected ? (a.holdings || []).slice().sort((x, y) => (y.bot_managed - x.bot_managed) || (y.eval_amount - x.eval_amount)) : [];
-  if (note) setIconText(note, `· ${rows.length}종목 · 페이지당 10건 (<i class="fa-solid fa-star" aria-hidden="true"></i> = 봇 관리)`);
+  if (note) setIconText(note, `· ${rows.length}종목 · 페이지당 10건 (<i class="fa-solid fa-star" aria-hidden="true"></i> = 봇 관리) · KIS 실제 잔고 기준 · 주문별 체결수량과 별도`);
   updateGrid("kism-holdings", [
     textColumn("name", "종목", { width: 190, cellRenderer: ({ data }) => textCell(`${data.bot_managed ? "<i class=\"fa-solid fa-star\" aria-hidden=\"true\"></i> " : ""}${data.name || data.symbol}`) }),
     textColumn("symbol", "종목코드"), numericColumn("quantity", "수량"), numericColumn("bot_quantity", "봇수량"),
@@ -152,7 +152,7 @@ function renderOrdersSummary(d) {
   const o = d.orders || {}; const og = o.today_origin_counts || {}, oc = o.today_owner_counts || {};
   const statusText = Object.entries(o.today_counts || {}).map(([k, v]) => `${k} ${v}`).join(", ") || "없음";
   const bots = (og.batch_auto ?? oc.batch ?? 0) + (og.user_auto ?? 0), humans = (og.manual ?? 0) + (og.rebalance ?? 0);
-  note.textContent = `· 당일 ${o.today_total ?? 0}건 (봇 ${bots} · 사람 ${humans}) · 상태 ${statusText}`;
+  note.textContent = `· 앱 저장 주문 기록 (KIS 전체 체결내역 아님) · 전체 기간 미확정 ${o.unconfirmed_count ?? 0}건 · 당일 ${o.today_total ?? 0}건 (봇 ${bots} · 사람 ${humans}) · 상태 ${statusText}`;
 }
 
 /* ── 실주문 검색 그리드: GET /api/quant/kis/orders ─────────────────────────────── */
@@ -169,7 +169,8 @@ const ORDER_COLUMNS = [
   textColumn("side", "방향", { width: 110, cellRenderer: ({ value }) => textCell(value, value === "BUY" ? "#15803d" : "#dc2626") }),
   textColumn("order_type", "유형"), numericColumn("quantity", "주문수량"), numericColumn("filled_quantity", "체결수량"),
   numericColumn("current_quantity", "현 보유수량", { headerTooltip: "최근 KIS 계좌 조회 기준의 종목 전체 보유수량 (기존 보유 포함). 미보유는 0, 계좌 조회 불가는 -입니다.", tooltipValueGetter: ({ value }) => value == null ? "계좌 보유수량 조회 불가" : `최근 KIS 계좌 조회 기준 ${fmt(value)}주 (기존 보유 포함)` }),
-  numericColumn("price", "가상가"), numericColumn("avg_filled_price", "체결가"),
+  numericColumn("price", "가상가"), numericColumn("avg_filled_price", "저장 체결가", { headerTooltip: "앱에 저장된 값입니다. 잔고 변화로 추정한 가격은 실제 체결가와 다를 수 있습니다." }),
+  textColumn("execution_evidence", "체결 확인 근거", { width: 200 }),
   textColumn("status", "상태", { width: 165, cellRenderer: ({ value }) => textCell(value, STATUS_KIND[value] === "bad" ? "#dc2626" : STATUS_KIND[value] === "ok" ? "#15803d" : "") }),
   textColumn("order_no", "주문번호", { width: 180, tooltipValueGetter: ({ data }) => data.client_order_id || data.order_no || "" }),
   textColumn("message", "메모", { width: 300 }),
