@@ -1939,5 +1939,24 @@ SageMaker를 활용해 매일 예측을 수행하고, 그 결과를 검증하며
 **배포(미완, 사용자)**: `bash deploy/fd-streamlit.sh`. 또는 main push 시 deploy.yml 의 `compose up -d --build` 가 streamlit 컨테이너를 올리지만 **Caddy 는 reload 가 안 되므로** `docker exec lumina-invest-proxy-1 caddy reload --config /etc/caddy/Caddyfile` 또는 스크립트 실행 필요.
 **다음**: ① 나머지 메뉴(입력·실행이 있는 리밸런싱·모의주문·크롤링·백테스트) 전용 페이지로 승격 ② 같은 방식으로 domain-rag-lab(pr) → stock-coin-trade(st) → stock-kms-portal(iv) 순서 진행. pr·iv 에는 이미 데모 `streamlit_app.py` 가 있어 그것을 운영 UI 로 확장하는 형태가 된다.
 
+### 6-62. 2026-10-16 딥러닝(LSTM·Transformer) 화면 Colab 연동 (사용자 요청: 구체적 사용 예시 부족 → "colab 연동으로")
+
+**방식**: 서버에 torch 를 넣지 않는다. 앱의 피처 파이프라인(`quant_pipeline.feature_engineer`, 피처 12개 + 5일 ±2% 3-class 레이블)으로 만든 데이터셋을 CSV 로 내려 주고, 저장소의 Colab 노트북이 그 CSV(또는 Yahoo 대체 경로에서 **같은 수식**으로 계산)로 LSTM·Transformer 를 학습해 다수 클래스·로지스틱 기준선과 비교한다. 화면은 정적 자료에서 "미리보기 → CSV 내려받기 → Colab 에서 열기 → 해석" 실습 흐름으로 재구성.
+
+| 파일 | 내용 |
+|------|------|
+| `app/routes/ml.py` | `GET /api/ml/dl/dataset?symbol&period` CSV(date, OHLCV, 피처 12, target; 120봉 미만 404, period 는 1y~max, 심볼 정규식 검증) · `GET /api/ml/dl/dataset/summary` JSON(행 수·기간·클래스 분포·다수 클래스 기준선·60일 윈도우 수·피처·레이블 규칙·Colab/GitHub URL) · `GET /api/ml/dl/notebook` .ipynb FileResponse(GitHub 막힌 환경용). 모두 세션 인증 |
+| `notebooks/dl_lstm_transformer.ipynb` | 15셀. 설정 → 피처 수식(앱과 동일) → 데이터(CSV_PATH / 현재 폴더 / Colab 업로드 / yfinance 순) → 클래스 분포·기준선 → 윈도우(시간순 분할, 스케일러 train 에만 fit, 경계 HORIZON purge) → 기준선 2개 → 공통 학습 루프(클래스 가중치·조기 종료·최적 가중치 복원) → LSTM → Transformer → 결과표·학습 곡선 → 최근 윈도우 5일 전망 → 해석 가이드·체크리스트 → 예측 CSV 저장 |
+| `notebooks/build_dl_notebook.py` | 노트북 생성기(nbformat). 셀을 고칠 때 이 파일을 고치고 재생성 |
+| `public/app.html` ml-deeplearning 뷰 | 3단계 안내 + 종목(datalist)·기간 + 「미리보기」「CSV 내려받기」「Colab 에서 열기」「노트북 받기」 + 요약 카드·클래스 분포 바 / CSV 열 설명표 / 아키텍처(유지) / 적합성 비교(비시계열 기준선 행·앱 내 위치 열 추가) / 핵심 코드 요약 / 해석 가이드·체크리스트·다음 실험(모델 비교·회귀·API 연동 화면 링크) |
+| `public/js/ml.js` | `mld-*` 핸들러: 종목·기간 변경 시 CSV 링크 동기화, 미리보기 → summary 호출·카드·분포 바·표본 부족/불균형 안내 |
+| `public/js/core.js` | VIEW_GUIDES `ml-deeplearning` 도움말을 실습 순서로 교체 |
+| `Dockerfile` | `COPY notebooks/ ./notebooks/` (재빌드 시 노트북 포함) |
+| `tests/test_ml_dl_colab.py` | 7개 — CSV 열·행·정렬·파일명, CSV 값 = 파이프라인 값, 심볼/기간/부족 데이터 거부, summary 수치, 노트북 다운로드, **노트북 build_features = 앱 feature_engineer (1e-9)**, 누수 방지 코드 존재 |
+| `deploy/fd-dl-colab.sh` | 호스트 소스 갱신 → fin-ai-app 에 docker cp(ml.py·화면·노트북) → app 재시작 → 라우트 401 확인·컨테이너 내 노트북 경로 확인 |
+
+**검증**: `pytest tests/test_ml_dl_colab.py` 7 passed. 노트북은 스크래치 venv(torch 2.14 cpu, nbclient)에서 합성 캔들 600봉 CSV 로 EPOCHS=8 끝까지 실행(65초, 랜덤워크라 기준선 미달은 정상). JS 는 node 가 없어 esprima(옵셔널 체이닝 치환 후)로 파싱만 확인, 뷰 블록 div 균형 0. 브라우저 미실행.
+**배포(미완, 사용자)**: ① **먼저 커밋·push** — 「Colab 에서 열기」 가 `github.com/edumgt/lumina-invest/blob/main/notebooks/...` 를 열므로 main 에 있어야 동작. ② `bash deploy/fd-dl-colab.sh`. push 가 어려우면 화면의 「노트북(.ipynb) 받기」 → Colab 파일›노트 업로드로 대체 가능.
+**다음**: ① 실제 종목으로 Colab 1회 실행해 결과표 스크린샷을 화면 해석 가이드에 예시로 첨부 ② 여러 종목 CSV 합산 학습 셀(선택) ③ 결과가 안정적이면 SageMaker PyTorch 배치(sagemaker/train.py 패턴)로 승격 검토.
 ### 6-61. 2026-10-15 계약 문서 v0.7 사본 동기화 (stock-coin-trade 6-23 연동)
 `docs/contracts/kis-autotrade-api.md` 에 2-7 시세 `GET /quote/{symbol}`(iv 챗봇 CheckQuote 용, 읽기 전용) 추가·v0.7 표기. 3사본 md5 일치. lumina 코드 변경 없음(필요 시 `stock_coin_trade_gateway.py` 에 `get_quote` 추가 가능).

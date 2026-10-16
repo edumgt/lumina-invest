@@ -302,3 +302,56 @@ document.getElementById("seas-run-btn")?.addEventListener("click", async () => {
 
 
 export { loadMacroDashboard, loadMacroIndustry };
+
+// ══════════════════════════════════════════════════════════════════
+// ML·딥러닝 — 딥러닝(LSTM·Transformer) Colab 연동
+// 서버는 데이터셋(CSV)·요약·노트북만 내려 주고 학습은 Colab 에서 한다. (app/routes/ml.py /api/ml/dl/*)
+// ══════════════════════════════════════════════════════════════════
+function dlParams() {
+  const symbol = (document.getElementById("mld-symbol")?.value || "005930.KS").trim().toUpperCase();
+  const period = document.getElementById("mld-period")?.value || "5y";
+  return { symbol, period };
+}
+function dlSyncLinks() {
+  const { symbol, period } = dlParams();
+  const a = document.getElementById("mld-csv-link");
+  if (a) a.href = `/api/ml/dl/dataset?symbol=${encodeURIComponent(symbol)}&period=${encodeURIComponent(period)}`;
+}
+document.getElementById("mld-symbol")?.addEventListener("change", dlSyncLinks);
+document.getElementById("mld-symbol")?.addEventListener("input", dlSyncLinks);
+document.getElementById("mld-period")?.addEventListener("change", dlSyncLinks);
+dlSyncLinks();
+
+document.getElementById("mld-preview-btn")?.addEventListener("click", async () => {
+  const { symbol, period } = dlParams();
+  dlSyncLinks();
+  document.getElementById("mld-loading").classList.remove("hidden");
+  document.getElementById("mld-result").classList.add("hidden");
+  try {
+    const d = await api(`/api/ml/dl/dataset/summary?symbol=${encodeURIComponent(symbol)}&period=${encodeURIComponent(period)}`);
+    const card = (label, value, sub = "") => `
+      <div class="px-4 py-3 rounded text-sm" style="background:var(--bg);border:1px solid var(--border);min-width:150px;">
+        <span class="text-xs text-slate-400">${label}</span><br><strong>${value}</strong>${sub ? `<br><span class="text-xs text-slate-500">${sub}</span>` : ""}
+      </div>`;
+    document.getElementById("mld-summary-cards").innerHTML =
+      card("종목 · 기간", `${escHtml(d.symbol)} · ${escHtml(d.period)}`, `${escHtml(d.date_from)} ~ ${escHtml(d.date_to)}`) +
+      card("표본(행)", fmt(d.rows), `60일 윈도우 ${fmt(d.windows)}개`) +
+      card("다수 클래스 기준선", `${(d.majority_baseline * 100).toFixed(1)}%`, "이 값을 넘어야 뭔가 배운 것") +
+      card("피처 수", `${d.features.length}`, "앱 ML 화면과 동일");
+    const seg = [["1", "매수", "#22c55e"], ["0", "관망", "#64748b"], ["-1", "매도", "#ef4444"]];
+    document.getElementById("mld-class-bar").innerHTML = seg.map(([k, name, clr]) => {
+      const r = d.class_ratio[k] || 0;
+      return `<div title="${name} ${d.class_counts[k]}건 (${(r * 100).toFixed(1)}%)" style="width:${(r * 100).toFixed(2)}%;background:${clr};" class="flex items-center justify-center text-[10px] text-white">${r > 0.12 ? `${name} ${(r * 100).toFixed(0)}%` : ""}</div>`;
+    }).join("");
+    const minority = Math.min(...Object.values(d.class_ratio));
+    document.getElementById("mld-note").textContent =
+      (d.rows < 500 ? "표본이 500행 미만입니다. 기간을 늘리면 학습이 안정됩니다. " : "") +
+      (minority < 0.15 ? "클래스 불균형이 큽니다. 노트북은 클래스 가중치를 쓰지만, 레이블 임계값(±2%) 조정도 고려하세요. " : "") +
+      "CSV 를 받은 뒤 'Colab 에서 열기'를 누르세요.";
+    document.getElementById("mld-result").classList.remove("hidden");
+  } catch (e) {
+    setToast("데이터셋 요약 오류: " + e.message, "error");
+  } finally {
+    document.getElementById("mld-loading").classList.add("hidden");
+  }
+});

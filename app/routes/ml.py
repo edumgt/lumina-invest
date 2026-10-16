@@ -393,3 +393,98 @@ async def ml_regression(
     if "error" in result:
         raise HTTPException(422, result["error"])
     return result
+
+
+# ── 딥러닝(LSTM·Transformer) Colab 연동 ──────────────────────────────
+# 앱의 피처 파이프라인(quant_pipeline.feature_engineer)으로 만든 피처+레이블 데이터셋을 CSV 로 내려 주고,
+# 저장소의 notebooks/dl_lstm_transformer.ipynb 를 Colab 에서 열어 학습하게 한다. 서버에서는 학습하지 않는다(torch 미설치).
+
+import re as _re
+from pathlib import Path as _Path
+from fastapi.responses import FileResponse, Response
+
+DL_NOTEBOOK_PATH = _Path(__file__).resolve().parents[2] / "notebooks" / "dl_lstm_transformer.ipynb"
+DL_NOTEBOOK_GITHUB = "https://github.com/edumgt/lumina-invest/blob/main/notebooks/dl_lstm_transformer.ipynb"
+DL_NOTEBOOK_COLAB = "https://colab.research.google.com/github/edumgt/lumina-invest/blob/main/notebooks/dl_lstm_transformer.ipynb"
+DL_LABEL_RULE = {"horizon_days": 5, "buy_threshold": 0.02, "sell_threshold": -0.02,
+                 "classes": {"1": "매수(5일 후 +2% 초과)", "0": "관망", "-1": "매도(5일 후 -2% 미만)"}}
+_DL_PERIODS = ("1y", "2y", "3y", "5y", "10y", "max")
+
+
+def _dl_symbol(symbol: str) -> str:
+    s = symbol.strip().upper()
+    if not _re.fullmatch(r"[A-Z0-9.\-^=]{1,20}", s):
+        raise HTTPException(422, f"종목 코드 형식 오류: {symbol}")
+    return s
+
+
+def build_dl_dataset(candles: list[dict]):
+    """캔들 → (날짜, OHLCV, 피처 12개, target) DataFrame. 노트북이 그대로 읽는 형태."""
+    from app.services.quant_pipeline import preprocess, feature_engineer, FEATURE_COLS
+    df = feature_engineer(preprocess(candles))
+    cols = ["open", "high", "low", "close", "volume", *FEATURE_COLS, "target"]
+    out = df[cols].copy()
+    out.insert(0, "date", out.index.tz_convert(None).strftime("%Y-%m-%d"))
+    out["target"] = out["target"].astype(int)
+    return out.reset_index(drop=True)
+
+
+async def _dl_candles(symbol: str, period: str) -> list[dict]:
+    if period not in _DL_PERIODS:
+        raise HTTPException(422, f"period 는 {', '.join(_DL_PERIODS)} 중 하나")
+    data = await get_candles(symbol, period=period, interval="1d")
+    candles = data.get("candles", [])
+    if len(candles) < 120:
+        raise HTTPException(404, f"데이터 부족: {symbol} ({len(candles)}봉, 최소 120봉)")
+    return candles
+
+
+@router.get("/dl/dataset/summary")
+async def ml_dl_dataset_summary(
+    symbol: str = Query("005930.KS", description="종목 코드"),
+    period: str = Query("2y", description="데이터 기간"),
+    _user=Depends(get_current_user),
+):
+    """Colab 학습용 데이터셋 요약: 표본 수·기간·클래스 분포·다수 클래스 기준선. 내려받기 전에 화면에서 확인용."""
+    from app.services.quant_pipeline import FEATURE_COLS
+    sym = _dl_symbol(symbol)
+    df = build_dl_dataset(await _dl_candles(sym, period))
+    counts = df["target"].value_counts()
+    n = int(len(df))
+    dist = {str(k): int(counts.get(k, 0)) for k in (1, 0, -1)}
+    majority = max(dist.values()) / n if n else 0.0
+    seq_len = 60
+    return {
+        "symbol": sym, "period": period, "rows": n,
+        "date_from": df["date"].iloc[0], "date_to": df["date"].iloc[-1],
+        "class_counts": dist,
+        "class_ratio": {k: round(v / n, 4) for k, v in dist.items()} if n else {},
+        "majority_baseline": round(majority, 4),
+        "seq_len": seq_len, "windows": max(0, n - seq_len + 1),
+        "features": list(FEATURE_COLS), "label_rule": DL_LABEL_RULE,
+        "colab_url": DL_NOTEBOOK_COLAB, "github_url": DL_NOTEBOOK_GITHUB,
+    }
+
+
+@router.get("/dl/dataset")
+async def ml_dl_dataset(
+    symbol: str = Query("005930.KS", description="종목 코드"),
+    period: str = Query("2y", description="데이터 기간"),
+    _user=Depends(get_current_user),
+):
+    """Colab 학습용 데이터셋 CSV 내려받기 (date, OHLCV, 피처 12개, target)."""
+    sym = _dl_symbol(symbol)
+    df = build_dl_dataset(await _dl_candles(sym, period))
+    csv = df.to_csv(index=False, float_format="%.6g")
+    fname = f"dl_dataset_{sym.replace('.', '_')}_{period}.csv"
+    return Response(content=csv, media_type="text/csv; charset=utf-8",
+                    headers={"Content-Disposition": f'attachment; filename="{fname}"'})
+
+
+@router.get("/dl/notebook")
+async def ml_dl_notebook(_user=Depends(get_current_user)):
+    """Colab 노트북(.ipynb) 내려받기. GitHub 가 막힌 환경에서 '파일 업로드' 로 열 때 사용."""
+    if not DL_NOTEBOOK_PATH.is_file():
+        raise HTTPException(404, "노트북 파일이 서버에 없습니다 (notebooks/dl_lstm_transformer.ipynb)")
+    return FileResponse(str(DL_NOTEBOOK_PATH), media_type="application/x-ipynb+json",
+                        filename=DL_NOTEBOOK_PATH.name)

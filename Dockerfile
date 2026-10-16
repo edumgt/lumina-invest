@@ -24,6 +24,7 @@ COPY app/ ./app/
 RUN python -c 'import json; from pathlib import Path; [json.loads((Path("app/data") / name).read_text()) for name in ("korea-master-layouts.json", "korea-universe.json", "legacy-trading-symbols.json", "legacy-sector-themes.json")]'
 COPY public/ ./public/
 COPY prompts/ ./prompts/
+COPY notebooks/ ./notebooks/
 COPY alembic/ ./alembic/
 COPY alembic.ini ./alembic.ini
 

@@ -2446,11 +2446,59 @@
     <!-- 딥러닝 (LSTM/Transformer 개념) -->
     <div class="view" data-view="ml-deeplearning">
       <div class="card mb-4">
-        <h2 class="text-lg font-semibold mb-3"><i class="fa-solid fa-brain" style="color:var(--accent);"></i> 딥러닝 시계열 예측</h2>
-        <p class="text-sm text-slate-400 mb-3">RNN · CNN · LSTM · Transformer 기반 주가 예측 모델 설계 원리</p>
+        <h2 class="text-lg font-semibold mb-2"><i class="fa-solid fa-brain" style="color:var(--accent);"></i> 딥러닝 시계열 예측 — Colab 실습</h2>
+        <p class="text-sm text-slate-400 mb-4">이 앱의 ML 화면(모델 비교·회귀·튜닝)이 쓰는 <strong>같은 피처 12개·같은 레이블</strong>로 데이터셋을 내려받아 Google Colab 에서 LSTM·Transformer 를 학습합니다. 서버에서는 학습하지 않으므로 무료 Colab GPU/CPU 로 몇 분이면 끝납니다.</p>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4 text-xs text-slate-300">
+          <div class="p-3 rounded" style="background:var(--bg);border:1px solid var(--border);"><strong style="color:var(--accent);">① 데이터셋 받기</strong><br>아래에서 종목·기간을 고르고 「미리보기」로 표본 수와 기준선을 확인한 뒤 「CSV 내려받기」.</div>
+          <div class="p-3 rounded" style="background:var(--bg);border:1px solid var(--border);"><strong style="color:var(--accent);">② Colab 에서 열기</strong><br>「Colab 에서 열기」 → 런타임 › 모두 실행. 업로드 창이 뜨면 받은 CSV 를 올립니다. (GitHub 접근이 막히면 .ipynb 를 받아 Colab 파일 › 노트 업로드)</div>
+          <div class="p-3 rounded" style="background:var(--bg);border:1px solid var(--border);"><strong style="color:var(--accent);">③ 결과 해석</strong><br>마지막 결과표에서 검증 정확도가 <strong>다수 클래스 기준선</strong>을 넘는지 봅니다. 못 넘으면 아래 해석 가이드를 읽으세요.</div>
+        </div>
+        <div class="flex flex-wrap gap-3 mb-3 items-center">
+          <input id="mld-symbol" list="mld-symbol-list" class="input-field" style="width:180px;" value="005930.KS" placeholder="종목 코드 (005930.KS)" aria-label="종목 코드">
+          <datalist id="mld-symbol-list">
+            <option value="005930.KS">삼성전자</option><option value="000660.KS">SK하이닉스</option>
+            <option value="035420.KS">NAVER</option><option value="005380.KS">현대자동차</option>
+            <option value="051910.KS">LG화학</option><option value="035720.KS">카카오</option>
+          </datalist>
+          <select id="mld-period" class="input-field" style="width:120px;" aria-label="데이터 기간">
+            <option value="2y">2년</option><option value="3y">3년</option><option value="5y" selected>5년</option><option value="10y">10년</option>
+          </select>
+          <button id="mld-preview-btn" class="btn-secondary"><i class="fa-solid fa-magnifying-glass-chart" aria-hidden="true"></i> 미리보기</button>
+          <a id="mld-csv-link" class="btn-primary" href="/api/ml/dl/dataset?symbol=005930.KS&period=5y" download><i class="fa-solid fa-file-csv" aria-hidden="true"></i> CSV 내려받기</a>
+          <a id="mld-colab-link" class="btn-primary" href="https://colab.research.google.com/github/edumgt/lumina-invest/blob/main/notebooks/dl_lstm_transformer.ipynb" target="_blank" rel="noopener"><i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i> Colab 에서 열기</a>
+          <a id="mld-nb-link" class="btn-secondary text-xs" href="/api/ml/dl/notebook" download><i class="fa-solid fa-download" aria-hidden="true"></i> 노트북(.ipynb) 받기</a>
+        </div>
+        <div id="mld-loading" class="hidden text-sm text-slate-400 animate-pulse">데이터셋 계산 중...</div>
+        <div id="mld-result" class="hidden">
+          <div class="flex gap-3 mb-3 flex-wrap" id="mld-summary-cards"></div>
+          <div class="text-xs text-slate-400 mb-1">클래스 분포 (5일 후 수익률 기준)</div>
+          <div id="mld-class-bar" class="flex w-full h-5 rounded overflow-hidden mb-2" style="background:var(--bg);"></div>
+          <p id="mld-note" class="text-xs text-slate-400"></p>
+        </div>
+      </div>
+
+      <div class="card mb-4">
+        <h3 class="font-semibold mb-2"><i class="fa-solid fa-table-list" aria-hidden="true"></i> 데이터셋 구성 — CSV 열 설명</h3>
+        <p class="text-xs text-slate-400 mb-3">앱의 <code>quant_pipeline.feature_engineer</code> 가 만드는 그대로입니다. 노트북에도 같은 수식이 들어 있어 CSV 없이 Yahoo Finance 로 받아도 결과를 비교할 수 있습니다.</p>
+        <div class="overflow-x-auto">
+          <table class="w-full text-xs">
+            <thead><tr class="border-b border-slate-700 text-slate-400"><th class="py-2 text-left">열</th><th class="py-2 text-left">뜻</th><th class="py-2 text-left">열</th><th class="py-2 text-left">뜻</th></tr></thead>
+            <tbody class="text-slate-300">
+              <tr class="border-b border-slate-800"><td class="py-1.5"><code>ret_1 · ret_5 · ret_20</code></td><td class="py-1.5">1·5·20일 수익률</td><td class="py-1.5"><code>bb_width · bb_pos</code></td><td class="py-1.5">볼린저밴드(20, 2σ) 폭 비율·밴드 내 위치(0~1)</td></tr>
+              <tr class="border-b border-slate-800"><td class="py-1.5"><code>ma5_ratio · ma20_ratio</code></td><td class="py-1.5">종가 ÷ 5·20일 이동평균</td><td class="py-1.5"><code>vol_ratio</code></td><td class="py-1.5">거래량 ÷ 20일 평균 거래량</td></tr>
+              <tr class="border-b border-slate-800"><td class="py-1.5"><code>rsi</code></td><td class="py-1.5">RSI(14, 단순평균)</td><td class="py-1.5"><code>atr</code></td><td class="py-1.5">ATR(14) 평균 진폭</td></tr>
+              <tr class="border-b border-slate-800"><td class="py-1.5"><code>macd · macd_hist</code></td><td class="py-1.5">MACD(12/26) 선·히스토그램(시그널 9)</td><td class="py-1.5"><code>date, open~volume</code></td><td class="py-1.5">기준일·원본 OHLCV (피처 아님, 대조용)</td></tr>
+              <tr><td class="py-1.5"><code>target</code></td><td class="py-1.5" colspan="3"><strong>레이블</strong>: 5거래일 후 수익률 <span class="text-green-400">+2% 초과 → 1(매수)</span>, <span class="text-red-400">-2% 미만 → -1(매도)</span>, 그 사이 → 0(관망). 노트북 내부에서는 0·1·2 로 바꿔 씁니다.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card mb-4">
+        <h3 class="font-semibold mb-3">모델 구조 (노트북 ①·② 셀과 동일)</h3>
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div class="p-4 rounded" style="background:var(--bg);">
-            <h3 class="font-semibold mb-2" style="color:var(--accent);">LSTM 아키텍처</h3>
+            <h4 class="font-semibold mb-2" style="color:var(--accent);">LSTM 아키텍처</h4>
             <pre class="text-xs text-slate-300 overflow-x-auto">Input(seq=60, feat=12)
   ↓
 LSTM(128, return_sequences=True)
@@ -2459,61 +2507,98 @@ LSTM(64)
   ↓  Dropout(0.2)
 Dense(32, relu)
   ↓
-Dense(3, softmax)   # 매수/관망/매도
+Dense(3, softmax)   # 매도/관망/매수
             </pre>
           </div>
           <div class="p-4 rounded" style="background:var(--bg);">
-            <h3 class="font-semibold mb-2" style="color:var(--accent);">Transformer 아키텍처</h3>
+            <h4 class="font-semibold mb-2" style="color:var(--accent);">Transformer 아키텍처</h4>
             <pre class="text-xs text-slate-300 overflow-x-auto">Input(seq=60, feat=12)
-  ↓ Positional Encoding
-MultiHeadAttention(heads=4, d=64)
-  ↓ Add&Norm
-FeedForward(d=128)
-  ↓ Add&Norm
+  ↓ Linear(12→64) + Positional Encoding
+TransformerEncoder ×2
+  (MultiHeadAttention heads=4, d=64
+   FeedForward d=128, Add&Norm)
+  ↓
 GlobalAvgPool1D
   ↓
-Dense(3, softmax)   # 매수/관망/매도
+Dense(3, softmax)   # 매도/관망/매수
             </pre>
           </div>
         </div>
       </div>
+
       <div class="card mb-4">
         <h3 class="font-semibold mb-3">모델별 시계열 적합성 비교</h3>
         <div class="overflow-x-auto">
           <table class="w-full text-xs">
             <thead><tr class="border-b border-slate-700 text-slate-400">
-              <th class="py-2 text-left">모델</th><th class="py-2">장기 의존성</th><th class="py-2">속도</th><th class="py-2">해석 가능성</th><th class="py-2">데이터 요구량</th>
+              <th class="py-2 text-left">모델</th><th class="py-2">장기 의존성</th><th class="py-2">속도</th><th class="py-2">해석 가능성</th><th class="py-2">데이터 요구량</th><th class="py-2 text-left">이 앱에서</th>
             </tr></thead>
             <tbody class="text-slate-300">
-              <tr class="border-b border-slate-800"><td class="py-2">RNN</td><td class="py-2 text-center">낮음</td><td class="py-2 text-center text-green-400">빠름</td><td class="py-2 text-center">중간</td><td class="py-2 text-center">소량</td></tr>
-              <tr class="border-b border-slate-800"><td class="py-2">CNN</td><td class="py-2 text-center">중간</td><td class="py-2 text-center text-green-400">빠름</td><td class="py-2 text-center">낮음</td><td class="py-2 text-center">중간</td></tr>
-              <tr class="border-b border-slate-800"><td class="py-2">LSTM</td><td class="py-2 text-center text-green-400">높음</td><td class="py-2 text-center">중간</td><td class="py-2 text-center">낮음</td><td class="py-2 text-center">중간</td></tr>
-              <tr><td class="py-2">Transformer</td><td class="py-2 text-center text-green-400">매우 높음</td><td class="py-2 text-center text-yellow-400">느림</td><td class="py-2 text-center">중간</td><td class="py-2 text-center">대량</td></tr>
+              <tr class="border-b border-slate-800"><td class="py-2">로지스틱·LightGBM 등 (비시계열)</td><td class="py-2 text-center">없음(마지막 날만)</td><td class="py-2 text-center text-green-400">매우 빠름</td><td class="py-2 text-center text-green-400">높음</td><td class="py-2 text-center">소량</td><td class="py-2"><a href="#ml-compare" style="color:var(--accent);">모델 비교(7종)</a> 서버 실행 · 노트북의 기준선</td></tr>
+              <tr class="border-b border-slate-800"><td class="py-2">RNN</td><td class="py-2 text-center">낮음</td><td class="py-2 text-center text-green-400">빠름</td><td class="py-2 text-center">중간</td><td class="py-2 text-center">소량</td><td class="py-2 text-slate-500">—</td></tr>
+              <tr class="border-b border-slate-800"><td class="py-2">CNN</td><td class="py-2 text-center">중간</td><td class="py-2 text-center text-green-400">빠름</td><td class="py-2 text-center">낮음</td><td class="py-2 text-center">중간</td><td class="py-2 text-slate-500">—</td></tr>
+              <tr class="border-b border-slate-800"><td class="py-2">LSTM</td><td class="py-2 text-center text-green-400">높음</td><td class="py-2 text-center">중간</td><td class="py-2 text-center">낮음</td><td class="py-2 text-center">중간</td><td class="py-2">Colab 노트북 ①</td></tr>
+              <tr><td class="py-2">Transformer</td><td class="py-2 text-center text-green-400">매우 높음</td><td class="py-2 text-center text-yellow-400">느림</td><td class="py-2 text-center">중간</td><td class="py-2 text-center">대량</td><td class="py-2">Colab 노트북 ②</td></tr>
             </tbody>
           </table>
         </div>
       </div>
-      <div class="card">
-        <h3 class="font-semibold mb-2">실습 환경 (PyTorch/Keras)</h3>
+
+      <div class="card mb-4">
+        <h3 class="font-semibold mb-2">노트북 핵심 코드 (전체는 Colab 에서)</h3>
+        <p class="text-xs text-slate-400 mb-2">시계열에서 가장 많이 틀리는 세 군데가 이 안에 있습니다: 시간순 분할, train 에만 fit 한 스케일러, 경계 purge.</p>
         <pre class="text-xs text-slate-300 overflow-x-auto bg-black/30 p-3 rounded">
-# PyTorch LSTM 예시 (Google Colab / Jupyter)
-import torch, torch.nn as nn
+# 1) 윈도우 (seq=60) — 셔플 금지, 뒤쪽 20% 가 검증
+X = df[FEATURE_COLS].values;  y = df["target"].values + 1     # -1,0,1 → 0,1,2
+split = len(df) - int(len(df) * 0.2)
+scaler = StandardScaler().fit(X[:split])                       # 검증 구간 통계를 보면 안 됨
+X = scaler.transform(X)
+win = lambda i: X[i-59:i+1]                                     # i 일을 끝으로 하는 60일
+X_tr = np.stack([win(i) for i in range(59, split-5)]); y_tr = y[59:split-5]   # 마지막 5일 purge
+X_va = np.stack([win(i) for i in range(split, len(df))]); y_va = y[split:]
 
+# 2) LSTM
 class StockLSTM(nn.Module):
-    def __init__(self, input_size=12, hidden=128, layers=2, n_class=3):
+    def __init__(self, n_feat=12, n_class=3):
         super().__init__()
-        self.lstm = nn.LSTM(input_size, hidden, layers,
-                            batch_first=True, dropout=0.2)
-        self.fc = nn.Linear(hidden, n_class)
+        self.lstm1 = nn.LSTM(n_feat, 128, batch_first=True)
+        self.lstm2 = nn.LSTM(128, 64, batch_first=True)
+        self.head  = nn.Sequential(nn.Linear(64, 32), nn.ReLU(), nn.Linear(32, n_class))
+    def forward(self, x):                      # x: (batch, seq, feat)
+        out, _ = self.lstm1(x); out, _ = self.lstm2(out)
+        return self.head(out[:, -1])           # 마지막 타임스텝
 
-    def forward(self, x):          # x: (batch, seq, features)
-        out, _ = self.lstm(x)
-        return self.fc(out[:, -1]) # 마지막 타임스텝
+# 3) 학습 — 클래스 가중치 + 조기 종료, 평가는 혼동행렬·classification_report
+model = StockLSTM(); opt = torch.optim.Adam(model.parameters(), lr=1e-3)
+crit = nn.CrossEntropyLoss(weight=class_weight)
+for epoch in range(30):
+    for xb, yb in train_loader:
+        opt.zero_grad(); crit(model(xb), yb).backward(); opt.step()
+    ...  # val loss 가 6 epoch 연속 개선되지 않으면 중단, 최적 가중치 복원
 
-model = StockLSTM()
-optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
-criterion = nn.CrossEntropyLoss()
+# 4) 사용 — 가장 최근 60일 → 다음 5거래일 확률
+p = torch.softmax(model(torch.tensor(X[-60:][None])), 1)   # [매도, 관망, 매수]
         </pre>
+      </div>
+
+      <div class="card">
+        <h3 class="font-semibold mb-2"><i class="fa-solid fa-book" aria-hidden="true"></i> 결과 해석 가이드</h3>
+        <div class="overflow-x-auto mb-3">
+          <table class="w-full text-xs">
+            <thead><tr class="border-b border-slate-700 text-slate-400"><th class="py-2 text-left">관찰</th><th class="py-2 text-left">뜻</th><th class="py-2 text-left">다음 행동</th></tr></thead>
+            <tbody class="text-slate-300">
+              <tr class="border-b border-slate-800"><td class="py-2">두 모델 모두 다수 클래스 기준선 ± 몇 %p</td><td class="py-2">일봉 수백 개로는 패턴을 못 배움. <strong>흔하고 정상</strong></td><td class="py-2">기간 5y 이상, 여러 종목 합쳐 학습, 레이블 임계값 조정</td></tr>
+              <tr class="border-b border-slate-800"><td class="py-2">train 손실↓ 인데 val 손실↑</td><td class="py-2">과적합</td><td class="py-2">Dropout↑, hidden↓, 조기 종료 강화</td></tr>
+              <tr class="border-b border-slate-800"><td class="py-2">혼동행렬이 한 열에 몰림</td><td class="py-2">한 클래스만 찍음</td><td class="py-2">관망 제거 후 2-class, 임계값 재조정</td></tr>
+              <tr class="border-b border-slate-800"><td class="py-2">로지스틱 회귀 ≥ 딥러닝</td><td class="py-2">마지막 날 피처에 정보가 거의 다 있음</td><td class="py-2"><a href="#ml-compare" style="color:var(--accent);">모델 비교</a> 의 LightGBM 과도 비교</td></tr>
+              <tr><td class="py-2">최근 윈도우 예측 확률이 40% 안팎으로 고름</td><td class="py-2">확신 없음</td><td class="py-2">신뢰도 임계값 아래는 관망. 매매 신호로 쓰지 말 것</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs text-slate-300">
+          <div class="p-3 rounded" style="background:var(--bg);"><strong>시계열 체크리스트</strong><br>✔ 셔플 금지·시간순 분할 &nbsp;✔ 스케일러 train 에만 fit &nbsp;✔ 경계 5일 purge &nbsp;✔ 기준선 먼저 &nbsp;✔ 정확도 대신 매수 precision</div>
+          <div class="p-3 rounded" style="background:var(--bg);"><strong>다음 실험</strong><br>SEQ_LEN 20/120 · 여러 종목 합산 학습 · 레이블을 수익률 회귀로 바꿔 <a href="#ml-regression" style="color:var(--accent);">회귀 분석</a> RMSE 와 비교 · 안정적으로 기준선을 넘으면 <a href="#indicator-api" style="color:var(--accent);">API 연동</a> 구조로 신호 내보내기</div>
+        </div>
       </div>
     </div>
 
