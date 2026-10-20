@@ -631,7 +631,7 @@ async def confirm_live_fills(limit: int = 100) -> dict:
     # st 는 KIS 호출을 전역 1.05초 간격으로 직렬화한다. 이 루프가 time_limit(100초) 에 걸려 SIGKILL 되면
     # 루프 끝의 db.commit() 이 실행되지 않아 **그 회차의 갱신이 전부 버려진다** → 열린 주문이 영원히 안 닫히고
     # 다음 회차의 조회량이 더 늘어난다(2026-10-12 자동화 정지 사고). 소프트 데드라인에서 멈추고 커밋해
-    # 부분 진행이라도 남긴다. 남은 행은 created_at 오름차순이므로 다음 회차가 이어서 처리한다.
+    # 부분 진행이라도 남긴다. 마지막 확인 시각(updated_at) 순으로 순환해 미확정 과거 주문이 뒤쪽 주문을 굶기지 않는다.
     deadline = asyncio.get_running_loop().time() + max(1.0, float(getattr(app_settings, "CONFIRM_FILLS_BUDGET_SEC", 75.0) or 75.0))
     # 당일 주문 목록은 회차당 1회만 받는다. 예전에는 주문번호 없는 행마다 새로 조회해(N+1) 주문 7건에
     # 전체목록 호출 35회가 나갔다.
@@ -645,7 +645,7 @@ async def confirm_live_fills(limit: int = 100) -> dict:
 
     async with session_factory() as db:
         result = await db.execute(
-            select(LiveOrder).where(LiveOrder.status.in_(LIVE_ORDER_OPEN_STATUSES)).order_by(LiveOrder.created_at).limit(limit)
+            select(LiveOrder).where(LiveOrder.status.in_(LIVE_ORDER_OPEN_STATUSES)).order_by(LiveOrder.updated_at, LiveOrder.created_at, LiveOrder.id).limit(limit)
         )
         rows = list(result.scalars().all())
         for row in rows:
@@ -654,6 +654,8 @@ async def confirm_live_fills(limit: int = 100) -> dict:
                 logger.warning("confirm_live_fills 예산 초과 — %d건을 다음 회차로 넘긴다", summary["deferred"])
                 break
             summary["checked"] += 1
+            # 상태가 같거나 조회가 실패해도 확인 시각을 남겨 다음 회차는 나머지 주문부터 조회한다.
+            row.updated_at = datetime.now(timezone.utc)
             try:
                 if row.order_no:
                     latest = await gateway.get_order_status(row.order_no, env=row.environment)
@@ -831,15 +833,17 @@ async def _run_quant_cycle(user_id: str = "quant_system") -> None:
         await refresh_master()
         held = (await db.execute(select(Portfolio).where(Portfolio.user_id == uid, Portfolio.book == PORTFOLIO_BOOK_QUANT, Portfolio.quantity > 0))).scalars().all()
         held_symbols = {p.symbol for p in held}
-        candidates = await candidate_stocks()
-        selected = set(selected_symbols) if symbol_source == "manual" else {s['symbol'] for s in candidates}
+        approved = None
         # Expanding analysis/paper scope does not authorize new real-order symbols.
         if mode == "live" and not app_settings.QUANT_KOREA_ALLOW_LIVE_EXPANSION:
             from pathlib import Path
             import json
             approved = set(json.loads((Path(__file__).resolve().parents[1] / 'data' / 'legacy-trading-symbols.json').read_text()))
-            selected &= approved
             cycle_log['live_expansion_blocked'] = True
+        candidates = await candidate_stocks(allowed_symbols=approved)
+        selected = set(selected_symbols) if symbol_source == "manual" else {s['symbol'] for s in candidates}
+        if approved is not None:
+            selected &= approved
         cycle_stocks = [s for s in QUANT_STOCKS if s['symbol'] in selected | held_symbols]
         known = {s['symbol'] for s in cycle_stocks}
         cycle_stocks += [{'symbol':p.symbol,'name':getattr(p,'name',None) or p.symbol,'sector':'기존 보유','buy_eligible':False} for p in held if p.symbol not in known]

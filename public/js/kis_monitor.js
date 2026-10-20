@@ -57,7 +57,10 @@ function renderBadges(d) {
     badge(`환경 ${d.environment === "paper" ? "모의(Testbed)" : "실전"}`, d.environment === "paper" ? "ok" : "bad"),
     badge(b.running ? "배치 실행 중" : (b.enabled ? "배치 대기" : "배치 OFF"), b.running ? "ok" : "bad"),
     b.kill_switch ? badge(`비상 정지: ${b.kill_reason || ""}`, "bad") : "",
-    badge(ag.enabled ? `공격 모드 ${ag.interval} · 익절 +${ag.take_profit_pct}% / 손절 -${ag.stop_loss_pct}% · 시장가` : "기본 모드(일봉)", ag.enabled ? "ok" : ""),
+    badge(`실제 적용 프로필 ${d.effective_settings?.profile_id || "기본"} · ${d.effective_settings?.signal_mode || "미확인"}`),
+    badge(`강제 로테이션 ${ag.force_buy ? "ON" : "OFF"} · 사이클당 매수 ${ag.max_buys_per_cycle} / 매도 ${ag.max_sells_per_cycle}`),
+    badge(d.effective_settings?.allow_live_expansion ? "신규 주문 종목 확대 허용" : "주문 허용 종목 안에서 후보 선정"),
+    badge(ag.enabled ? `공격 모드 ${ag.interval} · 익절 +${ag.take_profit_pct}% / 손절 -${ag.stop_loss_pct}% · ${ag.order_type === "MARKET" ? "시장가" : "지정가"}` : "공격 모드 OFF", ag.enabled ? "ok" : ""),
     badge(hb == null ? "heartbeat 없음" : hb <= 180 ? `beat 정상 (${Math.round(hb)}s 전)` : `beat 지연 ${Math.round(hb)}s`, hb != null && hb <= 180 ? "ok" : "bad"),
     badge(`시세 ${d.market_data_source === "kis" ? "KIS 실시간" : "Yahoo"}`),
     badge(`유니버스 ${d.universe?.count ?? "-"}종목 · ${(d.universe?.sectors || []).join("/")}`),
@@ -246,9 +249,9 @@ function renderCycles(d) {
   const c = d.cycles || {}, note = document.getElementById("kism-cycles-note");
   const rows = (c.recent || []).map(cy => ({ ...cy,
     symbol_count: (cy.symbols || []).length, buy_count: (cy.buy || []).length, sell_count: Object.keys(cy.sell || {}).length,
-    halt_status: cy.halted ? `비상 정지: ${cy.halt_reason || ""}` : "정상",
+    halt_status: cy.halted ? `비상 정지: ${cy.halt_reason || ""}` : cy.live_expansion_blocked ? "실행 중 · 기존 허용 종목만 분석" : (cy.trades || []).length ? "거래 실행" : "실행 중 · 거래 조건 대기",
     trade_details: (cy.trades || []).map(t => `${t.action === "buy" ? "매수" : "매도"} ${t.name || t.symbol} ${fmt(t.quantity)}주 @${fmt(t.price)} · 실주문 ${t.live || "없음"}${t.live_reason ? ` (${t.live_reason})` : ""}`).join(" · ") || "거래 없음",
-    note_text: [...Object.entries(cy.sell || {}).map(([sym, why]) => `매도계획 ${sym}: ${why}`), ...(cy.notes || [])].join(" · "),
+    note_text: [cy.live_expansion_blocked ? `주문 허용 목록에서 선정한 후보 ${cy.candidate_count ?? "-"}종목` : "", ...(cy.signals || []).map(s => `${s.name || s.symbol}: ${s.action || "판단 대기"} · ${(s.reasons || []).join(" / ")}`), ...Object.entries(cy.sell || {}).map(([sym, why]) => `매도계획 ${sym}: ${why}`), ...(cy.notes || [])].join(" · "),
   }));
   if (note) note.textContent = `· 누적 ${c.count ?? 0} · 최근 ${rows.length}건 표시 · 페이지당 10건 · 마지막 ${ts(c.last_time)} (KST)${d.last_beat_run ? ` · beat ${ts(d.last_beat_run.time)} (KST) (실행 ${d.last_beat_run.ran}, 실패 ${d.last_beat_run.failed})` : ""}`;
   updateGrid("kism-cycles", [

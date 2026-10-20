@@ -219,3 +219,27 @@ def test_order_evidence_marks_inferred_and_missing_execution():
     assert km._order_dict(r)['execution_evidence'] == 'KIS 체결내역 미확인'
     r.raw = 'invalid'
     assert km._order_dict(r)['execution_evidence'] == '앱 저장 기록'
+
+
+def test_monitor_applies_saved_profile_before_reporting(client, monkeypatch):
+    values = {'QUANT_AGGRESSIVE_FORCE_BUY': False, 'QUANT_AGGRESSIVE_CANDLE_INTERVAL': '15m',
+              'QUANT_AGGRESSIVE_MAX_BUYS_PER_CYCLE': 1, 'QUANT_SIGNAL_MODE': 'aggressive'}
+    for key in values:
+        monkeypatch.setattr(settings, key, getattr(settings, key))
+    monkeypatch.setattr(settings, 'QUANT_AGGRESSIVE_FORCE_BUY', True)
+    monkeypatch.setattr(settings, 'QUANT_AGGRESSIVE_CANDLE_INTERVAL', '5m')
+    with patch.object(km.strategy_settings, 'load_doc', AsyncMock(return_value={'values': values, 'profiles': [{'id': 'p9'}]})):
+        d = client.get('/api/quant/kis/monitor').json()
+    assert d['aggressive']['force_buy'] is False
+    assert d['aggressive']['interval'] == '15m'
+    assert d['aggressive']['max_buys_per_cycle'] == 1
+    assert d['effective_settings']['profile_id'] == 'p9'
+    assert d['effective_settings']['signal_mode'] == 'aggressive'
+
+
+def test_monitor_uses_effective_mode_instead_of_raw_flag(client, monkeypatch):
+    monkeypatch.setattr(settings, 'QUANT_SIGNAL_MODE', 'custom')
+    with patch.object(km.strategy_settings, 'load_doc', AsyncMock(return_value={'values': {'QUANT_SIGNAL_MODE': 'custom'}, 'profiles': []})):
+        d = client.get('/api/quant/kis/monitor').json()
+    assert d['aggressive']['enabled'] is False
+    assert d['effective_settings']['signal_mode'] == 'custom'

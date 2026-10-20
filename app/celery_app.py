@@ -82,5 +82,9 @@ celery_app.conf.update(
     },
 )
 
+# 체결 조회 중단 시 Beat 재기동 후에도 예약 작업을 다시 등록하지 않는다.
+if not settings.CONFIRM_FILLS_ENABLED:
+    celery_app.conf.beat_schedule.pop("quant-confirm-fills-2min", None)
+
 # tasks 패키지 자동 탐색
 celery_app.autodiscover_tasks(["app.tasks"])

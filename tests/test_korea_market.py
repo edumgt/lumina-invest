@@ -98,3 +98,17 @@ def test_list_search_and_pagination_reach_beyond_legacy_universe(monkeypatch):
     found=client.get('/api/stocks/quant/list?q=한국전력').json()
     assert any(s['symbol']=='015760.KS' for s in found['stocks'])
     assert all(s['market']=='KOSDAQ' for s in client.get('/api/stocks/quant/list?market=KOSDAQ&limit=30').json()['stocks'])
+
+
+def test_allowed_candidates_are_filtered_before_pool_limit(monkeypatch):
+    stocks = [{'symbol': f'{i:06}.KS', 'buy_eligible': True} for i in range(5)]
+    monkeypatch.setattr(master, 'STOCKS', stocks)
+    monkeypatch.setattr(master, 'master_info', lambda: {'stale': False})
+    base = {'status': 'ready', 'buy_eligible': True, 'as_of': date.today().isoformat(), 'avg_turnover': 1e10}
+    entries = {s['symbol']: {**base, 'symbol': s['symbol'], 'score': 10-i} for i, s in enumerate(stocks)}
+    monkeypatch.setattr(scan, 'get_scan', AsyncMock(return_value={'entries': entries}))
+    permitted = {'000003.KS', '000004.KS'}
+    assert [s['symbol'] for s in asyncio.run(scan.candidate_stocks(2, allowed_symbols=permitted))] == ['000003.KS', '000004.KS']
+    assert asyncio.run(scan.candidate_stocks(2, allowed_symbols=set())) == []
+    entries['000003.KS']['status'] = 'stale'
+    assert [s['symbol'] for s in asyncio.run(scan.candidate_stocks(2, allowed_symbols=permitted))] == ['000004.KS']

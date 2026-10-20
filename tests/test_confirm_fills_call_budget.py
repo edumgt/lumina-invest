@@ -115,3 +115,34 @@ def test_budget_exceeded_commits_partial_progress():
     assert summary.get("deferred", 0) > 0, "남은 행이 deferred 로 보고되지 않았다"
     assert summary["checked"] + summary["deferred"] == 20
     assert db.commits == 1, "중단 후에도 커밋이 일어나야 부분 진행이 남는다"
+
+
+def test_unchanged_orders_rotate_after_budget_exhaustion():
+    """미확정 상태가 유지돼도 다음 회차는 아직 확인하지 못한 주문부터 시작한다."""
+    rows = [_open_row(i) for i in range(4)]
+    for row in rows:
+        row.updated_at = row.created_at
+
+    class RotatingDb(FakeDb):
+        async def execute(self, stmt, **kwargs):
+            ordering = str(stmt).split('ORDER BY')[1]
+            assert ordering.index('live_orders.updated_at') < ordering.index('live_orders.created_at')
+            return FakeResult(sorted(self.rows, key=lambda r: (r.updated_at, r.created_at, r.client_order_id)))
+
+    db = RotatingDb(rows)
+    seen = []
+    async def status(order_no, env=None):
+        seen.append(order_no)
+        await asyncio.sleep(0.55)
+        return {"status": "ACCEPTED", "filledQuantity": 0, "avgFilledPrice": 0}
+
+    with patch.object(settings, "CONFIRM_FILLS_BUDGET_SEC", 1.0), \
+         patch.object(auto_trade.gateway, "get_order_status", side_effect=status), \
+         patch.object(auto_trade.gateway, "is_configured", return_value=True), \
+         patch.object(auto_trade, "get_session_factory", return_value=_factory(db)):
+        first = asyncio.run(auto_trade.confirm_live_fills())
+        second = asyncio.run(auto_trade.confirm_live_fills())
+    assert first['deferred'] == 2 and second['deferred'] == 2
+    assert seen == [r.order_no for r in rows]
+    assert all(r.status == 'ACCEPTED' for r in rows)
+    assert db.commits == 2

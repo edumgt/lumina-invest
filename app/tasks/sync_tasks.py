@@ -137,6 +137,8 @@ def quant_auto_trade_cycle() -> dict:
 @celery_app.task(name="quant.confirm_fills", time_limit=100)
 def quant_confirm_fills() -> dict:
     """게이트웨이 경유 KIS 실주문(live_orders)의 열린 상태를 체결 조회로 갱신한다 (Celery Beat 2분)."""
+    if not settings.CONFIRM_FILLS_ENABLED:
+        return {"skipped": "confirm_fills_disabled"}
 
     async def _async() -> dict:
         from app.database.postgres import connect_postgres, close_postgres

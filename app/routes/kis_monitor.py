@@ -20,7 +20,7 @@ from app.database.postgres import get_pg_session
 from app.lib.session import get_current_user
 from app.models import LiveOrder, Portfolio, PORTFOLIO_BOOK_QUANT, User
 from app.models.base import SYSTEM_USER_ID
-from app.services import kis_batch, reconciliation
+from app.services import aggressive_mode, kis_batch, reconciliation, signal_mode, strategy_settings
 from app.services.brokers import stock_coin_trade_gateway as gateway
 from app.services.data_cache import cache_get
 from app.services.stock import QUANT_STOCKS, QUANT_SECTORS
@@ -127,6 +127,7 @@ def _heartbeat_age() -> float | None:
 async def kis_monitor(limit: int = Query(50, ge=1, le=200), cycles: int = Query(12, ge=1, le=48),
                       user=Depends(get_current_user), db: AsyncSession = Depends(get_pg_session)):
     me = uuid.UUID(str(user["id"]))
+    settings_doc = await strategy_settings.load_and_apply()
     now = datetime.now(timezone.utc)
     env = gateway.environment() if gateway.is_configured() else (settings.STOCK_COIN_TRADE_KIS_ENVIRONMENT or "paper")
     out: dict = {"checked_at": now.isoformat(), "environment": env, "gateway_configured": gateway.is_configured()}
@@ -134,11 +135,16 @@ async def kis_monitor(limit: int = Query(50, ge=1, le=200), cycles: int = Query(
     # 배치·공격모드·heartbeat
     out["batch"] = await kis_batch.system_status(db)
     out["aggressive"] = {
-        "enabled": bool(settings.QUANT_AGGRESSIVE_MODE), "interval": settings.QUANT_AGGRESSIVE_CANDLE_INTERVAL,
+        "enabled": aggressive_mode.is_enabled(), "interval": settings.QUANT_AGGRESSIVE_CANDLE_INTERVAL,
         "take_profit_pct": settings.QUANT_AGGRESSIVE_TAKE_PROFIT_PCT, "stop_loss_pct": settings.QUANT_AGGRESSIVE_STOP_LOSS_PCT,
         "max_buys_per_cycle": settings.QUANT_AGGRESSIVE_MAX_BUYS_PER_CYCLE, "max_sells_per_cycle": settings.QUANT_AGGRESSIVE_MAX_SELLS_PER_CYCLE,
         "force_buy": bool(settings.QUANT_AGGRESSIVE_FORCE_BUY), "order_type": settings.QUANT_AGGRESSIVE_ORDER_TYPE or "LIMIT",
         "cooldown_min": settings.QUANT_AGGRESSIVE_COOLDOWN_MIN, "max_orders_per_day": settings.QUANT_AGGRESSIVE_MAX_ORDERS_PER_DAY,
+    }
+    out["effective_settings"] = {
+        "profile_id": (strategy_settings.current_profile(settings_doc) or {}).get("id"),
+        "signal_mode": signal_mode.resolve(),
+        "allow_live_expansion": bool(settings.QUANT_KOREA_ALLOW_LIVE_EXPANSION),
     }
     out["cycle_sec"] = int(settings.QUANT_CYCLE_SEC)
     out["heartbeat_age_sec"] = _heartbeat_age()
@@ -217,6 +223,10 @@ async def kis_monitor(limit: int = Query(50, ge=1, le=200), cycles: int = Query(
         risk = c.get("risk") or {}
         trades = [t for t in c.get("trades", []) if t.get("type") == "auto"]
         recent.append({
+            "live_expansion_blocked": bool(c.get("live_expansion_blocked")),
+            "candidate_count": c.get("candidate_count"),
+            "settings": c.get("settings") or {},
+            "signals": [{"symbol": s.get("symbol"), "name": s.get("name"), "action": s.get("action"), "reasons": s.get("reasons", [])} for s in c.get("signals", [])],
             "time": c.get("time"), "symbols": (c.get("settings") or {}).get("symbols", []),
             "buy": ag.get("buy", []), "sell": ag.get("sell", {}), "notes": ag.get("notes", []),
             "trades": [{"symbol": t.get("symbol"), "name": t.get("name"), "action": t.get("action"), "quantity": t.get("quantity"),

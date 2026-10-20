@@ -106,6 +106,7 @@ class Settings(BaseSettings):
     # 사이클 하드 타임리밋(165초)보다 넉넉히 작게 둔다.
     KIS_CHART_TIMEOUT: float = 45.0
     QUANT_INDICATOR_CONCURRENCY: int = 6            # 지표 선조회 동시 요청 수. st 외부읽기 제한 12슬롯보다 낮게
+    CONFIRM_FILLS_ENABLED: bool = False          # 반복 체결 조회 중단. 명시적으로 켠 경우에만 스케줄·작업 실행
     CONFIRM_FILLS_BUDGET_SEC: float = 75.0          # confirm_fills 소프트 데드라인(task time_limit 100초 안에서 커밋 보장)
     # ── DART(금융감독원 전자공시) — 영업이익·재무상태표 (app/services/dart.py) ──
     # Yahoo 가 영업이익·재무상태표를 빈 값으로 보내므로 국내 상장사는 DART 원문에서 받는다.
