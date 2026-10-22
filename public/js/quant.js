@@ -5,6 +5,8 @@ import { api, getMe, setToast, escHtml, fmt, fmtPct, colorPct } from "/js/common
 import { compareTrayAdd, renderCompareTrayAll } from "/js/core.js";
 
 let quantChartInstance = null;
+let quantChartRequest = 0;
+let quantChartAbort = null;
 // ── 퀀트 대시보드 ────────────────────────────────────────────────
 async function loadQuantDashboard() {
   loadMarketCards();
@@ -53,7 +55,7 @@ async function loadSignalCards() {
         "매도": "border-red-500/30 bg-red-500/5",
         "관망": "border-white/10 bg-white/5" };
       const cls = colorMap[sig.action] || "border-white/10 bg-white/5";
-      return `<div class="rounded-xl border p-2 ${cls}">
+      return `<div class="rounded-xl border p-2 ${cls}" role="button" tabindex="0" style="cursor:pointer;" data-quant-symbol="${escHtml(s.symbol)}" data-quant-name="${escHtml(s.name)}" aria-controls="quant-chart-container" aria-pressed="false" aria-label="${escHtml(s.name)} (${escHtml(s.symbol)}) 차트 보기">
         <div class="font-semibold">${escHtml(s.name)}</div>
         <div class="text-slate-400 text-xs">${escHtml(s.symbol)}</div>
         <div class="mt-1 font-medium">${fmt(price)}</div>
@@ -64,20 +66,59 @@ async function loadSignalCards() {
         <div class="text-xs text-slate-500">RSI: ${rsiV?.toFixed(1) ?? "-"}</div><div class="text-xs text-slate-500">일봉 기준 ${r?.as_of ? escHtml(new Date(r.as_of * 1000).toISOString().slice(0,10)) : "-"} · ${escHtml(r?.source || "미수집")}</div>
       </div>`;
     }).join("");
+    syncQuantSignalSelection();
   } catch (e) {
     el.innerHTML = `<div class='col-span-5 text-red-400 text-xs'>${escHtml(e.message)}</div>`;
   }
 }
 
+function syncQuantSignalSelection() {
+  const symbol = document.getElementById("quant-symbol").value;
+  document.querySelectorAll("#signal-cards [data-quant-symbol]").forEach(card => {
+    const selected = card.dataset.quantSymbol === symbol;
+    card.setAttribute("aria-pressed", String(selected));
+    card.style.boxShadow = selected ? "inset 0 0 0 2px var(--accent)" : "";
+  });
+}
+
+function selectQuantSignal(card) {
+  document.getElementById("quant-symbol").value = card.dataset.quantSymbol;
+  const button = document.getElementById("quant-symbol-btn");
+  button.querySelector(".ssm-btn-label").textContent = card.dataset.quantName;
+  button.querySelector(".ssm-btn-ticker").textContent = card.dataset.quantSymbol;
+  syncQuantSignalSelection();
+  document.getElementById("quant-chart-container").closest(".card").scrollIntoView({ behavior: "smooth", block: "start" });
+  loadQuantChart();
+}
+
+const signalCards = document.getElementById("signal-cards");
+signalCards.addEventListener("click", event => {
+  const card = event.target.closest("[data-quant-symbol]");
+  if (card) selectQuantSignal(card);
+});
+signalCards.addEventListener("keydown", event => {
+  if (event.key !== "Enter" && event.key !== " ") return;
+  const card = event.target.closest("[data-quant-symbol]");
+  if (card) { event.preventDefault(); selectQuantSignal(card); }
+});
+
 async function loadQuantChart() {
   const symbol = document.getElementById("quant-symbol").value;
+  const name = document.querySelector("#quant-symbol-btn .ssm-btn-label").textContent;
   const container = document.getElementById("quant-chart-container");
-  container.innerHTML = "";
+  const request = ++quantChartRequest;
+  quantChartAbort?.abort();
+  quantChartAbort = new AbortController();
+  if (quantChartInstance) { quantChartInstance.destroy(); quantChartInstance = null; }
+  container.textContent = `${name} 차트 불러오는 중...`;
+  container.setAttribute("aria-busy", "true");
+  syncQuantSignalSelection();
   try {
-    const data = await api(`/api/stocks/quant/indicators?symbol=${encodeURIComponent(symbol)}&period=2y`);
+    const data = await api(`/api/stocks/quant/indicators?symbol=${encodeURIComponent(symbol)}&period=2y`, { signal: quantChartAbort.signal });
+    if (request !== quantChartRequest || symbol !== document.getElementById("quant-symbol").value) return;
     if (data.error) { container.textContent = data.error; return; }
-
-    if (quantChartInstance) { quantChartInstance.destroy(); quantChartInstance = null; }
+    if (!data.times?.length || !data.closes?.length) { container.textContent = "차트 데이터가 없습니다."; return; }
+    container.innerHTML = "";
 
     const times = data.times || [];
     const toMs = t => new Date(t * 1000).getTime();
@@ -102,9 +143,12 @@ async function loadQuantChart() {
       legend: { show: true, position: "top" },
       tooltip: { shared: true, x: { format: "yyyy-MM-dd" }, theme: "light" },
     });
-    quantChartInstance.render();
+    await quantChartInstance.render();
   } catch (e) {
+    if (request !== quantChartRequest || e.name === "AbortError") return;
     container.textContent = "차트 오류: " + e.message;
+  } finally {
+    if (request === quantChartRequest) container.setAttribute("aria-busy", "false");
   }
 }
 

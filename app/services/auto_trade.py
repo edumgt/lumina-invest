@@ -1205,7 +1205,11 @@ async def _run_quant_cycle(user_id: str = "quant_system") -> None:
 
             if action in ("강력 매수", "매수"):
                 budget = per_trade_budget * buy_ratio
-                qty = max(1, int(budget / price))
+                qty = int(budget / price)
+                if qty <= 0:
+                    await _risk_skip(stock["symbol"], stock["name"], "buy", price,
+                                     f"1주 가격 {price:,.0f}원이 1회 매수 예산 {budget:,.0f}원을 초과 — 매수 생략")
+                    continue
                 qty, risk_note = await _risk_gate(stock["symbol"], stock["name"], "buy", qty, price)
                 if qty <= 0:
                     await _risk_skip(stock["symbol"], stock["name"], "buy", price, risk_note or "위험관리 규칙")

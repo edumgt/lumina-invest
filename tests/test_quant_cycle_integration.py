@@ -300,3 +300,16 @@ def test_paper_expansion_does_not_expand_real_account_scope(monkeypatch):
     assert not [r for r in db.added if isinstance(r,LiveOrder)]
     assert not [c for c in calls if c[0]=="POST"]
     assert log["order_universe"]["scope"]=="legacy"
+
+
+def test_expanded_universe_never_forces_one_share_over_budget(monkeypatch):
+    symbol="207940.KS"
+    monkeypatch.setattr(f"{__name__}.STOCKS", [{"symbol":symbol,"name":"삼성바이오로직스"}])
+    monkeypatch.setattr(settings,"QUANT_KOREA_ALLOW_PAPER_EXPANSION",True)
+    calls=fake_gateway()
+    async def expensive_buy(sym,period="2y"):
+        return {"signal":{"action":"매수","score":3,"reasons":[]},"current_price":1_400_000.0}
+    db,log=run_cycle(broker(quant_selected_symbols=[symbol],quant_per_trade_budget=500_000),signal_fn=expensive_buy)
+    assert not [c for c in calls if c[0]=="POST"]
+    assert not db.virtual_calls and not db.added
+    assert "1회 매수 예산" in log["trades"][0]["reason"]
