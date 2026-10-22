@@ -9,25 +9,8 @@ let quantChartRequest = 0;
 let quantChartAbort = null;
 // ── 퀀트 대시보드 ────────────────────────────────────────────────
 async function loadQuantDashboard() {
-  loadMarketCards();
   loadSignalCards();
   loadQuantChart();
-}
-
-async function loadMarketCards() {
-  try {
-    const { indices } = await api("/api/stocks/market");
-    document.getElementById("market-cards").innerHTML = indices.map(idx => {
-      const pct = idx.change_pct;
-      const sign = pct != null && pct >= 0 ? "+" : "";
-      const cls = pct != null && pct >= 0 ? "text-emerald-400" : "text-red-400";
-      return `<div class="rounded-xl border border-white/10 bg-black/20 p-3 text-center">
-        <div class="text-xs text-slate-400">${escHtml(idx.name)}</div>
-        <div class="text-lg font-semibold mt-1">${fmt(idx.price)}</div>
-        <div class="${cls} text-xs">${sign}${pct?.toFixed(2) ?? "-"}%</div>
-      </div>`;
-    }).join("");
-  } catch {}
 }
 
 async function loadSignalCards() {
@@ -106,10 +89,11 @@ async function loadQuantChart() {
   const symbol = document.getElementById("quant-symbol").value;
   const name = document.querySelector("#quant-symbol-btn .ssm-btn-label").textContent;
   const container = document.getElementById("quant-chart-container");
+  container.style.height = "auto";
   const request = ++quantChartRequest;
   quantChartAbort?.abort();
   quantChartAbort = new AbortController();
-  if (quantChartInstance) { quantChartInstance.destroy(); quantChartInstance = null; }
+  if (quantChartInstance) { quantChartInstance.remove(); quantChartInstance = null; }
   container.textContent = `${name} 차트 불러오는 중...`;
   container.setAttribute("aria-busy", "true");
   syncQuantSignalSelection();
@@ -120,30 +104,86 @@ async function loadQuantChart() {
     if (!data.times?.length || !data.closes?.length) { container.textContent = "차트 데이터가 없습니다."; return; }
     container.innerHTML = "";
 
-    const times = data.times || [];
-    const toMs = t => new Date(t * 1000).getTime();
-    const mapS = (arr) => arr.map((v, i) => [toMs(times[i]), v != null ? +v.toFixed(2) : null]).filter(p => p[1] != null);
-
-    quantChartInstance = new ApexCharts(container, {
-      chart: { type: "line", height: 380, background: "#fff", toolbar: { show: true },
-               animations: { enabled: false }, fontFamily: "Pretendard, sans-serif",
-               zoom: { enabled: true } },
-      series: [
-        { name: "종가",   data: mapS(data.closes)   },
-        { name: "MA20",   data: mapS(data.ma20 || []) },
-        { name: "MA60",   data: mapS(data.ma60 || []) },
-        { name: "BB 상단", data: mapS(data.bb_upper || []) },
-        { name: "BB 하단", data: mapS(data.bb_lower || []) },
-      ],
-      colors: ["#6366f1", "#f59e0b", "#10b981", "#94a3b8", "#94a3b8"],
-      stroke: { width: [2, 1.5, 1.5, 1, 1], dashArray: [0, 0, 0, 4, 4], curve: "smooth" },
-      xaxis: { type: "datetime", labels: { style: { colors: "#434651" } } },
-      yaxis: { labels: { style: { colors: "#434651" }, formatter: v => v?.toLocaleString() } },
-      grid: { borderColor: "#e0e3eb" },
-      legend: { show: true, position: "top" },
-      tooltip: { shared: true, x: { format: "yyyy-MM-dd" }, theme: "light" },
+    const L = window.LightweightCharts;
+    if (!L) throw new Error("차트 라이브러리를 불러오지 못했습니다. 새로고침하세요.");
+    const rows = [...new Map(data.times.map((time, i) => [Number(time), i]))]
+      .filter(([time, i]) => Number.isFinite(time) && Number.isFinite(data.closes[i]))
+      .sort(([a], [b]) => a - b);
+    if (!rows.length) { container.textContent = "차트 데이터가 없습니다."; return; }
+    const signal = data.signal || {};
+    const signed = value => Number.isFinite(value) ? `${value > 0 ? "+" : ""}${value}` : "—";
+    const valueText = value => Number.isFinite(value) ? value.toLocaleString("ko-KR", { maximumFractionDigits: 2 }) : "미확인";
+    const last = rows.at(-1)[1];
+    const previous = rows.length > 1 ? rows.at(-2)[1] : null;
+    const summary = document.createElement("div");
+    summary.className = "quant-chart-evidence rounded-xl border p-3 mb-3 text-xs";
+    summary.style.cssText = "background:#f0fdf4;border-color:#86efac;color:#14532d;line-height:1.7;overflow-wrap:anywhere;";
+    const components = signal.components || [];
+    summary.innerHTML = `<div style="font-size:15px;font-weight:700;">${escHtml(name)} · ${escHtml(signal.action || "판단 미확인")} ${escHtml(signed(signal.score))}점</div>
+      <div>확정 일봉 ${escHtml(new Date(rows.at(-1)[0] * 1000).toISOString().slice(0, 10))} · ${escHtml(data.source || "출처 미확인")} · 강력매수 기준 +${escHtml(signal.strong_buy_threshold ?? 3)}점 이상</div>
+      <ul style="list-style:none;margin:8px 0;padding:0;">${(components.length ? components : (signal.reasons || []).map(reason => ({ reason }))).map(c => `<li style="color:${c.points > 0 ? "#047857" : c.points < 0 ? "#b91c1c" : "#475569"};"><b>${escHtml(signed(c.points))}점</b> ${escHtml(c.reason)}</li>`).join("") || "<li>판단 근거 미확인</li>"}</ul>
+      <div><b style="color:#db2777;">MA5 ${valueText(data.ma5?.[last])}</b> / <b style="color:#d97706;">MA20 ${valueText(data.ma20?.[last])}</b>${previous != null ? ` · 전일 MA5 ${valueText(data.ma5?.[previous])} / MA20 ${valueText(data.ma20?.[previous])}` : ""}</div>
+      <div>종가 ${valueText(data.closes[last])} / BB 하단 ${valueText(data.bb_lower?.[last])} / BB 상단 ${valueText(data.bb_upper?.[last])} · RSI ${valueText(data.rsi?.[last])}</div>
+      <div style="color:#64748b;">아래 화살표는 최신 판단 기준일입니다. RSI 30·70 기준선과 MA5·MA20을 함께 확인하세요. 규칙 점수이며 수익 확률이나 주문 체결을 뜻하지 않습니다.</div>`;
+    container.appendChild(summary);
+    const legend = document.createElement("div");
+    legend.className = "text-xs flex flex-wrap gap-3 mb-2";
+    container.appendChild(legend);
+    const canvas = document.createElement("div");
+    canvas.style.height = "500px";
+    container.appendChild(canvas);
+    quantChartInstance = L.createChart(canvas, {
+      autoSize: true, height: 500,
+      layout: { background: { color: "#ffffff" }, textColor: "#434651", attributionLogo: true },
+      grid: { vertLines: { color: "#e0e3eb" }, horzLines: { color: "#e0e3eb" } },
+      localization: { locale: "ko-KR", priceFormatter: value => value.toLocaleString("ko-KR", { maximumFractionDigits: 2 }) },
+      timeScale: { timeVisible: false, borderColor: "#e0e3eb" },
+      rightPriceScale: { borderColor: "#e0e3eb" },
     });
-    await quantChartInstance.render();
+    const lines = [
+      ["종가", data.closes, "#6366f1"],
+      ["MA5", data.ma5 || [], "#db2777"],
+      ["MA20", data.ma20 || [], "#f59e0b"],
+      ["MA60", data.ma60 || [], "#10b981"],
+      ["BB 상단", data.bb_upper || [], "#94a3b8"],
+      ["BB 하단", data.bb_lower || [], "#94a3b8"],
+    ].map(([title, values, color], index) => {
+      const series = quantChartInstance.addSeries(L.LineSeries, {
+        title, color, lineWidth: index <= 2 ? 2 : 1,
+        lineStyle: index >= 4 ? L.LineStyle.Dashed : L.LineStyle.Solid,
+        priceLineVisible: false, lastValueVisible: index === 0,
+      });
+      series.setData(rows.map(([time, i]) => Number.isFinite(values[i]) ? { time, value: values[i] } : { time }));
+      const item = document.createElement("span");
+      item.style.color = color;
+      legend.appendChild(item);
+      return { series, item, title };
+    });
+    const updateLegend = param => {
+      lines.forEach(({ series, item, title }) => {
+        const point = param?.time ? param.seriesData.get(series) : series.dataByIndex(series.data().length - 1);
+        item.textContent = `${title} ${point?.value != null ? point.value.toLocaleString("ko-KR", { maximumFractionDigits: 2 }) : "—"}`;
+      });
+    };
+    const latestTime = rows.at(-1)[0];
+    L.createSeriesMarkers(lines[0].series, [{
+      time: latestTime, position: "belowBar", color: signal.score >= 3 ? "#059669" : "#64748b",
+      shape: "arrowUp", text: `${signal.action || "판단 기준"} ${signed(signal.score)}점`,
+    }]);
+    const rsi = quantChartInstance.addSeries(L.LineSeries, {
+      title: "RSI14", color: "#7c3aed", lineWidth: 2, priceLineVisible: false,
+      priceFormat: { type: "price", precision: 1, minMove: 0.1 },
+      autoscaleInfoProvider: () => ({ priceRange: { minValue: 0, maxValue: 100 } }),
+    }, 1);
+    rsi.setData(rows.map(([time, i]) => Number.isFinite(data.rsi?.[i]) ? { time, value: data.rsi[i] } : { time }));
+    for (const [price, title, color] of [[30, "과매도 +2", "#059669"], [70, "과매수 -2", "#dc2626"]]) {
+      rsi.createPriceLine({ price, title, color, lineWidth: 1, lineStyle: L.LineStyle.Dashed, axisLabelVisible: true });
+    }
+    quantChartInstance.panes()[0].setHeight(360);
+    quantChartInstance.panes()[1].setHeight(140);
+    quantChartInstance.subscribeCrosshairMove(updateLegend);
+    updateLegend();
+    quantChartInstance.timeScale().setVisibleLogicalRange({ from: Math.max(0, rows.length - 60), to: rows.length + 5 });
   } catch (e) {
     if (request !== quantChartRequest || e.name === "AbortError") return;
     container.textContent = "차트 오류: " + e.message;
@@ -153,7 +193,6 @@ async function loadQuantChart() {
 }
 
 document.getElementById("quant-chart-load").addEventListener("click", loadQuantChart);
-document.getElementById("refresh-market").addEventListener("click", loadQuantDashboard);
 
 // ── 자동매매 ─────────────────────────────────────────────────────
 async function loadAutoTradeStatus() {

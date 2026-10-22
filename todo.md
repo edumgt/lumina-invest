@@ -1975,3 +1975,6 @@ SageMaker를 활용해 매일 예측을 수행하고, 그 결과를 검증하며
 - 6-59 교훈 반영: 1회 1천만 원 한도로 분할(삼성전자 86주는 현재가에 따라 2건), 같은 종목·방향 분할 건은 분(分)이 바뀐 뒤 전송(client_order_id 분 단위 멱등키 중복 방지), 주문마다 새 DB 세션, 비상 정지면 거절되고 중단. 주문 유형은 서버 설정(`_live_order_type`: 공격 모드면 MARKET, 아니면 `STOCK_COIN_TRADE_ORDER_TYPE`) 을 따름.
 - 주의: 예수금 부족이면 게이트웨이가 409 로 거절. 자동매매 배치(공격 모드)가 켜져 있으면 매수한 종목을 사이클이 되팔 수 있음 — 필요 시 kis-monitor 에서 배치 정지 후 실행. Codex 가 같은 시각 `auto_trade.py` 의 KIS 매도 로직을 수정 중이나 fd 운영 컨테이너는 배포 전 코드라 영향 없음.
 - **실행 미완(사용자)**: `bash deploy/fd-kis-paper-trade.sh` 로 계획 확인 → `bash deploy/fd-kis-paper-trade.sh --execute`.
+
+### 6-65. 2026-10-22 st(stock-coin-trade) hts.html 이 fd `GET /api/stocks/universe/candidates` 를 읽기 시작 (st 6-27 연동 메모 · lumina 코드 변경 없음)
+- st 백엔드 `/api/hts/recommendations` 가 이 공개 엔드포인트(인증 없음, `app/routes/stocks.py korea_candidates`)를 60초 캐시로 호출해 quant-dashboard 와 같은 규칙(`signal.action == "강력 매수"`)으로 걸러 HTS 관심종목에 보여 준다. **이 엔드포인트에 인증·CORS·응답 형식 변경을 가할 때 st 6-27 을 함께 갱신할 것.**

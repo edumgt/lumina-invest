@@ -8,7 +8,7 @@ import { loadCompanyCompare, loadCompanyDashboard, loadCompanySector } from "/js
 import { loadIndicatorApiSettings, loadIndicatorBacktest, loadSavedIndicators } from "/js/indicator.js";
 import { loadMacroDashboard, loadMacroIndustry } from "/js/ml.js";
 import { initPaperViews, onPaperViewActivated } from "/js/paper.js";
-import { loadAutoTradeStatus, loadQuantDashboard } from "/js/quant.js?v=20261022-signal-chart-1";
+import { loadAutoTradeStatus, loadQuantDashboard } from "/js/quant.js?v=20261022-quant-header-1";
 import { initRebalanceView, onRebalanceViewActivated } from "/js/rebalance.js";
 import { loadPatternAnalysis, loadRoboDecision, renderScreenIdle } from "/js/robo.js";
 import { loadKisMonitor } from "/js/kis_monitor.js?v=20261022-testbed-universe-1";
