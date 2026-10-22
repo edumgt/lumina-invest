@@ -66,15 +66,6 @@ const GNB_MENUS = {
       { key: "notification-settings", icon: "fa-solid fa-bell",      label: "알림 설정" },
     ],
   },
-  us: {
-    label: "<i class='fa-solid fa-flag-usa'></i> 미국주식",
-    items: [
-      { key: "us-dashboard",  icon: "fa-solid fa-gauge",            label: "대시보드" },
-      { key: "us-chart",      icon: "fa-solid fa-chart-area",       label: "주가 차트" },
-      { key: "us-order",      icon: "fa-solid fa-arrow-right-arrow-left", label: "주문/매매" },
-      { key: "us-portfolio",  icon: "fa-solid fa-wallet",           label: "포트폴리오" },
-    ],
-  },
   company: {
     label: "<i class='fa-solid fa-chart-pie'></i> 투자 인디케이터",
     items: [
@@ -85,33 +76,6 @@ const GNB_MENUS = {
       { key: "indicator-backtest",  icon: "fa-solid fa-flask",          label: "멀티 전략 비교" },
       { key: "company-dashboard",   icon: "fa-solid fa-gauge",          label: "지표 대시보드" },
       { key: "company-compare",     icon: "fa-solid fa-table-columns",  label: "지표 비교 분석" },
-    ],
-  },
-  ml: {
-    label: "<i class='fa-solid fa-microchip'></i> ML·딥러닝",
-    items: [
-      { key: "ml-compare",     icon: "fa-solid fa-scale-balanced",  label: "모델 비교 (7종)" },
-      { key: "ml-regression",  icon: "fa-solid fa-chart-line",      label: "회귀 분석" },
-      { key: "ml-cluster",     icon: "fa-solid fa-circle-nodes",    label: "종목 군집화" },
-      { key: "ml-tune",        icon: "fa-solid fa-sliders",         label: "하이퍼파라미터 튜닝" },
-      { key: "ml-deeplearning",icon: "fa-solid fa-brain",   label: "딥러닝 (LSTM·Transformer)" },
-    ],
-  },
-  invest: {
-    label: "<i class='fa-solid fa-magnifying-glass-dollar'></i> 투자분석 기초",
-    items: [
-      { key: "macro-dashboard",   icon: "fa-solid fa-globe",           label: "거시경제 지표" },
-      { key: "macro-industry",    icon: "fa-solid fa-industry",        label: "산업 분석" },
-      { key: "invest-fundamental",icon: "fa-solid fa-file-invoice-dollar", label: "재무제표 분석" },
-      { key: "invest-technical",  icon: "fa-solid fa-chart-simple",  label: "기술적 분석" },
-    ],
-  },
-  finance: {
-    label: "<i class='fa-solid fa-coins'></i> 금융 필수 지식",
-    items: [
-      { key: "fin-products",   icon: "fa-solid fa-layer-group",   label: "금융상품 이해" },
-      { key: "fin-allocation", icon: "fa-solid fa-chart-pie",     label: "자산배분 모델" },
-      { key: "quant-seasonal", icon: "fa-solid fa-calendar-days", label: "계절성 분석" },
     ],
   },
   sysadmin: {

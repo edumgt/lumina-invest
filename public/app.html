@@ -18,6 +18,7 @@
 <link rel="stylesheet" href="https://www.edumgt.co.kr/css/common.css?v=20261012-common-3" />
   <link rel="stylesheet" href="/css/font-rendering.css" />
   <link rel="stylesheet" href="/css/company-dashboard.css?v=20261022-butler-1" />
+  <link rel="stylesheet" href="/css/company-compare.css?v=20261022-grid-fit-1" />
 </head>
 <body>
 
@@ -1148,8 +1149,8 @@
     <!-- 7-2. 지표 비교 분석 -->
     <div class="view" data-view="company-compare">
       <div class="card">
-        <h2 class="text-lg font-semibold mb-1"><i class="fa-solid fa-clipboard-list" aria-hidden="true"></i> 투자 지표 비교 분석</h2>
-        <p class="text-xs mb-4" style="color:var(--text-mute);">코스피·코스닥 전체 주식에서 종목을 검색하고 시장·업종으로 선택합니다. 한 페이지에 30종목을 세로 행, 펀더멘털 지표를 가로 열로 비교합니다. 열 제목으로 정렬·필터를 사용하고 가로로 스크롤하여 전체 지표를 확인하세요.</p>
+        <h2 class="text-lg font-semibold mb-1"><i class="fa-solid fa-clipboard-list" aria-hidden="true"></i> 지표 비교</h2>
+        <p class="text-xs mb-4" style="color:var(--text-mute);">종목을 검색하고 지표를 비교하세요. 표 안에서 스크롤·정렬·필터를 사용할 수 있습니다.</p>
         <div class="flex items-center justify-between gap-2 mb-3"><p id="co-compare-status" class="text-xs" role="status" aria-live="polite"></p><button id="co-compare-refresh" class="btn-secondary text-xs">새로고침</button></div>
         <p class="text-xs mb-3" style="color:var(--text-mute);">출처: Yahoo Finance · 정상 캐시 최대 6시간 · 갱신 실패 시 최대 7일 이내의 이전 자료를 표시합니다. 조회 상태가 ‘가격만 조회’ 또는 ‘조회 불가’이면 재무 지표는 N/A입니다. 지표별 결산 기간은 다를 수 있습니다. D/E는 차입금 기준입니다.</p>
         <div class="flex flex-wrap gap-2 mb-2">
@@ -1158,7 +1159,7 @@
               <select id="co-compare-sector" class="input" style="max-width:220px;" aria-label="업종"><option value="">전체 업종</option></select>
               <button id="co-compare-prev" class="btn-secondary text-xs">이전 30종목</button><span id="co-compare-page" class="text-xs"></span><button id="co-compare-next" class="btn-secondary text-xs">다음 30종목</button>
             </div>
-            <div id="co-compare-table" style="height:70vh;min-height:400px;width:100%;" aria-label="종목별 펀더멘털 AG Grid 비교"></div>
+            <div id="co-compare-table" style="width:100%;" aria-label="종목별 펀더멘털 AG Grid 비교"></div>
       </div>
     </div>
 
@@ -2883,7 +2884,7 @@ RC_i = wi × (Σw)_i / √(w'Σw)
 
 </div><!-- #app-shell -->
 
-<script type="module" src="/js/main.js?v=20261022-strategy-guides-1"></script>
+<script type="module" src="/js/main.js?v=20261022-offcanvas-trim-2"></script>
 
 <!-- 종목 검색 모달 -->
 <!-- 데이터 조회 대기 모달: 모래시계 + 경과 시간 -->

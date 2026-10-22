@@ -1,0 +1,25 @@
+/* Let AG Grid own vertical scrolling while its controls remain visible. */
+#main-content:has(.view.active[data-view="company-compare"]){overflow:hidden;min-height:0}
+.view.active[data-view="company-compare"]{height:100%;min-height:0}
+[data-view="company-compare"]>.card{height:100%;min-height:0;display:flex;flex-direction:column;overflow:hidden;padding:14px 16px}
+[data-view="company-compare"]>.card>*{flex-shrink:0}
+[data-view="company-compare"]>.card>p{font-size:11px;line-height:1.5;margin-bottom:8px;overflow-wrap:anywhere}
+[data-view="company-compare"] h2{font-size:16px}
+[data-view="company-compare"] #co-compare-status{font-size:11px;line-height:1.4;min-width:0;overflow-wrap:anywhere}
+[data-view="company-compare"] #co-compare-table{flex:1 1 0;min-height:0;height:0;width:100%;overscroll-behavior:contain}
+[data-view="company-compare"] #co-compare-table .ag-body-viewport{overscroll-behavior:contain}
+[data-view="company-compare"] .input{font-size:12px;padding:5px 8px;min-width:0}
+@media(max-width:640px){
+ [data-view="company-compare"]>.card{padding:10px}
+ [data-view="company-compare"] #co-compare-query,[data-view="company-compare"] #co-compare-sector{max-width:calc(50% - 4px)!important;flex:1 1 120px}
+ [data-view="company-compare"] #co-compare-market{max-width:100px}
+ [data-view="company-compare"] .btn-secondary{font-size:10px;padding:5px 7px}
+ [data-view="company-compare"] #co-compare-page{font-size:10px;align-self:center}
+}
+/* Override shared .view sizing for this full-height workspace only. */
+#main-content .view.active[data-view="company-compare"]{display:block!important;height:100%!important;max-height:none;min-height:0}
+#main-content .view.active[data-view="company-compare"]>.card{height:100%!important}
+[data-view="company-compare"] #co-compare-table .ag-grid-viewport{overscroll-behavior:contain}
+
+#main-content>.space-y-4:has(.view.active[data-view="company-compare"]){height:100%;min-height:0}
+#main-content .view.active[data-view="company-compare"]{margin-top:0!important}
