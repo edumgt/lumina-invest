@@ -2,6 +2,8 @@ import { setIconText } from "/js/icons.js";
 /* KIS 모의투자결과 — 로보 어드바이저 > KIS 모의투자결과 (data-view="kis-monitor"). 데이터: GET /api/quant/kis/monitor */
 import { api, escHtml, fmt } from "/js/common.js";
 import { renderBatchState } from "/js/kis_batch_ctl.js";
+import { formatKisTime, kisDate } from "/js/kis_time.js";
+export { formatKisTime } from "/js/kis_time.js";
 
 let _timer = null;
 let _loading = false;
@@ -24,23 +26,6 @@ const STATUS_KIND = { FILLED: "ok", ACCEPTED: "", PARTIALLY_FILLED: "", PENDING:
 
 function pnlColor(v) { return v > 0 ? "var(--up, #e5484d)" : v < 0 ? "var(--down, #2962ff)" : ""; }
 function won(v) { return v == null ? "-" : `${fmt(v)}원`; }
-const kisTimeFormatter = new Intl.DateTimeFormat("en-CA", {
-  timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit",
-  hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23",
-});
-function kisDate(value) {
-  if (value == null || value === "") return null;
-  // Backend timestamps without an explicit offset are UTC as well.
-  const raw = String(value).trim();
-  const normalized = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}/.test(raw) && !/(Z|[+-]\d{2}:?\d{2})$/i.test(raw) ? `${raw}Z` : raw;
-  const date = new Date(normalized);
-  return Number.isFinite(date.getTime()) ? date : null;
-}
-export function formatKisTime(value) {
-  const date = kisDate(value); if (!date) return "-";
-  const parts = Object.fromEntries(kisTimeFormatter.formatToParts(date).map(p => [p.type, p.value]));
-  return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}:${parts.second}`;
-}
 function ts(s) { return escHtml(formatKisTime(s)); }
 const timeColumn = (field) => textColumn(field, "시각 (KST)", {
   width: 190, valueFormatter: ({ value }) => formatKisTime(value),
@@ -85,7 +70,9 @@ function renderKpis(d) {
   ].join("");
 }
 
-const grids = new Map();
+// Different module URLs must still share one grid for each actual DOM element.
+const gridRegistryKey = Symbol.for("lumina.kisMonitor.grids");
+const grids = window[gridRegistryKey] ||= new WeakMap();
 const numberFormat = ({ value }) => value == null ? "-" : fmt(value);
 const numericColumn = (field, headerName, extra = {}) => ({ field, headerName, filter: "agNumberColumnFilter", valueFormatter: numberFormat, cellStyle: { textAlign: "right" }, ...extra });
 const textColumn = (field, headerName, extra = {}) => ({ field, headerName, filter: "agTextColumnFilter", ...extra });
@@ -94,7 +81,8 @@ function textCell(value, color = "") {
 }
 function updateGrid(id, columns, rows, emptyMessage, resetPage = false) {
   const el = document.getElementById(id); if (!el) return null;
-  let grid = grids.get(id);
+  let grid = grids.get(el);
+  if (grid?.isDestroyed()) { grids.delete(el); grid = null; }
   if (!grid) {
     if (!window.agGrid) throw new Error("AG Grid를 불러오지 못했습니다. 페이지를 새로고침하세요.");
     const css = getComputedStyle(document.documentElement);
@@ -109,7 +97,7 @@ function updateGrid(id, columns, rows, emptyMessage, resetPage = false) {
       overlayNoRowsTemplate: "<span></span>",
       localeText: { noRowsToShow: "데이터 없음", page: "페이지", of: "/", to: "–", more: "더 보기", firstPage: "첫 페이지", lastPage: "마지막 페이지", nextPage: "다음 페이지", previousPage: "이전 페이지", pageSizeSelectorLabel: "페이지당", filterOoo: "필터…", contains: "포함", notContains: "미포함", equals: "같음", notEqual: "다름", startsWith: "시작", endsWith: "끝", lessThan: "미만", greaterThan: "초과", lessThanOrEqual: "이하", greaterThanOrEqual: "이상", inRange: "범위", blank: "빈 값", notBlank: "값 있음", andCondition: "그리고", orCondition: "또는" },
     });
-    grids.set(id, grid);
+    grids.set(el, grid);
   }
   const page = resetPage ? 0 : grid.paginationGetCurrentPage();
   grid.setGridOption("overlayNoRowsTemplate", `<span>${escHtml(emptyMessage)}</span>`);
@@ -185,7 +173,7 @@ function readOrderFilters() {
   return { owner: v("kism-o-owner") || "all", origin: v("kism-o-origin"), status: v("kism-o-status"), side: v("kism-o-side"), date_from: v("kism-o-from"), date_to: v("kism-o-to"), q: v("kism-o-q").trim() };
 }
 function sortedOrderRows() {
-  const rows = [], grid = grids.get("kism-orders");
+  const rows = [], grid = grids.get(document.getElementById("kism-orders"));
   if (grid) grid.forEachNodeAfterFilterAndSort(node => rows.push(node.data));
   return rows;
 }

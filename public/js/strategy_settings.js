@@ -2,7 +2,7 @@
  * 데이터: GET/POST /api/quant/strategy/settings, POST /api/quant/strategy/settings/reset, GET /api/quant/strategy/performance
  * 대상은 항상 KIS 모의투자 배치(시스템 사용자) 행. 저장하면 서버 env 를 덮어써(data_cache) 다음 사이클부터 적용된다. */
 import { api, escHtml, fmt, setToast } from "/js/common.js";
-import { formatKisTime } from "/js/kis_monitor.js";
+import { formatKisTime } from "/js/kis_time.js";
 
 const $ = (id) => document.getElementById(id);
 let _cfg = null;            // GET /settings 응답
