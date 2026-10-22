@@ -165,9 +165,6 @@ const ORDER_COLUMNS = [
   textColumn("origin_label", "주체", { width: 190,
     cellRenderer: ({ data }) => textCell(`${data.origin_label || data.owner_label || "-"}${data.origin_recorded === false ? " ※" : ""}`, data.is_human ? "#15803d" : "#6366f1"),
     tooltipValueGetter: ({ data }) => `${data.origin_label || ""}${data.origin_recorded === false ? " (경로 미기록 — 계정으로 추정)" : ""} · 계정 ${data.actor || "-"}` }),
-  textColumn("actor", "계정", { width: 150, tooltipValueGetter: ({ data }) => data.owner === "batch" ? "시스템 사용자(배치)" : `로그인 사용자 ${data.actor || ""}` }),
-  textColumn("client_ip", "IP", { width: 130, valueFormatter: ({ value, data }) => value || (data?.is_human ? "(미기록)" : "-"), tooltipValueGetter: ({ value }) => value ? `요청 IP ${value} (X-Forwarded-For 첫 값)` : "봇 주문은 IP 가 없습니다" }),
-  textColumn("user_agent", "브라우저", { width: 220, valueFormatter: ({ value, data }) => value || (data?.is_human ? "(미기록)" : "-") }),
   textColumn("name", "종목", { width: 175, valueGetter: ({ data }) => data?.name || data?.symbol }), textColumn("symbol", "종목코드"),
   textColumn("side", "방향", { width: 110, cellRenderer: ({ value }) => textCell(value, value === "BUY" ? "#15803d" : "#dc2626") }),
   textColumn("order_type", "유형"), numericColumn("quantity", "주문수량"), numericColumn("filled_quantity", "체결수량"),
@@ -177,6 +174,9 @@ const ORDER_COLUMNS = [
   textColumn("status", "상태", { width: 165, cellRenderer: ({ value }) => textCell(value, STATUS_KIND[value] === "bad" ? "#dc2626" : STATUS_KIND[value] === "ok" ? "#15803d" : "") }),
   textColumn("order_no", "주문번호", { width: 180, tooltipValueGetter: ({ data }) => data.client_order_id || data.order_no || "" }),
   textColumn("message", "메모", { width: 300 }),
+  textColumn("actor", "계정", { width: 150, tooltipValueGetter: ({ data }) => data.owner === "batch" ? "시스템 사용자(배치)" : `로그인 사용자 ${data.actor || ""}` }),
+  textColumn("client_ip", "IP", { width: 130, valueFormatter: ({ value, data }) => value || (data?.is_human ? "(미기록)" : "-"), tooltipValueGetter: ({ value }) => value ? `요청 IP ${value} (X-Forwarded-For 첫 값)` : "봇 주문은 IP 가 없습니다" }),
+  textColumn("user_agent", "브라우저", { width: 220, valueFormatter: ({ value, data }) => value || (data?.is_human ? "(미기록)" : "-") }),
 ];
 const ordersState = { rows: [], total: 0, counts_by_owner: {}, counts_by_origin: {}, counts_by_status: {}, truncated: false };
 let ordersRun = 0;

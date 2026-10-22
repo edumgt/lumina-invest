@@ -11,7 +11,7 @@ import { initPaperViews, onPaperViewActivated } from "/js/paper.js";
 import { loadAutoTradeStatus, loadQuantDashboard } from "/js/quant.js?v=20261022-signal-holdings-1";
 import { initRebalanceView, onRebalanceViewActivated } from "/js/rebalance.js";
 import { loadPatternAnalysis, loadRoboDecision, renderScreenIdle } from "/js/robo.js";
-import { loadKisMonitor } from "/js/kis_monitor.js?v=20261022-testbed-universe-1";
+import { loadKisMonitor } from "/js/kis_monitor.js?v=20261022-columns-1";
 import { loadStrategyPerformance, loadStrategySettings } from "/js/strategy_settings.js";
 import { loadReturnReview } from "/js/return_review.js";
 import { initBatchControl } from "/js/kis_batch_ctl.js";

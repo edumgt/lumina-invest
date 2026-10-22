@@ -38,14 +38,6 @@ const GNB_MENUS = {
       { key: "crawl-ingest",  icon: "fa-solid fa-database",        label: "데이터 인제스트" },
     ],
   },
-  trading: {
-    label: "<i class='fa-solid fa-chart-line'></i> 직접매매",
-    items: [
-      { key: "trading-chart",     icon: "fa-solid fa-chart-simple", label: "주가 차트" },
-      { key: "trading-portfolio", icon: "fa-solid fa-briefcase",         label: "포트폴리오" },
-      { key: "trading-order",     icon: "fa-solid fa-arrows-rotate",     label: "주문/매매" },
-    ],
-  },
   paper: {
     label: "<i class='fa-solid fa-graduation-cap'></i> 모의투자",
     items: [
