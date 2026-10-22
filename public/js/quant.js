@@ -159,6 +159,39 @@ async function loadQuantChart() {
       legend.appendChild(item);
       return { series, item, title };
     });
+    // Draw only between the two bands, behind the price and indicator lines.
+    const bandChart = quantChartInstance;
+    const bandPrice = lines[0].series;
+    bandPrice.attachPrimitive({
+      paneViews: () => [{
+        zOrder: () => "bottom",
+        renderer: () => ({ draw: target => target.useMediaCoordinateSpace(({ context }) => {
+          context.save();
+          context.fillStyle = "rgba(99, 102, 241, 0.09)";
+          let segment = [];
+          const fillSegment = () => {
+            if (segment.length < 2) { segment = []; return; }
+            context.beginPath();
+            context.moveTo(segment[0].x, segment[0].upper);
+            segment.slice(1).forEach(p => context.lineTo(p.x, p.upper));
+            [...segment].reverse().forEach(p => context.lineTo(p.x, p.lower));
+            context.closePath();
+            context.fill();
+            segment = [];
+          };
+          rows.forEach(([time, i]) => {
+            const upper = data.bb_upper?.[i], lower = data.bb_lower?.[i];
+            if (!Number.isFinite(upper) || !Number.isFinite(lower)) { fillSegment(); return; }
+            const x = bandChart.timeScale().timeToCoordinate(time);
+            const top = bandPrice.priceToCoordinate(upper), bottom = bandPrice.priceToCoordinate(lower);
+            if (x == null || top == null || bottom == null) { fillSegment(); return; }
+            segment.push({ x, upper: top, lower: bottom });
+          });
+          fillSegment();
+          context.restore();
+        }) }),
+      }],
+    });
     const updateLegend = param => {
       lines.forEach(({ series, item, title }) => {
         const point = param?.time ? param.seriesData.get(series) : series.dataByIndex(series.data().length - 1);

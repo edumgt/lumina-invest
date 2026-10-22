@@ -59,7 +59,6 @@ const GNB_MENUS = {
   quant: {
     label: "<i class='fa-solid fa-bolt'></i> 퀀트자동매매",
     items: [
-      { key: "quant-dashboard", icon: "fa-solid fa-gauge-high",      label: "퀀트 대시보드" },
       { key: "quant-auto",      icon: "fa-solid fa-robot",           label: "자동매매 현황" },
       { key: "quant-backtest",  icon: "fa-solid fa-flask",           label: "전략 분석" },
       { key: "quant-lean",      icon: "fa-brands fa-docker",         label: "LEAN 백테스트 (QuantConnect)" },
@@ -79,13 +78,13 @@ const GNB_MENUS = {
   company: {
     label: "<i class='fa-solid fa-chart-pie'></i> 투자 인디케이터",
     items: [
+      { key: "quant-dashboard", icon: "fa-solid fa-gauge-high",      label: "퀀트 대시보드" },
       { key: "indicator-strategy",  icon: "fa-solid fa-chart-line",     label: "기본 인디케이터 전략" },
       { key: "indicator-custom",    icon: "fa-solid fa-code",           label: "커스텀 인디케이터 개발" },
       { key: "indicator-formula",   icon: "fa-solid fa-square-root-variable", label: "자유 산식 지표 (DSL·버전)" },
       { key: "indicator-backtest",  icon: "fa-solid fa-flask",          label: "멀티 전략 비교" },
       { key: "company-dashboard",   icon: "fa-solid fa-gauge",          label: "지표 대시보드" },
       { key: "company-compare",     icon: "fa-solid fa-table-columns",  label: "지표 비교 분석" },
-      { key: "company-sector",      icon: "fa-solid fa-layer-group",    label: "섹터 인디케이터" },
     ],
   },
   ml: {
