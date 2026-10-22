@@ -122,8 +122,8 @@ async def run_scan_chunk(batch_size: int | None = None, force: bool = False) -> 
         now = datetime.now(KST)
         day = now.date().isoformat()+(':closed' if now.hour >= 17 else ':session')
         revision = master.master_info().get('revision')
-        if force or doc.get('day') != day or doc.get('revision') != revision:
-            doc = {'day':day,'revision':revision,'cursor':0,'entries':{},'started_at':datetime.now(timezone.utc).isoformat()}
+        if force or doc.get('day') != day or doc.get('revision') != revision or doc.get('signal_revision') != 2:
+            doc = {'day':day,'revision':revision,'signal_revision':2,'cursor':0,'entries':{},'started_at':datetime.now(timezone.utc).isoformat()}
         retry = bool(doc.get('complete'))
         start = doc.get('retry_cursor',0) if retry else doc.get('cursor',0)
         count = max(1,min(batch_size or settings.QUANT_KOREA_BATCH_SIZE,200))

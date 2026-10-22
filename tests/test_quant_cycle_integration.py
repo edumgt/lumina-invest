@@ -265,3 +265,38 @@ def test_unresolved_sell_blocks_repeated_sale_without_rewriting_history():
                         portfolio=[virtual_position()], signal_fn=sell_signal)
     assert not db.added and not db.virtual_calls and pending.status == "LOST"
     assert "미확정 매도 7주" in log["trades"][0]["reason"]
+
+
+@pytest.mark.parametrize("expanded, expected_orders", [(True, 1), (False, 0)])
+def test_testbed_can_select_new_symbol_outside_old_31(monkeypatch, expanded, expected_orders):
+    symbol = "207940.KS"
+    monkeypatch.setattr(f"{__name__}.STOCKS", [{"symbol":symbol,"name":"삼성바이오로직스"}])
+    monkeypatch.setattr(settings, "QUANT_KOREA_ALLOW_PAPER_EXPANSION", expanded)
+    monkeypatch.setattr(settings, "QUANT_KOREA_ALLOW_LIVE_EXPANSION", False)
+    calls = fake_gateway()
+    async def buy_signal(sym, period="2y"):
+        return {"signal":{"action":"매수","score":3,"reasons":["골든크로스"]},"current_price":70_000.0}
+    db, log = run_cycle(broker(quant_selected_symbols=[symbol]), signal_fn=buy_signal)
+    orders = [r for r in db.added if isinstance(r, LiveOrder)]
+    assert len(orders) == expected_orders
+    assert log["live_expansion_blocked"] is not expanded
+    assert log["order_universe"]["scope"] == ("all_eligible" if expanded else "legacy")
+    assert not db.virtual_calls
+    if expanded:
+        assert orders[0].symbol == symbol and orders[0].environment == "paper"
+        assert orders[0].status == "ACCEPTED"
+    else:
+        assert not [c for c in calls if c[0] == "POST"]
+
+
+def test_paper_expansion_does_not_expand_real_account_scope(monkeypatch):
+    symbol="207940.KS"
+    monkeypatch.setattr(f"{__name__}.STOCKS", [{"symbol":symbol,"name":"삼성바이오로직스"}])
+    monkeypatch.setattr(settings,"QUANT_KOREA_ALLOW_PAPER_EXPANSION",True)
+    monkeypatch.setattr(settings,"QUANT_KOREA_ALLOW_LIVE_EXPANSION",False)
+    monkeypatch.setattr(settings,"STOCK_COIN_TRADE_KIS_ENVIRONMENT","real")
+    calls=fake_gateway()
+    db, log=run_cycle(broker(quant_selected_symbols=[symbol]))
+    assert not [r for r in db.added if isinstance(r,LiveOrder)]
+    assert not [c for c in calls if c[0]=="POST"]
+    assert log["order_universe"]["scope"]=="legacy"

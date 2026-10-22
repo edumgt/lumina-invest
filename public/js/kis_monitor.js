@@ -59,7 +59,7 @@ function renderBadges(d) {
     b.kill_switch ? badge(`비상 정지: ${b.kill_reason || ""}`, "bad") : "",
     badge(`실제 적용 프로필 ${d.effective_settings?.profile_id || "기본"} · ${d.effective_settings?.signal_mode || "미확인"}`),
     badge(`강제 로테이션 ${ag.force_buy ? "ON" : "OFF"} · 사이클당 매수 ${ag.max_buys_per_cycle} / 매도 ${ag.max_sells_per_cycle}`),
-    badge(d.effective_settings?.allow_live_expansion ? "신규 주문 종목 확대 허용" : "주문 허용 종목 안에서 후보 선정"),
+    badge(d.effective_settings?.allow_order_expansion ? `${d.environment === "paper" ? "Testbed" : "실전"} 전체 ${d.effective_settings.order_universe_count ?? ""}종목에서 적격 후보 선정` : `기존 ${d.effective_settings?.order_universe_count ?? 31}종목 범위에서 후보 선정`),
     badge(ag.enabled ? `공격 모드 ${ag.interval} · 익절 +${ag.take_profit_pct}% / 손절 -${ag.stop_loss_pct}% · ${ag.order_type === "MARKET" ? "시장가" : "지정가"}` : "공격 모드 OFF", ag.enabled ? "ok" : ""),
     badge(hb == null ? "heartbeat 없음" : hb <= 180 ? `beat 정상 (${Math.round(hb)}s 전)` : `beat 지연 ${Math.round(hb)}s`, hb != null && hb <= 180 ? "ok" : "bad"),
     badge(`시세 ${d.market_data_source === "kis" ? "KIS 실시간" : "Yahoo"}`),

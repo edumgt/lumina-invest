@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -144,7 +145,11 @@ async def kis_monitor(limit: int = Query(50, ge=1, le=200), cycles: int = Query(
     out["effective_settings"] = {
         "profile_id": (strategy_settings.current_profile(settings_doc) or {}).get("id"),
         "signal_mode": signal_mode.resolve(),
-        "allow_live_expansion": bool(settings.QUANT_KOREA_ALLOW_LIVE_EXPANSION),
+        "allow_live_expansion": bool(settings.QUANT_KOREA_ALLOW_LIVE_EXPANSION),  # real-account policy
+        "allow_order_expansion": gateway.allow_universe_expansion(),
+        "allow_paper_expansion": bool(settings.QUANT_KOREA_ALLOW_PAPER_EXPANSION),
+        "allow_real_expansion": bool(settings.QUANT_KOREA_ALLOW_LIVE_EXPANSION),
+        "order_universe_count": len(QUANT_STOCKS) if gateway.allow_universe_expansion() else len(json.loads((Path(__file__).resolve().parents[1] / "data" / "legacy-trading-symbols.json").read_text())),
     }
     out["cycle_sec"] = int(settings.QUANT_CYCLE_SEC)
     out["heartbeat_age_sec"] = _heartbeat_age()

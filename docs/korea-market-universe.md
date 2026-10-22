@@ -30,9 +30,10 @@
 - `QUANT_KOREA_MAX_DATA_AGE_DAYS=4` (달력일; 긴 연휴에는 보수적으로 후보가 줄 수 있음)
 - `QUANT_KOREA_MIN_TURNOVER_KRW=100000000` (20일 평균 1억 원)
 - `QUANT_KOREA_INGEST_MISSING=true`
-- `QUANT_KOREA_ALLOW_LIVE_EXPANSION=false`
+- `QUANT_KOREA_ALLOW_PAPER_EXPANSION=true` (KIS Testbed 전종목 후보)
+- `QUANT_KOREA_ALLOW_LIVE_EXPANSION=false` (실제 계좌 별도 정책)
 
-실전 신규 매수 범위는 마지막 기존 31종목으로 제한하며, 전체 시장의 실전 주문 확대는 별도 승인·설정 변경 대상이다. 주문 승인·비상 정지·일손실·주문 횟수·주기·금액 등 기존 위험관리 기준은 유지한다. 직접 선택 최대 10개는 동시 거래 대상 수 제한이며, 선택 가능한 주식 목록 제한이 아니다.
+KIS Testbed는 코스피·코스닥 전체 적격 종목에서 후보를 선정한다. 외부 주문 경로를 나타내는 `quant_mode=live`와 실제 계좌 환경 `paper/real`을 구분하며, 실제 계좌의 신규 매수 범위는 별도 플래그에 따라 기존 31종목 제한을 유지한다. Testbed 전종목 설정은 전략설정과 저장 프로필에 기록된다. 주문 승인·비상 정지·일손실·주문 횟수·주기·금액 등 기존 위험관리 기준은 유지한다. 직접 선택 최대 10개는 동시 거래 대상 수 제한이며, 선택 가능한 주식 목록 제한이 아니다.
 
 ## 화면과 API
 

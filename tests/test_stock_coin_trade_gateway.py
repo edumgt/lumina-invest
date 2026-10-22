@@ -157,3 +157,14 @@ def test_krx_2026_holidays_match_published_list():
     assert len(gw.KRX_HOLIDAYS_2026) == 17
     assert "2026-07-17" in gw.KRX_HOLIDAYS_2026 and "2026-09-28" not in gw.KRX_HOLIDAYS_2026
     assert not gw.is_krx_market_open(datetime(2026, 7, 17, 10, 0, tzinfo=KST))
+
+
+@pytest.mark.parametrize("env,paper_enabled,real_enabled,expected", [
+    ("paper", True, False, True), ("paper", False, True, False),
+    ("real", True, False, False), ("real", False, True, True),
+    ("invalid", True, True, False),
+])
+def test_order_universe_scope_follows_broker_environment(monkeypatch, env, paper_enabled, real_enabled, expected):
+    monkeypatch.setattr(settings, "QUANT_KOREA_ALLOW_PAPER_EXPANSION", paper_enabled)
+    monkeypatch.setattr(settings, "QUANT_KOREA_ALLOW_LIVE_EXPANSION", real_enabled)
+    assert gw.allow_universe_expansion(env) is expected

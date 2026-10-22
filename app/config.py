@@ -181,7 +181,8 @@ class Settings(BaseSettings):
     QUANT_KOREA_MIN_TURNOVER_KRW: float = 100_000_000.0
     QUANT_KOREA_MAX_DATA_AGE_DAYS: int = 4
     QUANT_KOREA_INGEST_MISSING: bool = True
-    QUANT_KOREA_ALLOW_LIVE_EXPANSION: bool = False
+    QUANT_KOREA_ALLOW_PAPER_EXPANSION: bool = True  # KIS Testbed: full eligible KOSPI/KOSDAQ universe
+    QUANT_KOREA_ALLOW_LIVE_EXPANSION: bool = False  # Real-account expansion is a separate policy
 
     # 사용자 설정 모드: 일봉 지표 점수(RSI ±2 · MA 교차 ±3/±1 · 볼린저 ±1, 대략 -6~+6)로 다시 판정하는 임계값과 추세 필터.
     QUANT_CUSTOM_BUY_SCORE: int = 1               # 점수 ≥ 이 값 → 매수 (≥ 값+2 → 강력 매수)

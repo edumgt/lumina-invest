@@ -928,12 +928,17 @@ async def _run_quant_cycle(user_id: str = "quant_system") -> None:
                     if code in live_holdings and int(live_holdings[code]["quantity"]) > 0]
         held_symbols = {p.symbol for p in held}
         approved = None
-        # Expanding analysis/paper scope does not authorize new real-order symbols.
-        if mode == "live" and not app_settings.QUANT_KOREA_ALLOW_LIVE_EXPANSION:
+        # Testbed and real-account scope are independent; both use quant_mode=live.
+        if mode == "live" and not gateway.allow_universe_expansion():
             from pathlib import Path
             import json
             approved = set(json.loads((Path(__file__).resolve().parents[1] / 'data' / 'legacy-trading-symbols.json').read_text()))
             cycle_log['live_expansion_blocked'] = True
+        cycle_log["live_expansion_blocked"] = approved is not None
+        cycle_log["order_universe"] = {
+            "environment": gateway.environment(), "scope": "all_eligible" if approved is None else "legacy",
+            "count": len(QUANT_STOCKS) if approved is None else len(approved),
+        }
         candidates = await candidate_stocks(allowed_symbols=approved)
         selected = set(selected_symbols) if symbol_source == "manual" else {s['symbol'] for s in candidates}
         if approved is not None:

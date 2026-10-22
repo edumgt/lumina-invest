@@ -344,3 +344,20 @@ def test_spec_endpoint_and_revalidate_proxy(client):
         assert c.post("/api/quant/strategy/revalidate", json={"strategy_id": "sample_ma_cross_kr"}).status_code == 502
     with patch.object(strategy_loader, "is_configured", lambda: False):
         assert c.post("/api/quant/strategy/revalidate", json={"strategy_id": "x"}).status_code == 503
+
+
+def test_testbed_universe_scope_is_saved_and_restored_as_profile_value(monkeypatch):
+    import asyncio
+    key = "QUANT_KOREA_ALLOW_PAPER_EXPANSION"
+    assert key in ss.ENV_KEYS and key in ss.FIELD_MAP
+    current={"values":{},"profiles":[]}
+    saved={}
+    async def persist(cache_key, doc):saved.update(doc)
+    with patch.object(ss,"load_doc",AsyncMock(return_value=current)), patch.object(ss,"cache_set",persist):
+        result=asyncio.run(ss.save({key:True},{},actor="test",label="Testbed 전종목"))
+    assert result["created"]["values"][key] is True
+    assert saved["values"][key] is True
+    monkeypatch.setattr(settings,key,False)
+    with patch.object(ss,"cache_get",AsyncMock(return_value=saved)):
+        asyncio.run(ss.load_and_apply())
+    assert getattr(settings,key) is True

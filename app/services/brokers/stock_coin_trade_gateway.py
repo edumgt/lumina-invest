@@ -48,6 +48,16 @@ def environment() -> str:
     return env if env in ("paper", "real") else "paper"
 
 
+def allow_universe_expansion(env: str | None = None) -> bool:
+    """External-order mode includes Testbed; choose scope by broker environment."""
+    target = environment() if env is None else str(env).strip().lower()
+    if target == "paper":
+        return bool(settings.QUANT_KOREA_ALLOW_PAPER_EXPANSION)
+    if target == "real":
+        return bool(settings.QUANT_KOREA_ALLOW_LIVE_EXPANSION)
+    return False
+
+
 def default_order_type() -> str:
     ot = (settings.STOCK_COIN_TRADE_ORDER_TYPE or "LIMIT").strip().upper()
     return ot if ot in ("LIMIT", "MARKET") else "LIMIT"

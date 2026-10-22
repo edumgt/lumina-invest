@@ -138,8 +138,10 @@ FIELDS: tuple[Field, ...] = (
     Field("STOCK_COIN_TRADE_ORDER_TYPE", "일봉 모드 실주문 유형", "②·③ 의 게이트웨이 주문 유형. LIMIT 은 가상 체결가로 지정가. 시세가 Yahoo(지연)면 MARKET 이 안전하다.",
           G_BASE, "enum", choices=("LIMIT", "MARKET")),
     # ── 종목·투자금 ──
+    Field("QUANT_KOREA_ALLOW_PAPER_EXPANSION", "KIS Testbed 전종목 후보", "ON: 코스피·코스닥 전체 주식에서 거래 가능 상태·데이터 신선도·유동성을 통과한 종목을 후보로 선정합니다. OFF: 기존 31종목으로 제한합니다. 실제 계좌의 종목 범위는 별도입니다.", G_SYMBOL, "bool",
+          note="전종목은 후보를 고르는 범위입니다. 동시 매수 수·투자금·위험관리 한도는 그대로 적용됩니다."),
     Field("KIS_PAPER_BATCH_AI_TOP_N", "AI 추천 종목 수", "점수 상위 N 종목을 거래 대상으로. 공격 모드에서는 max(N, 매수 한도×2, 5) 로 넓어진다.", G_SYMBOL, "int", min=1, max=10, unit="종목"),
-    Field("KIS_PAPER_BATCH_SYMBOLS", "수동 종목", "비우면 AI 추천. '005930.KS,035720.KS' 처럼 적으면 그 종목만 거래(유니버스 31종목 안에서).", G_SYMBOL, "str",
+    Field("KIS_PAPER_BATCH_SYMBOLS", "수동 종목", "비우면 AI 추천. '005930.KS,035720.KS' 처럼 적으면 전체 코스피·코스닥 주식 중 선택한 적격 종목만 거래.", G_SYMBOL, "str",
           note="저장 후 다음 사이클에 배치 행의 종목 선정 방식이 manual/ai 로 동기화된다"),
     Field("KIS_PAPER_BATCH_PER_TRADE_BUDGET", "1회 투자금", "매수 1건에 쓰는 금액. 수량 = 투자금 × 매수 비율 ÷ 가격.", G_SYMBOL, "float", min=10_000, max=10_000_000, unit="원"),
     Field("quant_buy_ratio", "매수 비율", "1회 투자금 중 실제로 쓰는 비율.", G_SYMBOL, "float", source="row", min=0.1, max=1.0),
