@@ -2,7 +2,7 @@
 import { api, escHtml, setToast } from '/js/common.js';
 
 let loading = false;
-const metric = (label, value, note = '') => `<div class="overview-metric"><span>${escHtml(label)}</span><strong>${escHtml(value)}</strong><small>${escHtml(note)}</small></div>`;
+const metric = (label, value, note = '', cls = '') => `<div class="overview-metric${cls ? ' ' + cls : ''}"><span>${escHtml(label)}</span><strong>${escHtml(value)}</strong><small>${escHtml(note)}</small></div>`;
 const number = (value, suffix = '', digits = 1) => value !== null && value !== undefined && Number.isFinite(Number(value)) ? Number(value).toLocaleString('ko-KR', { maximumFractionDigits: digits }) + suffix : '데이터 없음';
 async function fill(id, request, render) {
   const el = document.getElementById(id);
@@ -28,7 +28,7 @@ export async function loadDashboard() {
         metric('모의 투자 의사결정', data.running ? '실행 중' : '중지됨') + metric('현재 판단 신호', number(data.signals?.length, '개', 0))),
       fill('overview-indicator-metrics', () => api('/api/quant/pipeline?symbol=005930.KS&period=1y&strategy=rsi&cost_bps=10&slippage_bps=0'), data =>
         metric('누적 수익률', number(data.total_return_pct, '%')) + metric('샤프 비율', number(data.sharpe_ratio, '', 2)) + metric('최대 낙폭 (MDD)', number(data.mdd_pct, '%')) + metric('승률', number(data.win_rate_pct, '%')) + metric('거래 횟수', number(data.trade_count, '회', 0)) + metric('매수 후 보유 수익률', number(data.buy_hold_return_pct, '%'))),
-      fill('overview-saved', () => api('/api/custom-indicators'), data => metric('내 커스텀 인디케이터', number(data.items?.length, '개', 0))),
+      fill('overview-saved', () => api('/api/custom-indicators'), data => metric('내 커스텀 인디케이터', number(data.items?.length, '개', 0), '', 'wide')),
     ]);
     document.getElementById('overview-updated').textContent = '조회 완료 · ' + new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul', hour12: false });
   } finally { loading = false; button.disabled = false; }
@@ -59,8 +59,8 @@ function renderAccountPanel() {
     metric('현금 · 예수금', money(tab.cash, tab.currency)) +
     metric('총 자산', money(tab.total, tab.currency), pnlNote) +
     metric('보유 종목', tab.positions === null || tab.positions === undefined ? '데이터 없음' : number(tab.positions, '개', 0));
-  if (tab.key === 'kis') html += metric('자동매매', tab.auto_trade_running ? '실행 중 (live · KIS)' : '꺼짐', `미체결 실주문 ${number(tab.open_live_orders, '건', 0)} · ${escHtml(tab.environment === 'real' ? '실전' : '모의(Testbed)')}`);
-  if (tab.key === 'paper' && tab.breakdown) html += metric('자산별 평가', `주식 ${money(tab.breakdown.stocks)}`, `코인 ${money(tab.breakdown.crypto)} · 대체 ${money(tab.breakdown.alternatives)}`);
+  if (tab.key === 'kis') html += metric('자동매매', tab.auto_trade_running ? '실행 중 (live · KIS)' : '꺼짐', `미체결 실주문 ${number(tab.open_live_orders, '건', 0)} · ${escHtml(tab.environment === 'real' ? '실전' : '모의(Testbed)')}`, 'wide');
+  if (tab.key === 'paper' && tab.breakdown) html += metric('자산별 평가', `주식 ${money(tab.breakdown.stocks)}`, `코인 ${money(tab.breakdown.crypto)} · 대체 ${money(tab.breakdown.alternatives)}`, 'wide');
   panel.innerHTML = html;
 }
 function renderAccountTabBar() {

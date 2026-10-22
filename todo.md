@@ -1978,3 +1978,12 @@ SageMaker를 활용해 매일 예측을 수행하고, 그 결과를 검증하며
 
 ### 6-65. 2026-10-22 st(stock-coin-trade) hts.html 이 fd `GET /api/stocks/universe/candidates` 를 읽기 시작 (st 6-27 연동 메모 · lumina 코드 변경 없음)
 - st 백엔드 `/api/hts/recommendations` 가 이 공개 엔드포인트(인증 없음, `app/routes/stocks.py korea_candidates`)를 60초 캐시로 호출해 quant-dashboard 와 같은 규칙(`signal.action == "강력 매수"`)으로 걸러 HTS 관심종목에 보여 준다. **이 엔드포인트에 인증·CORS·응답 형식 변경을 가할 때 st 6-27 을 함께 갱신할 것.**
+
+### 6-66. 2026-10-22 대시보드(#dashboard) 좌우 카드·타일·탭 뱃지 단 정리 (사용자 요청)
+- 문제: 좌측(투자 사이트별 현재 투자액 4~5타일 + 의사결정 2타일)과 우측(전략 성능 6타일 + 커스텀 인디케이터 1타일)이 각각 별도 2열 격자라 홀수 번째 타일이 혼자 남고, 보조 문구가 있는 타일과 없는 타일의 높이가 달라 줄이 안 맞았다. 좌측은 탭 줄 때문에 격자 시작 높이도 우측과 어긋남.
+- `public/css/app.css`: `.overview-intro{min-height:96px}` 로 두 카드의 소제목 영역 높이를 맞추고, `.overview-grid`(2열, `grid-auto-rows:1fr`) 안에서 `.overview-metrics:not(.hidden){display:contents}` 로 여러 묶음을 한 격자로 흘려 타일 높이를 통일. `.overview-metric` 은 flex column + `min-height:108px`, 보조 문구 `small` 은 `margin-top:auto; min-height:18px` 로 숫자 줄 정렬. 탭 뱃지 `.overview-tab` 은 높이 32px·`white-space:nowrap` 으로 크기 통일. `app.html` 의 `app.css?v=20261022-dashboard-tidy-1`.
+- `public/app.html`: 두 섹션의 h3·설명·탭을 `.overview-intro` 로, 지표 컨테이너들을 `.overview-grid` 로 감쌈(id·역할 속성 유지).
+- `public/js/dashboard.js`: `metric(label, value, note, cls)` 4번째 인자 추가. 홀수 끝 타일(KIS 탭 「자동매매」, paper 탭 「자산별 평가」, 「내 커스텀 인디케이터」)에 `wide` 로 2열 차지 → 빈 칸 없음.
+- 검증: 마크업·CSS 치환 확인(로컬 브라우저 없음 → 배포 후 화면 확인). `#overview-robo-metrics` 의 `.hidden` 은 `:not(.hidden)` 으로 보호.
+- 주의: 로컬 `public/app.html` 에는 Codex 진행 중인 company-dashboard 작업(`company-dashboard.css/js`, `main.js` 버전 쿼리, #company 뷰 마크업)이 같이 들어 있다. 배포 스크립트는 6-56 과 같은 방식으로 **커밋본(HEAD) app.html 에 이 작업의 두 래퍼 + css 버전만 적용한 사본**을 보내고, 배포본에 `company-dashboard.css` 참조가 있으면 중단한다. app.css/dashboard.js 는 diff 가 이 작업뿐임을 확인.
+- **배포 미완**: `bash deploy/fd-dashboard-tidy.sh` (정적 파일 docker cp, 재시작 없음). 확인: https://fd.edumgt.co.kr/app.html#dashboard 좌우 타일 높이 동일, 혼자 남는 타일 없음, 탭 뱃지 높이 동일. 커밋 시 Codex 의 company-dashboard 변경과 파일 단위로 분리.

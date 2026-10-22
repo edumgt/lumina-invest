@@ -1,3 +1,4 @@
+import { renderCompanyWorkspace, clearCompanyWorkspace } from "/js/company-dashboard.js?v=20261022-butler-1";
 /* 기업분석(지표 대시보드·비교·섹터) + 종목 검색 모달
  * app.html 인라인 스크립트에서 분리됨. 엔트리는 main.js */
 import { attachIndicatorHelp } from "/js/company-indicator-help.js";
@@ -95,6 +96,7 @@ function removeCompanyTab(symbol) {
 async function fetchAndRenderCompany(symbol) {
   const overviewEl = document.getElementById("co-overview");
   if (!overviewEl) return;
+  clearCompanyWorkspace();
   overviewEl.innerHTML = `<div class="text-xs" style="color:var(--text-mute);grid-column:1/-1;">불러오는 중…</div>`;
   try {
     let d = companyFundCache[symbol];
@@ -105,6 +107,7 @@ async function fetchAndRenderCompany(symbol) {
     if (selectedCompanySymbol === symbol) renderCompanyData(d);
   } catch (e) {
     if (selectedCompanySymbol !== symbol) return;
+    clearCompanyWorkspace("데이터 조회에 실패했습니다. 종목을 다시 선택하세요.");
     overviewEl.innerHTML = `<div class="text-xs" style="color:var(--red);grid-column:1/-1;">데이터 조회 실패: ${escHtml(e?.message || e)}</div>`;
     ["co-valuation", "co-profitability", "co-quarterly", "co-balance"].forEach(id => { const el = document.getElementById(id); if (el) el.innerHTML = ""; });
   }
@@ -203,6 +206,7 @@ function valuationBasisLine(d) {
 }
 
 function renderCompanyData(d) {
+  renderCompanyWorkspace(d);
   const pctColor = (d.chg ?? 0) >= 0 ? "var(--green)" : "var(--red)";
   const sign = (d.chg ?? 0) >= 0 ? "+" : "";
 

@@ -14,9 +14,10 @@
         href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
   <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
-  <link rel="stylesheet" href="/css/app.css?v=20261022-kis-compact-1" />
+  <link rel="stylesheet" href="/css/app.css?v=20261022-dashboard-tidy-1" />
 <link rel="stylesheet" href="https://www.edumgt.co.kr/css/common.css?v=20261012-common-3" />
   <link rel="stylesheet" href="/css/font-rendering.css" />
+  <link rel="stylesheet" href="/css/company-dashboard.css?v=20261022-butler-1" />
 </head>
 <body>
 
@@ -121,17 +122,25 @@
       <div class="overview-columns">
         <section class="card overview-section" aria-labelledby="overview-robo-title">
           <div class="overview-section-heading"><i class="fa-solid fa-robot"></i><div><h2 id="overview-robo-title">로보 어드바이저</h2><p class="overview-note">투자 상담부터 자산배분과 리밸런싱까지</p></div></div>
-          <h3>투자 사이트별 현재 투자액</h3><p class="overview-note">탭을 눌러 사이트별 계좌를 확인하세요. KIS 모의투자가 기본입니다.</p>
-          <div id="overview-account-tabs" class="overview-tabs" role="tablist" aria-label="투자 사이트"></div>
-          <div id="overview-account-panel" class="overview-metrics" role="tabpanel"><p class="overview-note" role="status">계좌를 불러오는 중입니다…</p></div>
-          <div id="overview-robo-metrics" class="overview-metrics hidden"></div>
-          <div id="overview-decision" class="overview-metrics"></div>
+          <div class="overview-intro">
+            <h3>투자 사이트별 현재 투자액</h3><p class="overview-note">탭을 눌러 사이트별 계좌를 확인하세요. KIS 모의투자가 기본입니다.</p>
+            <div id="overview-account-tabs" class="overview-tabs" role="tablist" aria-label="투자 사이트"></div>
+          </div>
+          <div class="overview-grid">
+            <div id="overview-account-panel" class="overview-metrics" role="tabpanel"><p class="overview-note" role="status">계좌를 불러오는 중입니다…</p></div>
+            <div id="overview-robo-metrics" class="overview-metrics hidden"></div>
+            <div id="overview-decision" class="overview-metrics"></div>
+          </div>
         </section>
         <section class="card overview-section" aria-labelledby="overview-indicator-title">
           <div class="overview-section-heading"><i class="fa-solid fa-chart-pie"></i><div><h2 id="overview-indicator-title">투자 인디케이터</h2><p class="overview-note">지표 개발부터 백테스트와 API 연동까지</p></div></div>
-          <h3>기본 전략 성능</h3><p class="overview-note">삼성전자 · 최근 1년 · RSI 역추세 · 수수료 10bp · 슬리피지 0bp<br>과거 데이터 백테스트 결과이며 내 계좌의 실현 수익률과 다릅니다.</p>
-          <div id="overview-indicator-metrics" class="overview-metrics"></div>
-          <div id="overview-saved" class="overview-metrics"></div>
+          <div class="overview-intro">
+            <h3>기본 전략 성능</h3><p class="overview-note">삼성전자 · 최근 1년 · RSI 역추세 · 수수료 10bp · 슬리피지 0bp<br>과거 데이터 백테스트 결과이며 내 계좌의 실현 수익률과 다릅니다.</p>
+          </div>
+          <div class="overview-grid">
+            <div id="overview-indicator-metrics" class="overview-metrics"></div>
+            <div id="overview-saved" class="overview-metrics"></div>
+          </div>
         </section>
       </div>
     </div>
@@ -1104,41 +1113,34 @@
     <!-- ══ 7. 투자 인디케이터 ═══════════════════════════════════════ -->
     <!-- 7-1. 지표 대시보드 -->
     <div class="view" data-view="company-dashboard">
-      <div class="space-y-4">
-        <!-- 종목 선택 탭 -->
-        <div class="card" style="padding:14px 18px;">
-          <div class="flex items-center gap-3 flex-wrap">
-            <span class="text-sm font-semibold" style="color:var(--text-dim);">종목 선택</span>
-            <div id="company-tabs" class="flex gap-2 flex-wrap"></div>
-            <button id="company-search-btn" style="padding:5px 14px; border-radius:20px; font-size:12px; font-weight:600; cursor:pointer; border:1px dashed var(--border); background:transparent; color:var(--text-dim);">
-              <i class="fa-solid fa-magnifying-glass"></i> 종목 검색
-            </button>
-          </div>
-        </div>
-        <!-- 핵심 지표 개요 -->
-        <div id="co-overview" class="grid grid-cols-4 gap-3"></div>
-        <!-- 밸류에이션 + 수익성 인디케이터 -->
-        <div class="grid md:grid-cols-2 gap-4">
-          <div class="card">
-            <h3 class="font-semibold mb-3 text-sm"><i class="fa-solid fa-ruler-combined" aria-hidden="true"></i> 밸류에이션 인디케이터</h3>
-            <p class="text-xs mb-3" style="color:var(--text-mute);">PER · PBR · EV/EBITDA 등 가격 적정성 지표</p>
-            <div id="co-valuation" class="space-y-2"></div>
-          </div>
-          <div class="card">
-            <h3 class="font-semibold mb-3 text-sm"><i class="fa-solid fa-chart-line" aria-hidden="true"></i> 수익성 인디케이터</h3>
-            <p class="text-xs mb-3" style="color:var(--text-mute);">ROE · ROA · 영업이익률 등 수익 창출 능력 지표</p>
-            <div id="co-profitability" class="space-y-2"></div>
-          </div>
-        </div>
-        <!-- 분기 실적 -->
-        <div class="card">
-          <h3 class="font-semibold mb-3 text-sm"><i class="fa-solid fa-chart-column" aria-hidden="true"></i> 분기별 실적 인디케이터</h3>
-          <div id="co-quarterly" class="overflow-x-auto"></div>
-        </div>
-        <!-- 재무상태표 요약 -->
-        <div class="card">
-          <h3 class="font-semibold mb-3 text-sm"><i class="fa-solid fa-building-columns" aria-hidden="true"></i> 재무 건전성 인디케이터 (최근 연도)</h3>
-          <div id="co-balance" class="overflow-x-auto"></div>
+      <div class="co-workspace">
+        <header class="card co-heading">
+          <div class="flex items-center justify-between"><h2 class="text-lg font-semibold">지표 대시보드</h2></div>
+          <div class="co-stock-picker"><div id="company-tabs" class="flex gap-2 flex-wrap"></div><button id="company-search-btn" class="btn-secondary text-xs"><i class="fa-solid fa-magnifying-glass"></i> 종목 검색</button></div>
+          <div id="co-identity" aria-live="polite"></div>
+          <div id="co-overview" class="co-overview"></div>
+        </header>
+        <nav class="co-section-nav" aria-label="기업 지표 탐색">
+          <button type="button" data-co-target="co-financial-section">실적 한눈에</button>
+          <button type="button" data-co-target="co-detail-section">재무정보</button>
+          <button type="button" data-co-target="co-value-section">밸류에이션·수익성</button>
+          <button type="button" data-co-target="co-balance-section">재무 건전성</button>
+        </nav>
+        <div class="co-body">
+          <main class="co-main">
+            <section id="co-financial-section" class="card co-section">
+              <div class="co-section-head"><div><h3>실적 한눈에</h3><p>분기 실적과 최근 재무구조를 비교합니다.</p></div><span class="co-pill">제공된 전체 분기</span></div>
+              <div class="co-chart-grid"><div><h4>매출액 추이</h4><div id="co-revenue-chart" class="co-viz"></div></div><div><h4>영업이익·순이익 추이</h4><div id="co-income-chart" class="co-viz"></div></div><div><h4>자본·부채 구성</h4><div id="co-structure-chart" class="co-viz"></div></div><div><h4>수익성 지표</h4><div id="co-margin-chart" class="co-viz"></div></div></div>
+              <div id="co-chart-source" class="co-source"></div>
+            </section>
+            <section id="co-detail-section" class="card co-section"><div class="co-section-head"><div><h3>분기별 재무정보</h3><p>차트의 수치를 원자료와 함께 확인하세요.</p></div></div><div id="co-quarterly" class="overflow-x-auto"></div></section>
+            <section id="co-value-section" class="co-metric-grid co-section">
+              <div class="card"><h3>밸류에이션</h3><p class="co-caption">가격과 이익·자산의 관계</p><div id="co-valuation" class="space-y-2"></div></div>
+              <div class="card"><h3>수익성</h3><p class="co-caption">자본과 매출의 이익 창출 능력</p><div id="co-profitability" class="space-y-2"></div></div>
+            </section>
+            <section id="co-balance-section" class="card co-section"><h3>재무 건전성</h3><p class="co-caption">최근 연도 재무상태표</p><div id="co-balance" class="overflow-x-auto"></div></section>
+          </main>
+          <aside class="card co-sidebar"><h3>기업 스냅샷</h3><div id="co-snapshot"></div><div class="co-side-note">종목 탭에서 기업을 바꾸거나 검색으로 추가하세요. 지표명 옆 ⓘ에서 계산 기준을 확인할 수 있습니다.</div></aside>
         </div>
       </div>
     </div>
@@ -2881,7 +2883,7 @@ RC_i = wi × (Σw)_i / √(w'Σw)
 
 </div><!-- #app-shell -->
 
-<script type="module" src="/js/main.js?v=20261022-bb-fill-1"></script>
+<script type="module" src="/js/main.js?v=20261022-strategy-guides-1"></script>
 
 <!-- 종목 검색 모달 -->
 <!-- 데이터 조회 대기 모달: 모래시계 + 경과 시간 -->
