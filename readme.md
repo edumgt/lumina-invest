@@ -1014,3 +1014,160 @@ AI의 Vector DB는 이 수많은 특징들을 가지고 무엇을 할까요? 핵
 * `langchain-protocol`: LLM 애플리케이션 프레임워크 관련 프로토콜 인터페이스.
 
 
+---
+
+Ran command: WSL distribution check (`wsl -l -v`)
+Created dummy.txt
+Ran command: WSL distribution check (`wsl -l -v`)
+Ran command: List /home/ubuntu directory (`wsl -d Ubuntu-24.04 -u ubuntu bash -c "ls -la /home/ubuntu"`)
+Ran command: Repository basic inspection (`wsl -d Ubuntu-24.04 -u ubuntu bash -c 'for d in domain-rag-lab lumina-invest stock-coin-trade stock-kms-portal; do echo "=== $d ==="; cd /home/ubuntu/$d && git remote -v 2>/dev/null; git log -1 --oneline 2>/dev/null; ls -la; done'`)
+Ran command: Inspect repositories overview (`wsl -d Ubuntu-24.04 -u ubuntu bash -c "for d in domain-rag-lab lumina-invest stock-coin-trade stock-kms-portal; do echo === \$d ===; cd /home/ubuntu/\$d && git remote -v && git log -1 --oneline && ls -F; done"`)
+Ran command: List domain-rag-lab (`wsl -d Ubuntu-24.04 -u ubuntu bash -c "ls -la /home/ubuntu/domain-rag-lab"`)
+Ran command: Analyze repositories overview (`wsl -d Ubuntu-24.04 -u ubuntu bash -c 'cat << "EOF" > /tmp/analyze.sh
+#!/bin/bash
+repos=("domain-rag-lab" "lumina-invest" "stock-coin-trade" "stock-kms-portal")
+for r in "${repos[@]}"; do
+    echo "================================================================================"
+    echo "REPOSITORY: $r"
+    echo "================================================================================"
+    cd "/home/ubuntu/$r" || continue
+    echo "--- Git Remote & Branch & Last Commit ---"
+    git remote -v
+    git branch -a
+    git log -3 --oneline
+    echo "--- Top-level structure ---"
+    ls -lah
+    echo "--- Git Status ---"
+    git status -s
+    echo ""
+done
+EOF
+chmod +x /tmp/analyze.sh
+/tmp/analyze.sh
+'`)
+Created inspect_repos.sh
+Ran command: Run repos inspection script (`wsl -d Ubuntu-24.04 -u ubuntu bash /mnt/c/test123/inspect_repos.sh`)
+Created deep_inspect.py
+Ran command: Execute deep inspection (`wsl -d Ubuntu-24.04 -u ubuntu python3 /mnt/c/test123/deep_inspect.py`)
+Created check_3_repos.py
+Ran command: Inspect 3 repos details (`wsl -d Ubuntu-24.04 -u ubuntu python3 /mnt/c/test123/check_3_repos.py`)
+Ran command: Read domain-rag-lab README (`wsl -d Ubuntu-24.04 -u ubuntu bash -c "head -n 50 /home/ubuntu/domain-rag-lab/README.md"`)
+Ran command: Check docker containers (`wsl -d Ubuntu-24.04 -u ubuntu bash -c "docker ps"`)
+Created analyze_components.py
+Ran command: Run detailed component analysis (`wsl -d Ubuntu-24.04 -u ubuntu python3 /mnt/c/test123/analyze_components.py`)
+Ran command: Check domain-rag-lab git (`wsl -d Ubuntu-24.04 -u ubuntu bash -c "cd /home/ubuntu/domain-rag-lab && git remote -v && git branch --show-current && git log -3 --oneline"`)
+Ran command: Check todo.md in all 4 repos (`wsl -d Ubuntu-24.04 -u ubuntu bash -c 'for r in domain-rag-lab lumina-invest stock-coin-trade stock-kms-portal; do echo "=== $r ==="; head -n 25 /home/ubuntu/$r/todo.md 2>/dev/null || echo "No todo.md"; done'`)
+Created check_todos.py
+Ran command: Read todos of 4 repos (`wsl -d Ubuntu-24.04 -u ubuntu python3 /mnt/c/test123/check_todos.py`)
+Ran command: Git status of 4 repos (`wsl -d Ubuntu-24.04 -u ubuntu bash -c 'cd /home/ubuntu/domain-rag-lab && git status -s; cd /home/ubuntu/lumina-invest && git status -s; cd /home/ubuntu/stock-coin-trade && git status -s; cd /home/ubuntu/stock-kms-portal && git status -s'`)
+Ran command: Clean up temp files (`Remove-Item -Path "c:\test123\dummy.txt", "c:\test123\inspect_repos.sh", "c:\test123\deep_inspect.py", "c:\test123\check_3_repos.py", "c:\test123\analyze_components.py", "c:\test123\check_todos.py" -Force -ErrorAction SilentlyContinue`)
+Ran command: Remove temp file in WSL (`wsl -d Ubuntu-24.04 -u ubuntu bash -c "rm -f /tmp/analyze.sh"`)
+
+WSL 환경(Ubuntu 24.04)의 `/home/ubuntu` 경로에 위치한 4개 레포지토리에 대한 종합 분석 결과입니다.
+
+---
+
+### 1. 전체 생태계 개요 (Ecosystem Overview)
+
+4개 레포지토리 모두 `https://github.com/edumgt/*` 조직 하에 관리되며, **금융 AI, 퀀트 분석, RAG(지식 검색), 모의투자 및 증권사 Open API 자동매매**를 실습·운영하기 위한 유기적인 파이프라인으로 구성되어 있습니다.
+
+```mermaid
+flowchart LR
+    subgraph Analysis_Backtest [전략 및 백테스트]
+        DRL["domain-rag-lab<br/>(금융상품 RAG & LEAN 백테스트)"]
+    end
+
+    subgraph Quant_Engine [신호 생성 및 위험관리]
+        LUM["lumina-invest<br/>(로보어드바이저 & 퀀트 시그널)"]
+    end
+
+    subgraph Execution_Broker [체결 및 모의거래]
+        SCT["stock-coin-trade<br/>(모의투자 & Open API 브로커)"]
+    end
+
+    subgraph Integrated_Portal [단일 통합 웹 포털]
+        SKP["stock-kms-portal<br/>(금융 학습, 차트, KMS, Lex/RAG 포털)"]
+    end
+
+    DRL -->|"백테스트 결과 / 전략 스펙 (HTTP API)"| LUM
+    LUM -->|"주문 실행 / 잔고 조회 Open API (API Key)"| SCT
+    DRL -.->|"포크 및 프런트엔드 통합"| SKP
+```
+
+- **연동 원칙**: 세 저장소(`domain-rag-lab`, `lumina-invest`, `stock-coin-trade`)는 **독립 배포·독립 DB**를 유지하며, HTTP REST API(API Key 인증)로만 통신합니다.
+- **포털 통합**: `stock-kms-portal`은 `domain-rag-lab`과 투자 분석 웹앱(`investment-analysis`)의 프런트/백엔드를 단일 웹 원점(Port 80)으로 흡수·통합한 엔드포인트 포털입니다.
+
+---
+
+### 2. 레포지토리별 상세 분석
+
+#### ① `domain-rag-lab` — 금융상품·자산배분 RAG 및 백테스트 엔진
+- **주요 목적**: 금융상품(주식, ETF, 채권, 파생) 및 자산배분 방법론 학습을 위한 특화 RAG 서비스 및 QuantConnect LEAN 백테스트 웹앱
+- **Git 정보**: `main` 브랜치 / 최근 커밋: `20a51e1 feat: 추가된 콘텐츠 아코디언 및 사이트 푸터 레이아웃 스타일 적용`
+- **핵심 기술 스택**:
+  - **Backend**: Python, FastAPI, Streamlit (`streamlit_app.py`)
+  - **Database & Search**: PostgreSQL (`pgvector`), Qdrant (벡터 검색), Redis
+  - **백테스트 엔진**: QuantConnect LEAN 엔진 (로컬 Docker 컨테이너 연동)
+  - **인프라**: Docker Compose, Caddy (TLS 역방향 프록시), AWS EC2 배포 구성
+- **특징 및 핵심 모듈**:
+  - Qdrant 벡터 검색과 PostgreSQL 키워드 검색을 RRF(Reciprocal Rank Fusion)로 결합한 하이브리드 검색.
+  - 세션 단기 기억 및 `pgvector` 기반 장기 기억(Long-term memory)을 사용하는 멀티턴 대화 오케스트레이터.
+  - PDF/TXT 문서 인제스천 및 청킹 파이프라인.
+
+---
+
+#### ② `lumina-invest` — 로보어드바이저 및 퀀트 시그널 오케스트레이터
+- **주요 목적**: AI 패턴 인식 및 포트폴리오 최적화 기반 자동화 로보어드바이저, 커스텀 인디케이터 성과 검증 및 자동매매 파이프라인 총괄
+- **Git 정보**: `main` 브랜치 / 최근 커밋: `d4e55e5 chore(docs): KIS 모의투자 3개 저장소 연동 검증 보고서 및 운영 문서 추가`
+- **핵심 기술 스택**:
+  - **Backend**: FastAPI, Celery (비동기 태스크 큐)
+  - **Database & Storage**: PostgreSQL 16 (SQLAlchemy, asyncpg, Alembic), Redis (세션 및 Celery Broker/Backend)
+  - **AI & Graph**: LangChain, LangGraph, Qdrant, Neo4j, Scikit-learn, LightGBM
+  - **AWS 연동**: SageMaker 학습 결과 조회, AWS Comprehend 감성 분석
+- **특징 및 핵심 모듈**:
+  - **자동매매 엔진**: Celery Beat를 통해 10분 주기로 `quant.auto_trade_cycle` 태스크 실행.
+  - **연동 오케스트레이션**: `domain-rag-lab`에서 백테스트된 전략 스펙을 수신하고, 리스크 한도를 계산한 뒤 `stock-coin-trade`의 Open API로 실주문을 전송하는 핵심 두뇌 역할.
+
+---
+
+#### ③ `stock-coin-trade` — 모의투자 및 Open API 브로커리지 플랫폼
+- **주요 목적**: 국내 주식(KRX), 암호화폐, 대체자산(선물, 옵션, 부동산 조각투자) 모의투자 플랫폼 및 증권사/거래소 Open API 연동 실습 환경
+- **Git 정보**: `main` 브랜치 / 최근 커밋: `33643d3 Translate README into English and preserve Korean version (#10)`
+- **핵심 기술 스택**:
+  - **Backend**: FastAPI (`python-stock-backend/app/main.py`), AWS SAM (Serverless Lambdas)
+  - **Database**: MariaDB (회원/거래 데이터), PostgreSQL (`pg-stock` 주식 OHLCV 분봉/일봉 DB)
+  - **Frontend**: Vanilla JavaScript (ES Modules), Nginx
+  - **외부 브로커 연동**: 한국투자증권(KIS) API/모의투자 테스트베드, KB증권 Open API, Alpaca Paper Trading, TradingView Pine Script
+- **특징 및 핵심 모듈**:
+  - 외부 시스템(예: `lumina-invest`)을 위한 가상 주식 계좌 발급 및 주문 체결 Open API (`/api/v1/orders` 등) 제공.
+  - KIS MCP(Model Context Protocol) 서버 구성 및 VS Code/Codex 연동 도구 포함.
+
+---
+
+#### ④ `stock-kms-portal` — 투자 분석 KMS & 금융 학습 통합 웹 포털
+- **주요 목적**: 기존 분산되어 있던 금융 학습 10개 단원, 시장 차트 분석 도구, AWS Lex 챗봇, RAG 검색을 단일 포털(포트 80)로 통합 제공하는 웹 애플리케이션
+- **Git 정보**: `main` 브랜치 / 최근 커밋: `6fb9dfc Add investment test HTML and typography styles`
+- **핵심 기술 스택**:
+  - **Backend**: FastAPI, Uvicorn, SQLAlchemy
+  - **Frontend**: Vanilla JavaScript, ApexCharts, Mermaid.js
+  - **검색 및 대화**: Qdrant (`domain_docs`), PostgreSQL (`pgvector`), AWS Lex v2 챗봇 연동
+  - **백테스트**: QuantConnect LEAN 엔진 (`quantconnect/lean:latest`) 로컬 Docker 러너 내장
+- **특징 및 핵심 모듈**:
+  - `domain-rag-lab` 구조를 베이스로 포크하여 `investment-analysis` 프런트엔드 컴포넌트들을 단일 원점으로 마이그레이션.
+  - AWS Lex 대화형 챗봇과 Qdrant 문서 RAG 하이브리드 지원.
+  - Yahoo Finance 기반 시세 및 캔들 차트 자체 API(`home_dashboard.py`) 구축.
+
+---
+
+### 3. 기술적 특징 및 비교 요약
+
+| 저장소 | 핵심 도메인 | 주요 데이터베이스 | 핵심 인터페이스 / 역할 |
+|---|---|---|---|
+| **`domain-rag-lab`** | 금융 지식 RAG & LEAN 백테스트 | PostgreSQL (`pgvector`), Qdrant | Streamlit UI + FastAPI, 전략 백테스트 결과 제공 |
+| **`lumina-invest`** | 퀀트 시그널 & 로보어드바이저 | PostgreSQL, Redis, Neo4j, Qdrant | Celery Beat 주기적 신호 발생, 주문 트리거 |
+| **`stock-coin-trade`** | 주식/코인/대체자산 모의투자 | MariaDB, PostgreSQL (`pg-stock`) | 모의 주문 체결 Open API, KIS/KB/Alpaca 연동 |
+| **`stock-kms-portal`** | 학습·차트·KMS 통합 포털 | PostgreSQL (`pgvector`), Qdrant | 통합 포털 UI, AWS Lex + RAG 챗봇, LEAN 백테스트 |
+
+### 4. 현재 워크스페이스 상태 요약
+- 4개 레포지토리 모두 현재 `main` 브랜치 최신 상태이며, 미커밋된 변경사항 없이 **Working Tree가 깨끗한(clean) 상태**입니다.
+- Docker 환경에서는 현재 독립적인 보조 컨테이너(`open-webui`, 포트 3000)가 기동 중입니다.
