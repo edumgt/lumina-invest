@@ -91,28 +91,13 @@ async def robo_allocation(
     _user=Depends(get_current_user),
 ):
     """시장 데이터 기반 간단 자산배분/추천 결과."""
+    from app.services.robo_profile import compute_allocation
     risk = body.risk_profile if body.risk_profile in ("conservative", "moderate", "aggressive") else "moderate"
     horizon = max(1, min(10, int(body.horizon_years)))
     amount = max(100, int(body.amount_manwon))
 
-    base_alloc = {
-        "conservative": {"국내주식": 15, "해외주식": 10, "국내채권": 50, "대체자산": 10, "현금": 15},
-        "moderate": {"국내주식": 30, "해외주식": 25, "국내채권": 30, "대체자산": 10, "현금": 5},
-        "aggressive": {"국내주식": 45, "해외주식": 35, "국내채권": 10, "대체자산": 8, "현금": 2},
-    }[risk].copy()
-
-    # 투자기간 반영: 장기일수록 현금/채권 축소, 주식 확대
-    horizon_boost = min(6, max(0, horizon - 3))
-    base_alloc["국내주식"] += horizon_boost
-    base_alloc["해외주식"] += horizon_boost
-    base_alloc["국내채권"] -= horizon_boost
-    base_alloc["현금"] -= horizon_boost
-
-    # 합계 100 정규화
-    total = sum(base_alloc.values()) or 100
-    alloc = {k: round(v * 100 / total, 1) for k, v in base_alloc.items()}
-    diff = round(100 - sum(alloc.values()), 1)
-    alloc["현금"] = round(alloc["현금"] + diff, 1)
+    # 성향 × 투자기간 비중: 자산군별 하한·상한과 합계 100 제약 적용(감리 FD-FIND-001 — 장기 구간 음수 현금 비중 수정)
+    alloc = compute_allocation(risk, horizon)
 
     # 유니버스 전체(~30종목)를 동시 스캔해 과거 성과(샤프비율) + AI 학습 기반
     # 예측 수익률(Ridge 회귀, 피처 엔지니어링)을 함께 스코어링한다.

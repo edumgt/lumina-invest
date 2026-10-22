@@ -202,13 +202,13 @@ class Factory:
     async def __aexit__(self, *a): return False
 
 
-def fake_gateway():
+def fake_gateway(holdings=()):
     calls = []
     def handler(request: httpx.Request) -> httpx.Response:
         body = request.read()
         calls.append((request.method, request.url.path, body))
         if request.url.path.endswith("/balance"):
-            return httpx.Response(200, json={"ok": True, "balance": {"totalEvalAmount": 10_000_000, "cashBalance": 1, "holdings": []}})
+            return httpx.Response(200, json={"ok": True, "balance": {"totalEvalAmount": 10_000_000, "cashBalance": 9_000_000, "holdings": list(holdings)}})
         if request.url.path.endswith("/order-approval"):
             return httpx.Response(200, json={"ok": True, "approvalToken": "t", "expiresIn": 60})
         if request.url.path.endswith("/kis/orders") and request.method == "POST":
@@ -271,7 +271,8 @@ def test_cycle_force_buys_top_momentum_with_market_order_when_all_hold():
 
 
 def test_cycle_sells_take_profit_holding_in_full_even_outside_targets():
-    fake_gateway()
+    fake_gateway(holdings=[{"symbol": "035420", "name": "NAVER", "quantity": 7,
+                            "avgPrice": 98_000, "currentPrice": 100_000}])
     held = SimpleNamespace(symbol="035420.KS", name="NAVER", quantity=7, avg_price=98_000.0, book="QUANT", user_id=UID)
     db, log, _ = run_cycle(broker(), all_hold, portfolio=[held])       # 현재가 100,000 → +2.04% ≥ 1.5% 익절
     sells = [t for t in log["trades"] if t.get("type") == "auto" and t["action"] == "sell"]

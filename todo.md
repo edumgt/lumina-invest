@@ -1960,3 +1960,18 @@ SageMaker를 활용해 매일 예측을 수행하고, 그 결과를 검증하며
 **다음**: ① 실제 종목으로 Colab 1회 실행해 결과표 스크린샷을 화면 해석 가이드에 예시로 첨부 ② 여러 종목 CSV 합산 학습 셀(선택) ③ 결과가 안정적이면 SageMaker PyTorch 배치(sagemaker/train.py 패턴)로 승격 검토.
 ### 6-61. 2026-10-15 계약 문서 v0.7 사본 동기화 (stock-coin-trade 6-23 연동)
 `docs/contracts/kis-autotrade-api.md` 에 2-7 시세 `GET /quote/{symbol}`(iv 챗봇 CheckQuote 용, 읽기 전용) 추가·v0.7 표기. 3사본 md5 일치. lumina 코드 변경 없음(필요 시 `stock_coin_trade_gateway.py` 에 `get_quote` 추가 가능).
+
+### 6-63. 2026-10-22 감리 FD-FIND-001(CRITICAL) — 로보어드바이저 자산배분 장기 구간 음수 현금 비중 수정 (사용자 요청: pr 감리대응 #finance-results 의 critical 처리)
+- 출처: pr `static/assets/audit-evidence/fd-verification.json`(2026-10-21 운영 검증). 운영 `POST /api/ml/robo/allocation` aggressive·10년 → 현금 **-4%**, 수식 격리 moderate·10년 → 현금 -1%. 원인: `app/routes/ml.py` 가 `horizon_boost`(최대 6)를 현금·채권에서 하한 확인 없이 빼고 합계 100 만 정규화.
+- 수정: `app/services/robo_profile.py` 에 `BASE_ALLOCATIONS`·`ALLOCATION_BOUNDS`(현금 2~30, 대체 0~20, 국내주식 0~60, 해외주식 0~50, 채권 0~60)·`compute_allocation(risk, horizon)` 추가. 기간 가중치는 채권·현금에서 **하한까지 실제로 뺄 수 있는 만큼만** 빼서 그 양을 국내·해외주식에 반씩(상한까지) 옮긴다 → 합계 100 불변, 경계 위반 시 `ValueError`. `ml.py` 의 `/robo/allocation` 은 이 함수를 호출(이후 `stock_bucket`·응답 `allocations` 는 그대로). 결과: aggressive 10년 48/38/4/8/**2**, moderate 10년 34.5/29.5/24/10/**2**, 3년 이하는 기존 표와 동일.
+- 검증: `tests/test_robo_profile.py` 에 성향 3 × 기간 10 경계·합계, 감리 재현 2건, 기간 단조성, 잘못된 성향·기간 클램프 테스트 추가(37 passed). 감리 소스 세트(`test_robo_profile test_formula test_backtest_costs test_risk_guard_boundaries`) 61 passed. `.venv/bin/python -m pytest tests/test_robo_profile.py -q`
+- **배포 미완**: `deploy/fd-robo-allocation-bounds.sh` (호스트 소스 갱신 + fin-ai-app 컨테이너 복사 + 재시작 + 컨테이너 안 30케이스 격리 검증). 배포 후 pr 감리 증빙(`fd-verification.json` FD-FIND-001 `state`, FD-ALLOC-001/SOURCE-06/09)은 재검증으로 갱신 필요 — domain-rag-lab 쪽이라 이번에 손대지 않음.
+- 미처리: FD-FIND-002(HIGH) `GoalSimBody` 수익률 -101 → HTTP500(422 기대). `expected_return_pct`/`target_return_pct` 에 `> -100` 등 pydantic 경계를 두면 되나 이번 요청 범위(critical) 밖이라 보류.
+- Codex 중복 확인: 같은 시각 Codex 는 lumina-invest 의 KIS 자동매매 매도 로직(보유 없는 종목 sell 시도, kis-monitor) 수정 중 — `ml.py`/`robo_profile.py` 와 파일이 겹치지 않음. 커밋 시 두 작업이 섞이지 않게 파일 단위로 나눠 커밋 권고.
+
+### 6-64. 2026-10-22 KIS 모의계좌 목표 보유수량 맞추기 스크립트 — 현대차 8 · 삼성전자 86 · HD현대중공업 1 · 한미약품 2 (사용자 요청)
+- 에이전트의 fd SSH 가 자동 모드 분류기에 막혀(읽기 조회까지 'Production Reads') 6-59 처럼 직접 실행하지 못함 → 사용자가 실행하는 스크립트로 작성.
+- `deploy/fd-kis-paper-trade.sh [--execute] [--add]` 가 `deploy/fd_kis_paper_trade.py` 를 fd `fin-ai-app` 안에서 실행. 기본은 **dry-run**(게이트웨이 잔고·보유·현재가·주문 계획 출력), `--execute` 면 `auto_trade.place_manual_kis_order`(화면 수동 주문과 같은 경로, origin=manual, 사용자 SYSTEM) 로 주문. 목표 해석은 기본 '보유를 그 수량으로 맞춤'(부족분 매수·초과분 매도), `--add` 면 '현재 보유 + 수량' 추가 매수.
+- 6-59 교훈 반영: 1회 1천만 원 한도로 분할(삼성전자 86주는 현재가에 따라 2건), 같은 종목·방향 분할 건은 분(分)이 바뀐 뒤 전송(client_order_id 분 단위 멱등키 중복 방지), 주문마다 새 DB 세션, 비상 정지면 거절되고 중단. 주문 유형은 서버 설정(`_live_order_type`: 공격 모드면 MARKET, 아니면 `STOCK_COIN_TRADE_ORDER_TYPE`) 을 따름.
+- 주의: 예수금 부족이면 게이트웨이가 409 로 거절. 자동매매 배치(공격 모드)가 켜져 있으면 매수한 종목을 사이클이 되팔 수 있음 — 필요 시 kis-monitor 에서 배치 정지 후 실행. Codex 가 같은 시각 `auto_trade.py` 의 KIS 매도 로직을 수정 중이나 fd 운영 컨테이너는 배포 전 코드라 영향 없음.
+- **실행 미완(사용자)**: `bash deploy/fd-kis-paper-trade.sh` 로 계획 확인 → `bash deploy/fd-kis-paper-trade.sh --execute`.

@@ -36,6 +36,49 @@ PROFILE_LEVELS = [  # (최소 점수, 5단계 성향, 시스템 프로파일, �
 ]
 
 
+# ── 자산배분 비중(성향 × 투자기간) ──────────────────────────────────────────
+# 감리 FD-FIND-001(2026-10-21): 기간 가중치를 현금에서 하한 확인 없이 차감해 장기(≥9년) 구간에서 현금이 음수가 됐다.
+# 수정: 자산군별 [하한, 상한] 제약을 두고, 기간 가중치는 '현금·채권에서 하한까지 실제로 뺄 수 있는 만큼만' 주식으로 옮긴다.
+# 이동량 = 실제 차감량이므로 합계 100 이 항상 유지되고, 어떤 성향·기간에서도 비중이 하한 아래/상한 위로 가지 않는다.
+BASE_ALLOCATIONS: dict[str, dict[str, float]] = {
+    "conservative": {"국내주식": 15, "해외주식": 10, "국내채권": 50, "대체자산": 10, "현금": 15},
+    "moderate":     {"국내주식": 30, "해외주식": 25, "국내채권": 30, "대체자산": 10, "현금": 5},
+    "aggressive":   {"국내주식": 45, "해외주식": 35, "국내채권": 10, "대체자산": 8, "현금": 2},
+}
+ALLOCATION_BOUNDS: dict[str, tuple[float, float]] = {  # (하한 %, 상한 %)
+    "국내주식": (0, 60), "해외주식": (0, 50), "국내채권": (0, 60), "대체자산": (0, 20), "현금": (2, 30),
+}
+HORIZON_MAX_BOOST = 6  # 투자기간 4년째부터 1년당 1%p, 최대 6%p 를 현금·채권 각각에서 주식으로 이동
+
+
+def compute_allocation(risk_profile: str, horizon_years: int) -> dict[str, float]:
+    """성향·투자기간 → 자산군 비중(%, 소수 1자리). 합계 100, 모든 자산군이 ALLOCATION_BOUNDS 안에 있음을 보장한다."""
+    risk = risk_profile if risk_profile in BASE_ALLOCATIONS else "moderate"
+    horizon = max(1, min(10, int(horizon_years)))
+    alloc = {k: float(v) for k, v in BASE_ALLOCATIONS[risk].items()}
+
+    boost = min(HORIZON_MAX_BOOST, max(0, horizon - 3))
+    moved = 0.0
+    for src in ("국내채권", "현금"):                     # 하한까지만 차감
+        give = min(boost, alloc[src] - ALLOCATION_BOUNDS[src][0])
+        if give > 0:
+            alloc[src] -= give; moved += give
+    share = moved / 2
+    for dst in ("국내주식", "해외주식"):                 # 실제 차감량을 반씩, 상한까지만 주식에 배분. 못 넣은 잔량은 현금으로 복귀
+        take = min(share, ALLOCATION_BOUNDS[dst][1] - alloc[dst])
+        alloc[dst] += take; moved -= take
+    alloc["현금"] += moved
+
+    total = sum(alloc.values()) or 100.0
+    out = {k: round(v * 100 / total, 1) for k, v in alloc.items()}
+    largest = max(out, key=out.get)                      # 반올림 오차는 가장 큰 자산군에 반영(현금 하한을 건드리지 않음)
+    out[largest] = round(out[largest] + round(100 - sum(out.values()), 1), 1)
+    for k, (lo, hi) in ALLOCATION_BOUNDS.items():
+        if not lo <= out[k] <= hi:
+            raise ValueError(f"자산배분 경계 위반: {k}={out[k]}% (허용 {lo}~{hi}%)")
+    return out
+
+
 def score_answers(answers: dict[str, int]) -> dict:
     """answers: {question_id: 선택 인덱스(0~4)} → 진단 결과."""
     total, detail, missing = 0, [], []

@@ -37,8 +37,9 @@ class Result:
 
 
 class FakeDb:
-    def __init__(self, broker_row, live_rows=()):
+    def __init__(self, broker_row, live_rows=(), portfolio=()):
         self.broker_row, self.live_rows, self.added, self.commits = broker_row, list(live_rows), [], 0
+        self.portfolio, self.virtual_calls = list(portfolio), []
     def add(self, obj): self.added.append(obj)
     async def commit(self): self.commits += 1
     async def execute(self, stmt, *_a, **_k):
@@ -48,7 +49,7 @@ class FakeDb:
         if entity is BrokerSettings:
             return Result(one=self.broker_row)
         if entity is Portfolio:
-            return Result(one=None, many=[])
+            return Result(one=self.portfolio[0] if self.portfolio else None, many=self.portfolio)
         if entity is LiveOrder:
             return Result(many=self.live_rows)
         raise AssertionError(f"unexpected select: {entity}")
@@ -61,16 +62,20 @@ class Factory:
     async def __aexit__(self, *a): return False
 
 
-def fake_gateway():
+def fake_gateway(holdings=(), balance_error=False, order_error=False):
     calls = []
     def handler(request: httpx.Request) -> httpx.Response:
         body = request.read()
         calls.append((request.method, request.url.path, body))
         if request.url.path.endswith("/balance"):
-            return httpx.Response(200, json={"ok": True, "balance": {"totalEvalAmount": 10_000_000, "cashBalance": 1, "holdings": []}})
+            if balance_error:
+                return httpx.Response(502, json={"ok": False, "error": "KIS_UNAVAILABLE", "message": "잔고 조회 실패"})
+            return httpx.Response(200, json={"ok": True, "balance": {"totalEvalAmount": 10_000_000, "cashBalance": 9_000_000, "holdings": list(holdings)}})
         if request.url.path.endswith("/order-approval"):
             return httpx.Response(200, json={"ok": True, "approvalToken": "t", "expiresIn": 60})
         if request.url.path.endswith("/kis/orders") and request.method == "POST":
+            if order_error:
+                return httpx.Response(409, json={"ok": False, "error": "INSUFFICIENT_HOLDINGS", "message": "보유수량 부족"})
             return httpx.Response(200, json={"ok": True, "duplicate": False, "order": {"orderNo": "0000031000", "status": "ACCEPTED", "message": "ok"}})
         return httpx.Response(404, json={"ok": False, "error": "NOT_FOUND", "message": request.url.path})
     gw.set_transport(httpx.MockTransport(handler))
@@ -92,15 +97,18 @@ def env(monkeypatch):
     gw.set_transport(None)
 
 
-def run_cycle(broker_row, live_rows=()):
-    db = FakeDb(broker_row, live_rows)
+def run_cycle(broker_row, live_rows=(), portfolio=(), market_open=True, signal_fn=indicators):
+    db = FakeDb(broker_row, live_rows, portfolio)
     persisted = {}
     async def persist(uid, log): persisted.update(log)
     async def virtual_trade(db_, uid, symbol, name, action, price, qty, reason):
+        db.virtual_calls.append((symbol, action, qty))
         return {"status": "filled", "symbol": symbol, "action": action, "quantity": qty, "price": price}
     with patch.object(auto_trade, "get_session_factory", return_value=Factory(db)), \
          patch.object(auto_trade, "QUANT_STOCKS", STOCKS), \
-         patch.object(auto_trade, "get_quant_indicators", indicators), \
+         patch.object(auto_trade, "get_quant_indicators", signal_fn), \
+         patch("app.services.korea_market_scan.candidate_stocks", AsyncMock(return_value=STOCKS)), \
+         patch("app.services.korea_universe.refresh_master", AsyncMock()), \
          patch.object(auto_trade, "_execute_virtual_trade", virtual_trade), \
          patch.object(auto_trade, "_equity_snapshot", AsyncMock(return_value=(9_700_000.0, 10_000_000.0, {}))), \
          patch.object(auto_trade, "_persist_cycle", persist), \
@@ -113,7 +121,8 @@ def run_cycle(broker_row, live_rows=()):
          patch.object(auto_trade.notification, "notify_auto_trade_executed", AsyncMock()), \
          patch.object(auto_trade.notification, "notify_order_placed", AsyncMock()), \
          patch.object(auto_trade.notification, "notify_order_error", AsyncMock()), \
-         patch.object(gw, "is_krx_market_open", return_value=True):
+         patch.object(auto_trade.notification, "notify_risk_skip", AsyncMock()), \
+         patch.object(gw, "is_krx_market_open", return_value=market_open):
         asyncio.run(auto_trade._run_quant_cycle(str(UID)))
     return db, persisted
 
@@ -124,6 +133,7 @@ def test_live_mode_routes_buy_signal_through_gateway_and_tracks_live_order():
     trades = [t for t in log["trades"] if t.get("type") == "auto"]
     assert len(trades) == 1 and trades[0]["quantity"] == 4           # 300,000 / 70,000 → 4주
     live = trades[0]["live_order"]
+    assert db.virtual_calls == [] and trades[0]["status"] == "submitted"
     assert live["status"] == "submitted" and live["order_no"] == "0000031000" and live["environment"] == "paper"
     paths = [p for _, p, _ in calls]
     assert paths == ["/openapi/v1/kis/balance", "/openapi/v1/kis/order-approval", "/openapi/v1/kis/orders"]
@@ -156,3 +166,102 @@ def test_kill_switch_blocks_cycle_without_orders():
     with patch.object(auto_trade, "set_enabled", AsyncMock()):
         db, log = run_cycle(broker("live", risk_kill_switch=True, risk_halt_reason="수동 정지"))
     assert log["risk"]["halted"] is True and log.get("trades") == [] and calls == []
+
+
+async def sell_signal(symbol, period="2y"):
+    return {"signal": {"action": "매도", "score": -3, "reasons": ["손절"]}, "current_price": 70_000.0}
+
+
+def virtual_position(qty=24):
+    return SimpleNamespace(symbol="005930.KS", name="삼성전자", quantity=qty, avg_price=70_000.0)
+
+
+def actual_position(qty=3):
+    return {"symbol": "005930", "name": "삼성전자", "quantity": qty, "avgPrice": 70_000, "currentPrice": 70_000}
+
+
+def test_live_phantom_position_cannot_submit_sell_or_change_virtual_ledger():
+    calls = fake_gateway()
+    db, log = run_cycle(broker(), portfolio=[virtual_position()], signal_fn=sell_signal)
+    assert not [c for c in calls if c[0] == "POST"]
+    assert db.virtual_calls == [] and not db.added
+    assert log["trades"][0]["status"] == "skipped"
+    assert "보유수량 없음" in log["trades"][0]["reason"]
+
+
+def test_market_closed_creates_neither_virtual_fill_nor_kis_order():
+    calls = fake_gateway()
+    db, log = run_cycle(broker(), market_open=False)
+    assert calls == [] and not db.added and not db.virtual_calls and db.commits == 0
+    assert log["skip_reason"] == "market_closed"
+
+
+def test_balance_failure_blocks_cycle_without_virtual_fallback():
+    calls = fake_gateway(balance_error=True)
+    db, log = run_cycle(broker(), portfolio=[virtual_position()], signal_fn=sell_signal)
+    assert not [c for c in calls if c[0] == "POST"]
+    assert not db.virtual_calls and not db.added
+    assert log["skip_reason"] == "balance_unavailable"
+
+
+def test_live_sell_uses_actual_quantity_and_reserves_other_users_pending_sells():
+    calls = fake_gateway(holdings=[actual_position(7)])
+    pending = LiveOrder(user_id=uuid.uuid4(), environment="paper", symbol="005930.KS", side="SELL",
+                        quantity=5, filled_quantity=1, status="PARTIALLY_FILLED", price=70_000)
+    db, log = run_cycle(broker(quant_sell_ratio=1.0), live_rows=[pending],
+                        portfolio=[virtual_position(24)], signal_fn=sell_signal)
+    trades = [t for t in log["trades"] if t.get("type") == "auto"]
+    assert len(trades) == 1 and trades[0]["quantity"] == 3  # 7 actual - 4 pending
+    assert trades[0]["status"] == "submitted" and not db.virtual_calls
+    assert [a for a in db.added if isinstance(a, LiveOrder)][0].quantity == 3
+
+
+def test_failed_order_never_creates_virtual_fill():
+    fake_gateway(holdings=[actual_position(3)], order_error=True)
+    db, log = run_cycle(broker(quant_sell_ratio=1.0), portfolio=[virtual_position()], signal_fn=sell_signal)
+    trade = next(t for t in log["trades"] if t.get("type") == "auto")
+    assert trade["status"] == "error" and not db.virtual_calls
+    assert db.portfolio[0].quantity == 24
+
+
+def test_new_kis_buy_is_managed_after_actual_balance_confirms_it():
+    fake_gateway(holdings=[actual_position(3)])
+    buy = LiveOrder(user_id=UID, environment="paper", symbol="005930.KS", side="BUY", origin="user_auto",
+                    order_no="123", quantity=3, filled_quantity=0, status="ACCEPTED", price=70_000)
+    db, log = run_cycle(broker(quant_sell_ratio=1.0), live_rows=[buy], signal_fn=sell_signal)
+    trade = next(t for t in log["trades"] if t.get("type") == "auto")
+    assert trade["quantity"] == 3 and not db.virtual_calls
+
+
+def test_unrelated_kis_holding_is_not_automatically_sold():
+    calls = fake_gateway(holdings=[actual_position(3)])
+    db, log = run_cycle(broker(quant_sell_ratio=1.0), signal_fn=sell_signal)
+    assert not [c for c in calls if c[0] == "POST"] and not db.virtual_calls
+
+
+@pytest.mark.parametrize("balance", [{}, {"holdings": [], "cashBalance": 1},
+    {"holdings": [], "cashBalance": 1, "totalEvalAmount": float("nan")},
+    {"holdings": [], "cashBalance": 1, "totalEvalAmount": 0}])
+def test_incomplete_balance_is_not_treated_as_empty_account(balance):
+    with pytest.raises((KeyError, ValueError)):
+        auto_trade._validated_kis_balance(balance)
+
+
+def test_sell_rechecks_balance_before_submission():
+    fake_gateway(holdings=[actual_position(7)])
+    start = {"totalEvalAmount": 10_000_000, "cashBalance": 9_000_000, "holdings": [actual_position(7)]}
+    fresh = {**start, "holdings": []}
+    with patch.object(gw, "get_balance", AsyncMock(side_effect=[start, fresh])):
+        db, log = run_cycle(broker(quant_sell_ratio=1.0), portfolio=[virtual_position()], signal_fn=sell_signal)
+    assert not db.added and not db.virtual_calls
+    assert "실제 보유수량 없음" in log["trades"][0]["reason"]
+
+
+def test_unresolved_sell_blocks_repeated_sale_without_rewriting_history():
+    fake_gateway(holdings=[actual_position(7)])
+    pending = LiveOrder(user_id=UID, environment="paper", symbol="005930.KS", side="SELL",
+                        quantity=7, filled_quantity=0, status="LOST", price=70_000)
+    db, log = run_cycle(broker(quant_sell_ratio=1.0), live_rows=[pending],
+                        portfolio=[virtual_position()], signal_fn=sell_signal)
+    assert not db.added and not db.virtual_calls and pending.status == "LOST"
+    assert "미확정 매도 7주" in log["trades"][0]["reason"]

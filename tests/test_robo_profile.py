@@ -42,3 +42,48 @@ def test_goal_simulation_with_contributions_and_volatility():
     assert p["p5"] <= p["p25"] <= p["p50"] <= p["p75"] <= p["p95"]
     assert len(r["curves"]["p50"]) == len(r["curve_years"])
     assert r["required_annual_return_pct"] > 0
+
+
+# ── 자산배분 비중 경계 (감리 FD-FIND-001: 장기 구간 음수 현금 비중) ─────────────
+
+from app.services.robo_profile import ALLOCATION_BOUNDS, BASE_ALLOCATIONS, compute_allocation
+
+
+@pytest.mark.parametrize("risk", list(BASE_ALLOCATIONS))
+@pytest.mark.parametrize("horizon", range(1, 11))
+def test_allocation_within_bounds_and_sums_to_100(risk, horizon):
+    alloc = compute_allocation(risk, horizon)
+    assert set(alloc) == set(ALLOCATION_BOUNDS)
+    assert sum(alloc.values()) == pytest.approx(100.0, abs=0.05)
+    for cls, pct in alloc.items():
+        lo, hi = ALLOCATION_BOUNDS[cls]
+        assert lo <= pct <= hi, f"{risk}/{horizon}y {cls}={pct}"
+        assert pct >= 0
+
+
+def test_allocation_audit_cases_no_negative_cash():
+    # 감리 관측값: aggressive·10년 현금 -4%, moderate·10년 현금 -1%
+    a = compute_allocation("aggressive", 10)
+    assert a["현금"] >= ALLOCATION_BOUNDS["현금"][0] and a["국내채권"] >= 0
+    assert a == {"국내주식": 48.0, "해외주식": 38.0, "국내채권": 4.0, "대체자산": 8.0, "현금": 2.0}
+    m = compute_allocation("moderate", 10)
+    assert m["현금"] >= ALLOCATION_BOUNDS["현금"][0]
+    assert m == {"국내주식": 34.5, "해외주식": 29.5, "국내채권": 24.0, "대체자산": 10.0, "현금": 2.0}
+
+
+def test_allocation_horizon_monotone_and_short_horizon_unchanged():
+    # 3년 이하는 기본표 그대로, 기간이 길수록 주식 비중은 줄지 않고 현금·채권은 늘지 않는다
+    for risk, base in BASE_ALLOCATIONS.items():
+        assert compute_allocation(risk, 3) == {k: float(v) for k, v in base.items()}
+        prev = compute_allocation(risk, 1)
+        for h in range(2, 11):
+            cur = compute_allocation(risk, h)
+            assert cur["국내주식"] + cur["해외주식"] >= prev["국내주식"] + prev["해외주식"]
+            assert cur["현금"] <= prev["현금"] and cur["국내채권"] <= prev["국내채권"]
+            prev = cur
+
+
+def test_allocation_unknown_profile_and_clamped_horizon():
+    assert compute_allocation("weird", 5) == compute_allocation("moderate", 5)
+    assert compute_allocation("aggressive", 99) == compute_allocation("aggressive", 10)
+    assert compute_allocation("conservative", -5) == compute_allocation("conservative", 1)
