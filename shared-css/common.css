@@ -173,3 +173,129 @@ footer a,
 }
 /* iv 임베드 대시보드는 공통 푸터를 숨긴다. */
 html.embedded-dashboard footer { display: none !important; }
+
+/* ══ 4. Premium finance GNB — PR · IV · FD · ST, 2026-10-22 ══
+   Navy foundation, restrained gold selection, white text; no site-wide theme override. */
+:root {
+  --gnb-navy: #0E2340;
+  --gnb-gold: #C9A86A;
+  --gnb-white: #FFFFFF;
+  --gnb-text: #E5EBF3;
+  --gnb-divider: rgba(201,168,106,.24);
+  --gnb-h: 64px;
+}
+:is(#gnb, #site-header, .chat-header, .day-appbar) {
+  box-sizing: border-box !important;
+  min-height: 64px !important;
+  height: auto !important;
+  max-width: 100% !important;
+  background: var(--gnb-navy) !important;
+  background-image: none !important;
+  color: var(--gnb-white) !important;
+  border: 0 !important;
+  border-bottom: 1px solid var(--gnb-gold) !important;
+  box-shadow: 0 4px 18px rgba(14,35,64,.12) !important;
+  font-family: var(--title-font) !important;
+}
+:is(.chat-header, .day-appbar) { display:flex !important; align-items:center !important; gap:16px !important; padding:0 24px !important; flex-shrink:0 !important; flex-wrap:nowrap !important; }
+.chat-header>* { order:0 !important; }
+:is(.main-kms-title,.day-kms-title) { margin:0 !important; }
+#site-header .site-header-inner { min-height:63px !important; padding:0 24px !important; }
+:is(.main-kms-title,.day-kms-title,.gnb-logo,.gnb-brand,#site-header .brand-logo-text) {
+  color:var(--gnb-white) !important;
+  background:none !important;
+  -webkit-text-fill-color:var(--gnb-white) !important;
+  font-family:var(--title-font) !important;
+  font-size:16px !important;
+  font-weight:700 !important;
+  letter-spacing:.015em !important;
+  text-decoration:none !important;
+  white-space:nowrap !important;
+  flex-shrink:0 !important;
+}
+.gnb-logo { padding:0 24px !important; border-right:1px solid var(--gnb-divider) !important; min-height:63px !important; }
+#gnb .gnb-logo-text strong { color:var(--gnb-white) !important; font-size:16px !important; font-weight:700 !important; }
+#gnb .gnb-logo-text span { color:var(--gnb-gold) !important; font-size:9px !important; letter-spacing:.13em !important; }
+#gnb .gnb-logo-icon { color:var(--gnb-gold) !important; background:rgba(201,168,106,.1) !important; border:1px solid var(--gnb-divider) !important; border-radius:6px !important; box-shadow:none !important; }
+#site-header .brand-logo-text i { color:var(--gnb-gold) !important; }
+:is(.brand-nav,.day-brand-nav,.gnb-tabs,.gnb-nav) { display:flex !important; align-items:center !important; flex-wrap:nowrap !important; gap:3px !important; min-width:0 !important; overflow-x:auto !important; scrollbar-width:none !important; }
+:is(.brand-nav,.day-brand-nav,.gnb-tabs,.gnb-nav)::-webkit-scrollbar { display:none; }
+:is(.brand-nav,.day-brand-nav) { flex:1 1 auto !important; width:auto !important; margin:0 !important; }
+:is(.brand-nav .brand-nav-btn,.day-brand-nav>a,.gnb-item,.gnb-link,.gnb-group summary,.gnb-shortcuts>a) {
+  display:inline-flex !important;
+  align-items:center !important;
+  justify-content:center !important;
+  flex-shrink:0 !important;
+  gap:7px !important;
+  height:63px !important;
+  min-height:0 !important;
+  margin:0 !important;
+  padding:0 13px !important;
+  border:0 !important;
+  border-bottom:2px solid transparent !important;
+  border-radius:0 !important;
+  background:transparent !important;
+  color:var(--gnb-text) !important;
+  font-family:var(--title-font) !important;
+  font-size:13px !important;
+  font-weight:500 !important;
+  line-height:1.3 !important;
+  letter-spacing:.01em !important;
+  text-decoration:none !important;
+  white-space:nowrap !important;
+  box-shadow:none !important;
+  transition:color .15s ease,background .15s ease,border-color .15s ease !important;
+}
+:is(.brand-nav .brand-nav-btn,.day-brand-nav>a,.gnb-item,.gnb-link,.gnb-group summary,.gnb-shortcuts>a):hover {
+  color:var(--gnb-white) !important; background:rgba(255,255,255,.06) !important;
+}
+:is(.brand-nav .brand-nav-btn,.day-brand-nav>a,.gnb-item,.gnb-link,.gnb-shortcuts>a):is(.active,[aria-current="page"],[aria-selected="true"]) {
+  color:var(--gnb-gold) !important; background:rgba(201,168,106,.08) !important; border-bottom-color:var(--gnb-gold) !important; font-weight:650 !important;
+}
+:is(.chat-header,.day-appbar,#site-header,#gnb) :is(a,button,summary):focus-visible { outline:2px solid var(--gnb-gold) !important; outline-offset:-4px !important; }
+:is(.chat-header .panel-toggle,.day-appbar .day-panel-toggle,.day-header-actions button,.day-header-actions a,#site-header button,#site-header .site-header-actions>a,#gnb .btn-secondary) {
+  min-height:32px !important; padding:6px 10px !important; border:1px solid var(--gnb-divider) !important; border-radius:5px !important; background:transparent !important; color:var(--gnb-text) !important; font-family:var(--title-font) !important; font-size:12px !important; font-weight:500 !important; white-space:nowrap !important; box-shadow:none !important;
+}
+:is(.chat-header .panel-toggle,.day-appbar .day-panel-toggle,#site-header button,#site-header .site-header-actions>a,#gnb .btn-secondary):hover { border-color:var(--gnb-gold) !important; color:var(--gnb-gold) !important; background:rgba(201,168,106,.08) !important; }
+#gnb .gnb-right { border-left:1px solid var(--gnb-divider) !important; gap:9px !important; }
+#gnb :is(.gnb-user,#user-name,#market-ticker,#sync-badge) { color:var(--gnb-text) !important; }
+#gnb .gnb-avatar { background:rgba(201,168,106,.15) !important; color:var(--gnb-gold) !important; border:1px solid var(--gnb-divider) !important; }
+/* Broker run/stop colors remain semantic, independent of decorative gold. */
+#gnb .gnb-kis-badge:not(.run):not(.halt) { color:var(--gnb-text) !important; border-color:var(--gnb-divider) !important; }
+:is(#gnb-offcanvas,.day-offcanvas,#oc-panel,#ai-panel) { background:var(--gnb-white) !important; }
+:is(#gnb-offcanvas .lnb-header,.day-offcanvas-header,#oc-panel .oc-header,#ai-panel .oc-header) { background:var(--gnb-navy) !important; color:var(--gnb-white) !important; border-bottom:1px solid var(--gnb-gold) !important; }
+:is(#oc-panel,#ai-panel) .oc-header .brand-logo-text { color:var(--gnb-white) !important; background:none !important; -webkit-text-fill-color:var(--gnb-white) !important; }
+:is(#gnb-offcanvas .lnb-item,.day-offcanvas-link,#oc-panel .oc-nav-item,#ai-panel .oc-nav-item):is(:hover,.active) { color:var(--gnb-navy) !important; background:#F5F1E9 !important; border-color:var(--gnb-gold) !important; box-shadow:none !important; }
+@media(max-width:1280px) {
+  :root { --gnb-h:108px; }
+  #gnb { flex-wrap:wrap !important; align-items:center !important; }
+  #gnb .gnb-logo { min-height:63px !important; }
+  #gnb .gnb-right { margin-left:auto !important; min-height:63px !important; }
+  #gnb .gnb-tabs { order:3 !important; flex:1 0 100% !important; padding:0 12px !important; border-top:1px solid var(--gnb-divider) !important; }
+  #gnb .gnb-item { height:43px !important; }
+}
+@media(max-width:760px) {
+  :is(.chat-header,.day-appbar) { flex-wrap:wrap !important; gap:0 10px !important; padding:0 12px !important; overflow:visible !important; }
+  :is(.main-kms-title,.day-kms-title) { display:inline-flex !important; align-items:center !important; min-height:55px !important; font-size:15px !important; }
+  :is(.chat-header .brand-nav,.day-appbar .day-brand-nav) { order:3 !important; flex:1 0 100% !important; max-width:100% !important; border-top:1px solid var(--gnb-divider) !important; }
+  :is(.chat-header .panel-toggle-right,.day-header-actions) { margin-left:auto !important; }
+  :is(.brand-nav .brand-nav-btn,.day-brand-nav>a,.gnb-link,.gnb-group summary,.gnb-shortcuts>a) { height:43px !important; padding:0 11px !important; font-size:12px !important; }
+  :is(.chat-header,.day-appbar) { min-height:99px !important; }
+  #site-header .site-header-inner { min-height:63px !important; padding:0 12px !important; gap:8px !important; }
+  #site-header .brand-logo-text { font-size:15px !important; }
+  #site-header .site-header-actions { gap:6px !important; }
+  #site-header button { padding:6px 8px !important; font-size:11px !important; }
+  #gnb .gnb-logo { padding:0 10px !important; gap:0 !important; }
+  #gnb .gnb-logo-text strong { font-size:14px !important; }
+  #gnb .gnb-logo-text span,#gnb .gnb-logo-icon,#gnb #sync-badge,#gnb .gnb-user { display:none !important; }
+  #gnb .gnb-right { flex:1 1 0 !important; }
+  #gnb .gnb-right { padding:0 10px !important; gap:6px !important; }
+}
+@media(prefers-reduced-motion:reduce) {
+  :is(.chat-header,.day-appbar,#site-header,#gnb) :is(a,button,summary) { transition:none !important; }
+}
+/* Keep GNB panel toggles usable where legacy mobile rules hide their panels. */
+body.left-panel-open #learningPanel,
+body.right-panel-open #referencePanel { display:flex !important; flex-direction:column !important; }
+
+:is(#gnb-offcanvas .lnb-header,.day-offcanvas-header,#oc-panel .oc-header,#ai-panel .oc-header) :is(.lnb-section-title,.day-offcanvas-title,.day-offcanvas-subtitle,button) { color:var(--gnb-white) !important; }

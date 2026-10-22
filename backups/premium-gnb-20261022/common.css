@@ -1,0 +1,175 @@
+/* ══════════════════════════════════════════════════════════════════════════════
+   주식투자 4개 사이트 공통 스타일 (단일 정본)
+   pr(domain-rag-lab) · fd(lumina-invest) · st(stock-coin-trade) · iv(stock-kms-portal)
+
+   배포 위치: s3://www.edumgt.co.kr/css/common.css
+   공개 URL : https://www.edumgt.co.kr/css/common.css
+   각 사이트 HTML 의 </head> 바로 앞에서 마지막 스타일시트로 불러온다.
+   이 파일이 네 저장소의 유일한 정본이다. 각 저장소 CSS 에 다시 복제하지 말 것.
+
+   공통 타이포그래피 가이드
+   1) 화면 타이틀(h1·h2)은 Pretendard 18px 로 고정한다(--title-size). 페이지·섹션마다 다른 크기를 쓰지 않는다.
+   2) 18px 를 초과하는 font-size 는 사용 금지. 숫자 KPI·히어로 문구도 예외 없이 18px 이하로 두고, 강조는 크기 대신 굵기(700~800)·색으로 한다.
+   3) 새 규칙을 추가할 때 font-size 는 18px 이하만 쓴다. 18px 초과가 꼭 필요하면 todo.md 7절에 결정 항목으로 올린 뒤 적용한다.
+   4) 고정 규칙은 아래 "타이틀 고정" 블록이 !important 로 적용한다(인라인·유틸리티 클래스보다 우선). 지우거나 완화하지 말 것.
+
+   테마 토큰의 '값'은 사이트마다 다르므로 각 저장소 주 CSS 의 :root 에 남겨 두고,
+   '이름'은 아래 0-2 표준 토큰 계약을 따른다.
+   ══════════════════════════════════════════════════════════════════════════════ */
+
+/* ══ 0. 캐스케이드 계층 선언 ═══════════════════════════════════════════════
+   아래 세 계층(reset·tokens·components)은 **계층에 속하지 않은 각 사이트 CSS 보다
+   항상 약하다**(CSS Cascade Layers 규칙). 그래서 이 파일을 마지막에 불러도
+   사이트 고유 테마를 덮지 않는다. 공통 값은 "사이트가 정의하지 않았을 때의 기본"이고,
+   사이트가 같은 셀렉터·토큰을 선언하면 사이트 쪽이 이긴다.
+   반대로 이 파일 아래쪽의 "타이틀 고정"·"공통 푸터" 블록은 계층 밖 !important 이므로
+   예전처럼 사이트 CSS 를 덮는다. 두 성질을 섞지 말 것.
+   ══════════════════════════════════════════════════════════════════════════ */
+@layer edumgt-reset, edumgt-tokens, edumgt-components;
+
+/* ══ 0-1. 리셋 — 4개 사이트가 모두 같은 값으로 갖고 있던 것만 둔다 ══
+   margin·padding 0 은 pr·iv 에만 있어 fd·st 레이아웃을 바꾸므로 넣지 않는다. */
+@layer edumgt-reset {
+  *, *::before, *::after { box-sizing: border-box; }
+}
+
+/* ══ 0-2. 표준 토큰 계약 ════════════════════════════════════════════════════
+   4개 사이트가 공통으로 쓰는 토큰 "이름"을 고정한다. 값은 사이트별 테마가 공급하고
+   (각 저장소 주 CSS 의 :root), 여기 값은 선언이 없을 때의 기본값일 뿐이다.
+   새 공통 컴포넌트는 반드시 이 이름만 참조해서 작성한다.
+
+     --bg          페이지 배경          --text        본문 글자색
+     --surface     카드·패널 배경       --muted       보조 글자색
+     --border      선·테두리            --accent      강조색(브랜드 액션)
+     --radius      기본 모서리          --radius-sm   작은 모서리
+     --accent-on   강조색 위 글자색(노란 액센트인 pr·iv 는 #000)
+   ══════════════════════════════════════════════════════════════════════════ */
+@layer edumgt-tokens {
+  :root {
+    --bg:         #ffffff;
+    --surface:    #ffffff;
+    --border:     #e0e3eb;
+    --text:       #131722;
+    --muted:      #787b86;
+    --accent:     #2962ff;
+    --accent-on:  #ffffff;
+    --radius:     8px;
+    --radius-sm:  6px;
+
+    /* 스크롤바 — 사이트별로 값만 바꿔 쓴다. 기본값은 pr·iv 현행과 동일 */
+    --sb-width:       5px;
+    --sb-height:      auto;
+    --sb-track:       transparent;
+    --sb-thumb:       var(--border);
+    --sb-radius:      3px;
+    --sb-thumb-hover: var(--accent);
+  }
+}
+
+/* ══ 0-3. 공통 컴포넌트 ═════════════════════════════════════════════════════
+   토큰만 참조한다. 사이트가 같은 클래스를 정의하면 사이트 쪽이 이기므로,
+   여기 정의는 "아직 정의하지 않은 사이트"에서만 보인다.
+   ══════════════════════════════════════════════════════════════════════════ */
+@layer edumgt-components {
+  /* 스크롤바 — 4개 사이트가 구조는 같고 값만 달랐던 규칙(16개 → 4개) */
+  ::-webkit-scrollbar             { width: var(--sb-width); height: var(--sb-height); }
+  ::-webkit-scrollbar-track       { background: var(--sb-track); }
+  ::-webkit-scrollbar-thumb       { background: var(--sb-thumb); border-radius: var(--sb-radius); }
+  ::-webkit-scrollbar-thumb:hover { background: var(--sb-thumb-hover); }
+
+  /* 버튼 */
+  .btn-primary {
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    padding: 9px 16px; border: 0; border-radius: var(--radius-sm);
+    background: var(--accent); color: var(--accent-on);
+    font-family: inherit; font-size: 15px; font-weight: 700; line-height: 1.2;
+    cursor: pointer; transition: background .15s, box-shadow .15s;
+  }
+  .btn-primary:hover    { background: var(--accent-h, var(--accent)); }
+  .btn-primary:disabled { opacity: .55; cursor: not-allowed; }
+  .btn-ghost {
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    padding: 8px 14px; border: 1.5px solid var(--border); border-radius: var(--radius-sm);
+    background: transparent; color: var(--muted);
+    font-family: inherit; font-size: 15px; font-weight: 600; line-height: 1.2;
+    cursor: pointer; transition: border-color .15s, color .15s, background .15s;
+  }
+  .btn-ghost:hover    { border-color: var(--accent); color: var(--text); }
+  .btn-ghost:disabled { opacity: .55; cursor: not-allowed; }
+
+  /* 섹션 머리 위의 작은 라벨 */
+  .eyebrow {
+    font-size: 13px; font-weight: 700; letter-spacing: .08em;
+    text-transform: uppercase; color: var(--muted);
+  }
+}
+
+/* ══ 1. 한글 글자 스케일 — 라틴 문자는 원래 크기, 한글 글리프만 10% 크게 ══ */
+@font-face {
+  font-family: "Pretendard Hangul 110";
+  src: url("https://cdn.jsdelivr.net/npm/pretendard@1.3.9/dist/web/variable/woff2/PretendardVariable.woff2") format("woff2-variations");
+  font-style: normal;
+  font-weight: 45 920;
+  font-display: swap;
+  size-adjust: 110%;
+  unicode-range: U+1100-11FF, U+3130-318F, U+A960-A97F, U+AC00-D7A3, U+D7B0-D7FF;
+}
+
+html:lang(ko) body,
+html:lang(ko) button,
+html:lang(ko) input,
+html:lang(ko) select,
+html:lang(ko) textarea {
+  font-family: "Pretendard Hangul 110", "Pretendard Variable", Pretendard, "Noto Sans KR", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+/* ══ 2. 전역 최소 글자 크기 — 브라우저 기본 smaller 크기 금지 ══ */
+small,sub,sup{font-size:max(13px,.9em)!important}
+
+/* ══ 타이틀 고정 (공통 타이포그래피 가이드 1·4항) ══ */
+:root { --title-size: 18px; --title-font: 'Pretendard Variable', 'Pretendard', 'Pretendard Hangul 110', -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Segoe UI', sans-serif; }
+h1, h2, .page-title { font-size: var(--title-size) !important; font-family: var(--title-font) !important; line-height: 1.3 !important; }
+h1 mark, h2 mark, h1 small, h2 small, h1 span, h2 span { font-size: inherit !important; }
+
+/* ══ 공통 푸터 통일 (주식투자 4개 저장소 동일 스타일) ═══════════════════════
+   높이 25px 고정 · 검정 배경 · 한 줄 중앙 정렬 · 동일 문구
+   문구: © 2026 (주)에듀엠지티 All rights reserved.
+   기존 푸터 규칙(테마 오버라이드 포함)을 덮으려면 !important가 필요하다. */
+footer,
+.site-footer-unified {
+  box-sizing: border-box !important;
+  display: flex !important;
+  flex: 0 0 auto !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 0 !important;
+  width: 100% !important;
+  max-width: none !important;
+  height: 25px !important;
+  min-height: 25px !important;
+  max-height: 25px !important;
+  margin: 0 !important;
+  padding: 0 12px !important;
+  overflow: hidden !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: #000000 !important;
+  color: #ffffff !important;
+  font-family: inherit !important;
+  font-size: 11.5px !important;
+  font-weight: 500 !important;
+  line-height: 25px !important;
+  letter-spacing: .02em !important;
+  text-align: center !important;
+  white-space: nowrap !important;
+  text-overflow: ellipsis !important;
+  text-transform: none !important;
+  box-shadow: none !important;
+}
+footer a,
+.site-footer-unified a {
+  color: #ffffff !important;
+  text-decoration: none !important;
+}
+/* iv 임베드 대시보드는 공통 푸터를 숨긴다. */
+html.embedded-dashboard footer { display: none !important; }
