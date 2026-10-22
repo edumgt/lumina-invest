@@ -32,8 +32,12 @@ async function loadSignalCards() {
   const el = document.getElementById("signal-cards");
   el.innerHTML = "<div class='col-span-5 text-slate-400 text-xs'>시그널 로딩 중...</div>";
   try {
-    const { stocks, indicators = {} } = await api("/api/stocks/universe/candidates?limit=40");
+    const { stocks, indicators = {}, signal_policy: policy = {} } = await api("/api/stocks/universe/candidates?limit=40");
     if(!stocks.length){el.innerHTML="<div class='col-span-5 text-slate-400 text-xs'>신선한 일봉·거래량 기준을 충족한 후보가 없습니다. 전종목 수집 상태를 확인하세요.</div>";return;}
+    const title = document.getElementById("quant-signal-title");
+    if (title) title.textContent = `일봉 기술지표 시그널 · 점수 상위 ${stocks.length}종목`;
+    const note = document.getElementById("quant-signal-note");
+    if (note) note.textContent = `확정 일봉의 RSI·MA5/MA20·볼린저 규칙 점수입니다. 강력 매수는 +${policy.strong_buy_threshold ?? 3}점 이상이며 수익 확률을 뜻하지 않습니다. KIS 배치는 ${policy.execution_interval || "별도 설정"} 기준${policy.max_buys_per_cycle != null ? ` · 사이클당 매수 최대 ${policy.max_buys_per_cycle}종목` : ""}으로 판단하고 위험관리를 통과해야 주문합니다.`;
     el.innerHTML = stocks.map((s, i) => {
       const r = indicators[s.symbol];
       const sig = r?.signal || {};
@@ -49,7 +53,9 @@ async function loadSignalCards() {
         <div class="font-semibold">${escHtml(s.name)}</div>
         <div class="text-slate-400 text-xs">${escHtml(s.symbol)}</div>
         <div class="mt-1 font-medium">${fmt(price)}</div>
-        <div class="mt-1 text-xs font-semibold">${escHtml(sig.action || "-")}</div>
+        <div class="mt-1 text-xs font-semibold">${escHtml(sig.action || "판단 불가")} · ${sig.score == null ? "-" : `${sig.score > 0 ? "+" : ""}${escHtml(sig.score)}점`}</div>
+        <ul class="signal-reasons mt-2 text-xs" style="padding-left:14px;list-style:disc;line-height:1.5;">${(sig.components?.length ? sig.components.map(c => `${c.reason} (${c.points > 0 ? "+" : ""}${c.points}점)`) : sig.reasons || [r ? "판단 근거 없음" : "지표 데이터 없음"]).map(reason => `<li>${escHtml(reason)}</li>`).join("")}</ul>
+        <div class="mt-2 text-xs" style="color:var(--text-dim);">${s.kis_order_allowed === false ? "KIS 주문 허용 목록 밖 · 배치 매수 제외" : s.kis_order_allowed === true ? "KIS 허용 종목 · 별도 전략·우선순위·위험관리 판단 필요" : "KIS 주문 대상 여부 미확인"}</div>
         <div class="text-xs text-slate-500">RSI: ${rsiV?.toFixed(1) ?? "-"}</div><div class="text-xs text-slate-500">일봉 기준 ${r?.as_of ? escHtml(new Date(r.as_of * 1000).toISOString().slice(0,10)) : "-"} · ${escHtml(r?.source || "미수집")}</div>
       </div>`;
     }).join("");

@@ -116,7 +116,21 @@ async def korea_candidates(limit: int = Query(40, ge=1, le=200)):
     from app.services.data_cache import cache_get_many
     stocks = await candidate_stocks(limit)
     values = await cache_get_many([f'korea:indicator:{s["symbol"]}' for s in stocks],max_age_hours=96)
-    return {"stocks":stocks, "indicators":{s['symbol']:values.get(f'korea:indicator:{s["symbol"]}') for s in stocks}, "coverage":doc['coverage'], "updated_at":doc.get('updated_at')}
+    from pathlib import Path
+    import json
+    from app.config import settings
+    from app.services import strategy_settings, aggressive_mode
+    await strategy_settings.load_and_apply()
+    restricted = not settings.QUANT_KOREA_ALLOW_LIVE_EXPANSION
+    allowed = set(json.loads((Path(__file__).resolve().parents[1] / "data" / "legacy-trading-symbols.json").read_text()))
+    return {"stocks": [{**s, "kis_order_allowed": not restricted or s["symbol"] in allowed} for s in stocks],
+            "indicators": {s["symbol"]: values.get(f"korea:indicator:{s['symbol']}") for s in stocks},
+            "coverage": doc["coverage"], "updated_at": doc.get("updated_at"),
+            "signal_policy": {"method": "daily_technical_rules", "strong_buy_threshold": 3,
+                              "order_universe_restricted": restricted,
+                              "execution_mode": "aggressive" if aggressive_mode.is_enabled() else "daily_strategy",
+                              "execution_interval": settings.QUANT_AGGRESSIVE_CANDLE_INTERVAL if aggressive_mode.is_enabled() else "1d",
+                              "max_buys_per_cycle": settings.QUANT_AGGRESSIVE_MAX_BUYS_PER_CYCLE if aggressive_mode.is_enabled() else None}}
 
 
 @router.post("/stocks/universe/scan")

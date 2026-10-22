@@ -591,7 +591,8 @@
         </div>
         <!-- 5개 종목 시그널 -->
         <div class="card">
-          <h3 class="font-semibold mb-3">AI 매매 시그널 (대표 5종목)</h3>
+          <h3 id="quant-signal-title" class="font-semibold mb-2">일봉 기술지표 시그널</h3>
+          <p id="quant-signal-note" class="text-xs mb-3" style="color:var(--text-dim);">점수 상위 후보의 일봉 규칙 판단입니다. KIS 주문은 별도 전략·순위·위험관리 조건을 확인합니다.</p>
           <div id="signal-cards" class="grid md:grid-cols-5 gap-2 text-xs"></div>
         </div>
         <!-- 퀀트 차트 -->
@@ -2882,7 +2883,7 @@ RC_i = wi × (Σw)_i / √(w'Σw)
 
 </div><!-- #app-shell -->
 
-<script type="module" src="/js/main.js"></script>
+<script type="module" src="/js/main.js?v=20261022-signal-reasons-1"></script>
 
 <!-- 종목 검색 모달 -->
 <!-- 데이터 조회 대기 모달: 모래시계 + 경과 시간 -->

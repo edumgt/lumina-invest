@@ -535,8 +535,10 @@ def _calc_rsi(closes: list[float], period: int = 14) -> list[float | None]:
             diff = closes[i] - closes[i - 1]
             avg_gain = (avg_gain * (period - 1) + max(diff, 0)) / period
             avg_loss = (avg_loss * (period - 1) + max(-diff, 0)) / period
-        rs = avg_gain / avg_loss if avg_loss > 0 else 100
-        rsi[i] = round(100 - (100 / (1 + rs)), 2)
+        if avg_loss == 0:
+            rsi[i] = 100.0 if avg_gain > 0 else 50.0
+        else:
+            rsi[i] = round(100 - (100 / (1 + avg_gain / avg_loss)), 2)
     return rsi
 
 
@@ -595,6 +597,7 @@ def calculate_quant_indicators(symbol: str, data: dict) -> dict:
         "bb_mid": bb_mid[-100:],
         "bb_lower": bb_lower[-100:],
         "signal": signal,
+        "signal_revision": 2,
         "current_price": closes[-1],
         "current_rsi": rsi[-1],
         # 판단 근거의 데이터 출처 (의사결정 화면 「판단 근거」 카드에 그대로 표시된다)
@@ -609,42 +612,43 @@ def _generate_signal(closes, rsi, ma5, ma20, ma60, bb_upper, bb_lower) -> dict:
     """규칙 기반 매매 시그널 생성."""
     n = len(closes) - 1
     signals = []
+    components = []
     score = 0  # + = 매수, - = 매도
+
+    def add(reason: str, points: int) -> None:
+        nonlocal score
+        signals.append(reason)
+        components.append({"reason": reason, "points": points})
+        score += points
 
     # RSI 시그널
     if rsi[n] is not None:
         if rsi[n] < 30:
-            signals.append("RSI 과매도 (매수 신호)")
-            score += 2
+            add("RSI 과매도 (매수 신호)", 2)
         elif rsi[n] > 70:
-            signals.append("RSI 과매수 (매도 신호)")
-            score -= 2
+            add("RSI 과매수 (매도 신호)", -2)
         else:
-            signals.append(f"RSI 중립 ({rsi[n]:.1f})")
+            add(f"RSI 중립 ({rsi[n]:.1f})", 0)
 
     # 이동평균 골든/데드크로스
     if ma5[n] and ma20[n] and ma5[n-1] and ma20[n-1]:
         if ma5[n] > ma20[n] and ma5[n-1] <= ma20[n-1]:
-            signals.append("골든크로스 (강력 매수)")
-            score += 3
+            add("골든크로스 (MA5가 MA20 상향 돌파)", 3)
         elif ma5[n] < ma20[n] and ma5[n-1] >= ma20[n-1]:
-            signals.append("데드크로스 (강력 매도)")
-            score -= 3
+            add("데드크로스 (MA5가 MA20 하향 돌파)", -3)
         elif ma5[n] > ma20[n]:
-            signals.append("단기 이평 > 중기 이평 (매수 우위)")
-            score += 1
+            add("단기 이평 > 중기 이평 (매수 우위)", 1)
+        elif ma5[n] < ma20[n]:
+            add("단기 이평 < 중기 이평 (매도 우위)", -1)
         else:
-            signals.append("단기 이평 < 중기 이평 (매도 우위)")
-            score -= 1
+            add("단기 이평 = 중기 이평 (중립)", 0)
 
     # 볼린저밴드
     if bb_upper[n] and bb_lower[n]:
         if closes[n] < bb_lower[n]:
-            signals.append("볼린저 하단 이탈 (반등 가능)")
-            score += 1
+            add("볼린저 하단 이탈 (반등 가능)", 1)
         elif closes[n] > bb_upper[n]:
-            signals.append("볼린저 상단 돌파 (조정 가능)")
-            score -= 1
+            add("볼린저 상단 돌파 (조정 가능)", -1)
 
     # 최종 판단
     if score >= 3:
@@ -658,4 +662,5 @@ def _generate_signal(closes, rsi, ma5, ma20, ma60, bb_upper, bb_lower) -> dict:
     else:
         action, color = "관망", "gray"
 
-    return {"action": action, "color": color, "score": score, "reasons": signals}
+    return {"action": action, "color": color, "score": score, "reasons": signals,
+            "components": components, "method": "daily_technical_rules", "strong_buy_threshold": 3}

@@ -47,6 +47,9 @@ def apply_limits(limits: RiskLimits) -> RiskLimits:
 
 def score_intraday(closes: list[float], volumes: list[float | None]) -> dict:
     """5분봉 시계열 → {action, score, reasons, momentum_pct, rsi}. get_quant_indicators 의 signal 과 같은 모양."""
+    interval = _interval_minutes()
+    bar_label = f"{interval}분"
+    momentum_label = f"최근 {MOMENTUM_BARS}봉({MOMENTUM_BARS * interval}분)"
     n = len(closes)
     reasons: list[str] = []
     score = 0
@@ -57,26 +60,26 @@ def score_intraday(closes: list[float], volumes: list[float | None]) -> dict:
     # RSI 는 보조 신호(±1): 공격 모드는 추세·모멘텀을 우선한다. 추세 구간에서 RSI 과열이 매수를 막지 않게.
     if last_rsi is not None:
         if last_rsi < 35:
-            reasons.append(f"5분 RSI 과매도 {last_rsi:.0f}"); score += 1
+            reasons.append(f"{bar_label} RSI 과매도 {last_rsi:.0f}"); score += 1
         elif last_rsi > 65:
-            reasons.append(f"5분 RSI 과매수 {last_rsi:.0f}"); score -= 1
+            reasons.append(f"{bar_label} RSI 과매수 {last_rsi:.0f}"); score -= 1
     if ma5[-1] is not None and ma20[-1] is not None:
         if ma5[-1] > ma20[-1]:
-            reasons.append("5분 MA5 > MA20"); score += 1
-        else:
-            reasons.append("5분 MA5 < MA20"); score -= 1
+            reasons.append(f"{bar_label} MA5 > MA20"); score += 1
+        elif ma5[-1] < ma20[-1]:
+            reasons.append(f"{bar_label} MA5 < MA20"); score -= 1
         if n >= 2 and ma5[-2] is not None and ma20[-2] is not None:
             if ma5[-2] <= ma20[-2] and ma5[-1] > ma20[-1]:
-                reasons.append("5분 골든크로스"); score += 2
+                reasons.append(f"{bar_label} 골든크로스"); score += 2
             elif ma5[-2] >= ma20[-2] and ma5[-1] < ma20[-1]:
-                reasons.append("5분 데드크로스"); score -= 2
+                reasons.append(f"{bar_label} 데드크로스"); score -= 2
     momentum_pct = 0.0
     if n > MOMENTUM_BARS and closes[-1 - MOMENTUM_BARS]:
         momentum_pct = (closes[-1] / closes[-1 - MOMENTUM_BARS] - 1) * 100
         if momentum_pct >= 0.3:
-            reasons.append(f"30분 모멘텀 {momentum_pct:+.2f}%"); score += 2 if momentum_pct >= 1.0 else 1
+            reasons.append(f"{momentum_label} 모멘텀 {momentum_pct:+.2f}%"); score += 2 if momentum_pct >= 1.0 else 1
         elif momentum_pct <= -0.3:
-            reasons.append(f"30분 모멘텀 {momentum_pct:+.2f}%"); score -= 2 if momentum_pct <= -1.0 else 1
+            reasons.append(f"{momentum_label} 모멘텀 {momentum_pct:+.2f}%"); score -= 2 if momentum_pct <= -1.0 else 1
     vols = [float(v) for v in volumes[-VOLUME_WINDOW - 1:-1] if v]
     if vols and volumes and volumes[-1]:
         avg = sum(vols) / len(vols)
@@ -93,7 +96,7 @@ def score_intraday(closes: list[float], volumes: list[float | None]) -> dict:
     else:
         action = "관망"
     return {"action": action, "score": score, "reasons": reasons or ["중립"],
-            "momentum_pct": round(momentum_pct, 3), "rsi": last_rsi}
+            "momentum_pct": round(momentum_pct, 3), "momentum_window_min": MOMENTUM_BARS * interval, "rsi": last_rsi}
 
 
 def _interval_minutes() -> int:
@@ -174,7 +177,7 @@ def plan(indicator_map: dict[str, dict], target_symbols: list[str], holdings: di
         elif pnl <= -sl:
             exits.append((900 - pnl, sym, {"ratio": 1.0, "reason": f"손절 {pnl:+.2f}% ≤ -{sl}%"}))
         elif int(s.get("score", 0)) <= weak_sell:
-            exits.append((float(-s.get("score", 0)), sym, {"ratio": None, "reason": f"5분 약세 시그널 (score {s.get('score')}): " + ", ".join(s.get("reasons", []))}))
+            exits.append((float(-s.get("score", 0)), sym, {"ratio": None, "reason": f"{_interval_minutes()}분 약세 시그널 (score {s.get('score')}): " + ", ".join(s.get("reasons", []))}))
     exits.sort(key=lambda t: t[0], reverse=True)
     for _, sym, info in exits[:max_sells]:
         sells[sym] = info
