@@ -783,3 +783,34 @@ body.xai-modal-open { overflow:hidden; }
   --sb-thumb: var(--border2);
   --sb-radius: 4px;
 }
+
+/* KIS monitor: keep all eight summary cards on one compact desktop row. */
+#kism-kpis {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+#kism-kpis > div {
+  min-width: 0;
+  padding: 8px 10px;
+  border-radius: 7px;
+}
+#kism-kpis > div > div {
+  font-size: 11px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+#kism-kpis > div > div:nth-child(2) {
+  margin: 3px 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+#kism-kpis > div > div:nth-child(3) {
+  font-size: 10px;
+}
+@media (min-width: 768px) {
+  #kism-kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+@media (min-width: 1200px) {
+  #kism-kpis { grid-template-columns: repeat(8, minmax(0, 1fr)); }
+}
