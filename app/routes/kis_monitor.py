@@ -124,6 +124,45 @@ def _heartbeat_age() -> float | None:
         return None
 
 
+@router.get("/holdings")
+async def kis_testbed_holdings(user=Depends(get_current_user)):
+    """Authenticated, read-only Testbed holdings without monitor/order-history work."""
+    import asyncio
+    import math
+    checked_at = datetime.now(timezone.utc).isoformat()
+    if not gateway.is_configured():
+        return {"connected": False, "environment": "paper", "checked_at": checked_at,
+                "error": "KIS Testbed 미연결"}
+    try:
+        balance = await asyncio.wait_for(gateway.get_balance(env="paper"), timeout=12)
+        if not isinstance(balance.get("holdings"), list):
+            raise ValueError("보유 내역 응답 미확인")
+        def price(value):
+            try:
+                result = float(value)
+                return result if math.isfinite(result) and result > 0 else None
+            except (TypeError, ValueError):
+                return None
+        holdings = []
+        for row in balance["holdings"]:
+            quantity = float(row.get("quantity"))
+            if not math.isfinite(quantity) or quantity < 0 or not quantity.is_integer():
+                raise ValueError("보유수량 응답 미확인")
+            if quantity > 0:
+                holdings.append({"symbol": gateway.normalize_symbol(str(row.get("symbol") or "")),
+                                 "quantity": int(quantity), "current_price": price(row.get("currentPrice")),
+                                 "avg_price": price(row.get("avgPrice"))})
+        return {"connected": True, "environment": "paper", "checked_at": datetime.now(timezone.utc).isoformat(),
+                "source": "KIS Testbed 실제 잔고", "holdings": holdings}
+    except asyncio.TimeoutError:
+        error = "KIS 잔고 응답 지연 · 다시 조회하세요"
+    except gateway.GatewayError:
+        error = "KIS 잔고 조회 실패 · 다시 조회하세요"
+    except (TypeError, ValueError):
+        error = "KIS 보유 데이터 미확인"
+    return {"connected": False, "environment": "paper", "checked_at": checked_at, "error": error}
+
+
 @router.get("/monitor")
 async def kis_monitor(limit: int = Query(50, ge=1, le=200), cycles: int = Query(12, ge=1, le=48),
                       user=Depends(get_current_user), db: AsyncSession = Depends(get_pg_session)):

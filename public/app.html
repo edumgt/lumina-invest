@@ -599,6 +599,10 @@
         </div>
         <!-- 5개 종목 시그널 -->
         <div class="card">
+          <div class="flex gap-2 mb-3" role="tablist" aria-label="매수·매도 시그널">
+            <button type="button" class="btn-primary text-xs" role="tab" aria-selected="true" aria-controls="signal-cards" data-quant-signal-side="buy">매수 시그널</button>
+            <button type="button" class="btn-secondary text-xs" role="tab" aria-selected="false" aria-controls="signal-cards" data-quant-signal-side="sell">매도 시그널</button>
+          </div>
           <h3 id="quant-signal-title" class="font-semibold mb-2">대표 강력 매수 시그널 · 최대 10종목</h3>
           <p id="quant-signal-note" class="text-xs mb-3" style="color:var(--text-dim);">점수 상위 후보의 일봉 규칙 판단입니다. KIS 주문은 별도 전략·순위·위험관리 조건을 확인합니다.</p>
           <div id="signal-cards" class="grid md:grid-cols-5 gap-2 text-xs"></div>
@@ -2884,7 +2888,7 @@ RC_i = wi × (Σw)_i / √(w'Σw)
 
 </div><!-- #app-shell -->
 
-<script type="module" src="/js/main.js?v=20261022-offcanvas-trim-2"></script>
+<script type="module" src="/js/main.js?v=20261022-signal-holdings-1"></script>
 
 <!-- 종목 검색 모달 -->
 <!-- 데이터 조회 대기 모달: 모래시계 + 경과 시간 -->

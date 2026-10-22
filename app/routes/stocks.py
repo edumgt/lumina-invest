@@ -110,11 +110,11 @@ async def korea_universe_status():
 
 
 @router.get("/stocks/universe/candidates")
-async def korea_candidates(limit: int = Query(40, ge=1, le=200)):
+async def korea_candidates(limit: int = Query(40, ge=1, le=200), side: str = Query("buy", pattern="^(buy|sell)$")):
     from app.services.korea_market_scan import candidate_stocks, get_scan
     doc = await get_scan()
     from app.services.data_cache import cache_get_many
-    stocks = await candidate_stocks(limit)
+    stocks = await candidate_stocks(limit, signal_side="sell") if side == "sell" else await candidate_stocks(limit)
     values = await cache_get_many([f'korea:indicator:{s["symbol"]}' for s in stocks],max_age_hours=96)
     from pathlib import Path
     import json

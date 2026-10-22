@@ -8,23 +8,82 @@ let quantChartInstance = null;
 let quantChartRequest = 0;
 let quantChartAbort = null;
 // ── 퀀트 대시보드 ────────────────────────────────────────────────
+let quantDashboardRequest = 0;
+let quantLoadingDialog;
+let quantLoadingClock;
+function closeQuantLoading() {
+  clearInterval(quantLoadingClock);
+  quantLoadingDialog?.close();
+}
 async function loadQuantDashboard() {
-  loadSignalCards();
-  loadQuantChart();
+  const request = ++quantDashboardRequest;
+  const started = performance.now();
+  const timer = setTimeout(() => {
+    if (request !== quantDashboardRequest || !document.querySelector('.view.active[data-view="quant-dashboard"]')) return;
+    if (!quantLoadingDialog) {
+      quantLoadingDialog = document.createElement("dialog");
+      quantLoadingDialog.className = "view-guide-modal";
+      quantLoadingDialog.id = "quant-loading-dialog";
+      quantLoadingDialog.setAttribute("aria-label", "퀀트 데이터 불러오는 중");
+      quantLoadingDialog.innerHTML = '<div style="padding:28px;text-align:center;"><div class="app-hourglass" aria-hidden="true">⏳</div><h2 style="font-weight:700;margin:12px 0;">퀀트 데이터 불러오는 중</h2><p style="font-size:12px;">시그널·차트·KIS Testbed 보유 내역을 조회합니다.</p><p data-quant-elapsed role="status" style="margin:14px;font-size:20px;"></p><button type="button" class="btn-secondary">닫고 화면 보기</button><p style="font-size:11px;margin-top:8px;">닫아도 조회는 계속됩니다.</p></div>';
+      quantLoadingDialog.querySelector("button").addEventListener("click", closeQuantLoading);
+      quantLoadingDialog.addEventListener("close", () => clearInterval(quantLoadingClock));
+      document.body.appendChild(quantLoadingDialog);
+    }
+    if (!quantLoadingDialog.open) quantLoadingDialog.showModal();
+    clearInterval(quantLoadingClock);
+    const tick = () => { quantLoadingDialog.querySelector('[data-quant-elapsed]').textContent = `${((performance.now() - started) / 1000).toFixed(1)}초`; };
+    tick(); quantLoadingClock = setInterval(tick, 100);
+  }, 600);
+  try { await Promise.allSettled([loadSignalCards(), loadQuantChart()]); }
+  finally { clearTimeout(timer); if (request === quantDashboardRequest) closeQuantLoading(); }
+}
+document.addEventListener("lumina:view-changed", event => {
+  if (event.detail.view !== "quant-dashboard") { ++quantDashboardRequest; closeQuantLoading(); }
+});
+
+let quantHoldingsSnapshot = null;
+let quantHoldingsPending = null;
+async function loadQuantHoldings() {
+  if (quantHoldingsSnapshot?.connected && Date.now() - quantHoldingsSnapshot.loadedAt < 30000) return quantHoldingsSnapshot;
+  if (!quantHoldingsPending) {
+    quantHoldingsPending = api("/api/quant/kis/holdings", { signal: AbortSignal.timeout(15000), redirectOnUnauthorized: false })
+      .catch(() => ({ connected: false, error: "KIS 보유 미확인 · 로그인 또는 연결 상태를 확인하세요" }))
+      .then(data => (quantHoldingsSnapshot = { ...data, loadedAt: Date.now() }))
+      .finally(() => { quantHoldingsPending = null; });
+  }
+  return quantHoldingsPending;
+}
+function renderQuantHoldings(snapshot) {
+  const byCode = new Map((snapshot.holdings || []).map(h => [String(h.symbol).replace(/\..*$/, "").padStart(6, "0"), h]));
+  document.querySelectorAll("#signal-cards [data-quant-holding]").forEach(el => {
+    if (!snapshot.connected || snapshot.environment !== "paper") { el.textContent = snapshot.error || "KIS Testbed 보유 미확인"; return; }
+    const holding = byCode.get(el.dataset.quantHolding.replace(/\..*$/, ""));
+    const when = snapshot.checked_at ? new Date(snapshot.checked_at).toLocaleTimeString("ko-KR", {timeZone:"Asia/Seoul",hour:"2-digit",minute:"2-digit",second:"2-digit"}) + " KST" : "조회 시각 미확인";
+    const won = value => Number.isFinite(value) ? `${value.toLocaleString("ko-KR")}원` : "미확인";
+    el.textContent = holding ? `KIS Testbed 보유 ${holding.quantity.toLocaleString("ko-KR")}주 · 현재가 ${won(holding.current_price)} · 평균매입가 ${won(holding.avg_price)} · ${when}` : `KIS Testbed 미보유 · ${when}`;
+  });
 }
 
+let quantSignalSide = "buy";
+let quantSignalRequest = 0;
 async function loadSignalCards() {
+  const request = ++quantSignalRequest;
+  const side = quantSignalSide;
+  const action = side === "sell" ? "강력 매도" : "강력 매수";
   const el = document.getElementById("signal-cards");
   el.innerHTML = "<div class='col-span-5 text-slate-400 text-xs'>시그널 로딩 중...</div>";
+  const holdings = loadQuantHoldings();
   try {
-    const { stocks: candidates = [], indicators = {}, signal_policy: policy = {} } = await api("/api/stocks/universe/candidates?limit=10");
-    const stocks = candidates.filter(s => indicators[s.symbol]?.signal?.action === "강력 매수").slice(0, 10);
+    const { stocks: candidates = [], indicators = {}, signal_policy: policy = {} } = await api(`/api/stocks/universe/candidates?limit=10${side === "sell" ? "&side=sell" : ""}`);
+    if (request !== quantSignalRequest) return;
+    const stocks = candidates.filter(s => indicators[s.symbol]?.signal?.action === action).slice(0, 10);
     const title = document.getElementById("quant-signal-title");
-    if (title) title.textContent = `대표 강력 매수 시그널 · ${stocks.length}종목`;
+    if (title) title.textContent = `대표 ${action} 시그널 · ${stocks.length}종목`;
     const note = document.getElementById("quant-signal-note");
-    if (note) note.textContent = `강력 매수 후보 중 점수·거래대금 순으로 최대 10종목을 표시합니다. 확정 일봉의 RSI·MA5/MA20·볼린저 규칙 점수입니다. 강력 매수는 +${policy.strong_buy_threshold ?? 3}점 이상이며 수익 확률을 뜻하지 않습니다. KIS ${policy.execution_environment === "paper" ? "Testbed" : "배치"}는 ${policy.order_universe_restricted === false ? `전체 ${policy.order_universe_count ?? ""}종목에서 적격 후보를 선정하고, ` : "주문 허용 범위 안에서 "}${policy.execution_interval || "별도 설정"} 기준${policy.max_buys_per_cycle != null ? ` · 사이클당 매수 최대 ${policy.max_buys_per_cycle}종목` : ""}으로 판단하고 위험관리를 통과해야 주문합니다.`;
+    if (note) note.textContent = `${action} 후보 중 ${side === "sell" ? "음수 점수가 낮은 순·거래대금 순" : "점수·거래대금 순"}으로 최대 10종목을 표시합니다. 확정 일봉의 RSI·MA5/MA20·볼린저 규칙 점수입니다. ${action}는 ${side === "sell" ? "−3점 이하" : "+3점 이상"}이며 수익 확률을 뜻하지 않습니다. ${side === "sell" ? "보유 여부와 무관한 약세 후보입니다. 실제 매도는 KIS 보유수량·미확정 매도와 별도 실행 전략·위험관리를 확인해야 합니다." : `KIS ${policy.execution_environment === "paper" ? "Testbed" : "배치"}는 ${policy.execution_interval || "별도 설정"} 기준으로 별도 판단하고 위험관리를 통과해야 주문합니다.`}`;
     if (!stocks.length) {
-      el.innerHTML = "<div class='col-span-5 text-slate-400 text-xs'>현재 데이터 기준을 충족한 강력 매수 후보가 없습니다.</div>";
+      el.innerHTML = `<div class='col-span-5 text-slate-400 text-xs'>현재 데이터 기준을 충족한 ${action} 후보가 없습니다.</div>`;
       return;
     }
     el.innerHTML = stocks.map((s, i) => {
@@ -42,6 +101,7 @@ async function loadSignalCards() {
         <div class="font-semibold">${escHtml(s.name)}</div>
         <div class="text-slate-400 text-xs">${escHtml(s.symbol)}</div>
         <div class="mt-1 font-medium">${fmt(price)}</div>
+        <div class="mt-2 text-xs" data-quant-holding="${escHtml(s.symbol)}" style="padding:6px;border-radius:6px;background:var(--surf2);line-height:1.6;">KIS Testbed 보유 조회 중…</div>
         <div class="mt-1 text-xs font-semibold">${escHtml(sig.action || "판단 불가")} · ${sig.score == null ? "-" : `${sig.score > 0 ? "+" : ""}${escHtml(sig.score)}점`}</div>
         <ul class="signal-reasons mt-2 text-xs" style="padding-left:14px;list-style:disc;line-height:1.5;">${(sig.components?.length ? sig.components.map(c => `${c.reason} (${c.points > 0 ? "+" : ""}${c.points}점)`) : sig.reasons || [r ? "판단 근거 없음" : "지표 데이터 없음"]).map(reason => `<li>${escHtml(reason)}</li>`).join("")}</ul>
         <div class="mt-2 text-xs" style="color:var(--text-dim);">${s.kis_order_allowed === false ? "KIS 주문 허용 목록 밖 · 배치 매수 제외" : s.kis_order_allowed === true ? "KIS 허용 종목 · 별도 전략·우선순위·위험관리 판단 필요" : "KIS 주문 대상 여부 미확인"}</div>
@@ -50,10 +110,26 @@ async function loadSignalCards() {
       </div>`;
     }).join("");
     syncQuantSignalSelection();
+    const snapshot = await holdings;
+    if (request === quantSignalRequest) renderQuantHoldings(snapshot);
   } catch (e) {
+    if (request !== quantSignalRequest) return;
     el.innerHTML = `<div class='col-span-5 text-red-400 text-xs'>${escHtml(e.message)}</div>`;
   }
 }
+
+document.querySelectorAll("[data-quant-signal-side]").forEach(button => {
+  button.addEventListener("click", () => {
+    quantSignalSide = button.dataset.quantSignalSide;
+    document.querySelectorAll("[data-quant-signal-side]").forEach(tab => {
+      const selected = tab === button;
+      tab.setAttribute("aria-selected", String(selected));
+      tab.classList.toggle("btn-primary", selected);
+      tab.classList.toggle("btn-secondary", !selected);
+    });
+    loadSignalCards();
+  });
+});
 
 function syncQuantSignalSelection() {
   const symbol = document.getElementById("quant-symbol").value;
@@ -117,10 +193,10 @@ async function loadQuantChart() {
     const previous = rows.length > 1 ? rows.at(-2)[1] : null;
     const summary = document.createElement("div");
     summary.className = "quant-chart-evidence rounded-xl border p-3 mb-3 text-xs";
-    summary.style.cssText = "background:#f0fdf4;border-color:#86efac;color:#14532d;line-height:1.7;overflow-wrap:anywhere;";
+    summary.style.cssText = `background:${signal.score <= -3 ? "#fff1f2" : "#f0fdf4"};border-color:${signal.score <= -3 ? "#fda4af" : "#86efac"};color:${signal.score <= -3 ? "#9f1239" : "#14532d"};line-height:1.7;overflow-wrap:anywhere;`;
     const components = signal.components || [];
     summary.innerHTML = `<div style="font-size:15px;font-weight:700;">${escHtml(name)} · ${escHtml(signal.action || "판단 미확인")} ${escHtml(signed(signal.score))}점</div>
-      <div>확정 일봉 ${escHtml(new Date(rows.at(-1)[0] * 1000).toISOString().slice(0, 10))} · ${escHtml(data.source || "출처 미확인")} · 강력매수 기준 +${escHtml(signal.strong_buy_threshold ?? 3)}점 이상</div>
+      <div>확정 일봉 ${escHtml(new Date(rows.at(-1)[0] * 1000).toISOString().slice(0, 10))} · ${escHtml(data.source || "출처 미확인")} · 강력매수 +${escHtml(signal.strong_buy_threshold ?? 3)}점 이상 / 강력매도 −3점 이하</div>
       <ul style="list-style:none;margin:8px 0;padding:0;">${(components.length ? components : (signal.reasons || []).map(reason => ({ reason }))).map(c => `<li style="color:${c.points > 0 ? "#047857" : c.points < 0 ? "#b91c1c" : "#475569"};"><b>${escHtml(signed(c.points))}점</b> ${escHtml(c.reason)}</li>`).join("") || "<li>판단 근거 미확인</li>"}</ul>
       <div><b style="color:#db2777;">MA5 ${valueText(data.ma5?.[last])}</b> / <b style="color:#d97706;">MA20 ${valueText(data.ma20?.[last])}</b>${previous != null ? ` · 전일 MA5 ${valueText(data.ma5?.[previous])} / MA20 ${valueText(data.ma20?.[previous])}` : ""}</div>
       <div>종가 ${valueText(data.closes[last])} / BB 하단 ${valueText(data.bb_lower?.[last])} / BB 상단 ${valueText(data.bb_upper?.[last])} · RSI ${valueText(data.rsi?.[last])}</div>
@@ -200,8 +276,8 @@ async function loadQuantChart() {
     };
     const latestTime = rows.at(-1)[0];
     L.createSeriesMarkers(lines[0].series, [{
-      time: latestTime, position: "belowBar", color: signal.score >= 3 ? "#059669" : "#64748b",
-      shape: "arrowUp", text: `${signal.action || "판단 기준"} ${signed(signal.score)}점`,
+      time: latestTime, position: signal.score <= -3 ? "aboveBar" : "belowBar", color: signal.score <= -3 ? "#dc2626" : signal.score >= 3 ? "#059669" : "#64748b",
+      shape: signal.score <= -3 ? "arrowDown" : "arrowUp", text: `${signal.action || "판단 기준"} ${signed(signal.score)}점`,
     }]);
     const rsi = quantChartInstance.addSeries(L.LineSeries, {
       title: "RSI14", color: "#7c3aed", lineWidth: 2, priceLineVisible: false,

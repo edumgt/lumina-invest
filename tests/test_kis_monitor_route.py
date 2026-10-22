@@ -243,3 +243,26 @@ def test_monitor_uses_effective_mode_instead_of_raw_flag(client, monkeypatch):
         d = client.get('/api/quant/kis/monitor').json()
     assert d['aggressive']['enabled'] is False
     assert d['effective_settings']['signal_mode'] == 'custom'
+
+
+def test_signal_holdings_always_paper_and_preserves_missing_prices():
+    import asyncio
+    with patch.object(gw, 'is_configured', return_value=True), patch.object(gw, 'get_balance', AsyncMock(return_value={'holdings':[{'symbol':'005930.KS','quantity':3,'currentPrice':None,'avgPrice':50000}]})) as balance:
+        result=asyncio.run(km.kis_testbed_holdings(user={'id':str(UID)}))
+    balance.assert_awaited_once_with(env='paper')
+    assert result['connected'] and result['environment']=='paper'
+    assert result['holdings']==[{'symbol':'005930','quantity':3,'current_price':None,'avg_price':50000.0}]
+
+
+def test_signal_holdings_empty_and_failure_are_different():
+    import asyncio
+    for response, connected in [({'holdings':[]},True),({},False),({'holdings':[{'symbol':'005930','quantity':None}]},False)]:
+        with patch.object(gw,'is_configured',return_value=True),patch.object(gw,'get_balance',AsyncMock(return_value=response)):
+            result=asyncio.run(km.kis_testbed_holdings(user={'id':str(UID)}))
+        assert result['connected'] is connected
+        if not connected:assert 'holdings' not in result and result['error']
+
+
+def test_signal_holdings_requires_login():
+    app=FastAPI();app.include_router(km.router)
+    assert TestClient(app).get('/api/quant/kis/holdings').status_code==401

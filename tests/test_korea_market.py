@@ -112,3 +112,16 @@ def test_allowed_candidates_are_filtered_before_pool_limit(monkeypatch):
     assert asyncio.run(scan.candidate_stocks(2, allowed_symbols=set())) == []
     entries['000003.KS']['status'] = 'stale'
     assert [s['symbol'] for s in asyncio.run(scan.candidate_stocks(2, allowed_symbols=permitted))] == ['000004.KS']
+
+
+def test_sell_candidates_filter_and_rank_before_limit_without_changing_buy(monkeypatch):
+    stocks = [{'symbol':s,'buy_eligible':True} for s in ['buy','weak','sell','strong','liquid']]
+    monkeypatch.setattr(master,'STOCKS',stocks)
+    monkeypatch.setattr(master,'master_info',lambda:{'stale':False})
+    values = [('buy',4,1e10),('weak',-2,1e10),('sell',-3,1e10),('strong',-5,1e10),('liquid',-5,2e10)]
+    rows = {s:{'symbol':s,'score':score,'avg_turnover':turnover,'status':'ready','buy_eligible':True,'as_of':date.today().isoformat()} for s,score,turnover in values}
+    monkeypatch.setattr(scan,'get_scan',AsyncMock(return_value={'entries':rows}))
+    assert [s['symbol'] for s in asyncio.run(scan.candidate_stocks(2,signal_side='sell'))] == ['liquid','strong']
+    assert [s['symbol'] for s in asyncio.run(scan.candidate_stocks(1))] == ['buy']
+    rows['strong']['status'] = 'stale'
+    assert [s['symbol'] for s in asyncio.run(scan.candidate_stocks(10,signal_side='sell'))] == ['liquid','sell']

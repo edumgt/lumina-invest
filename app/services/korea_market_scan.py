@@ -35,7 +35,7 @@ async def get_scan() -> dict:
         'not_processed':len(valid)-len(entries)}}
 
 
-async def candidate_stocks(limit: int | None = None, *, allowed_symbols: set[str] | None = None) -> list[dict]:
+async def candidate_stocks(limit: int | None = None, *, allowed_symbols: set[str] | None = None, signal_side: str = "buy") -> list[dict]:
     doc = await get_scan()
     if master.master_info().get('stale'):
         return []
@@ -45,7 +45,11 @@ async def candidate_stocks(limit: int | None = None, *, allowed_symbols: set[str
         rows = [r for r in rows if r['symbol'] in allowed_symbols]
     # Filter the permitted universe before ranking and truncating the pool.
     # Rank only observed, fresh data; master order never becomes a buy fallback.
-    rows.sort(key=lambda e: (e.get('score',0), e.get('avg_turnover',0), e['symbol']), reverse=True)
+    if signal_side == "sell":
+        rows = [r for r in rows if r.get('score', 0) <= -3]
+        rows.sort(key=lambda e: (e.get('score', 0), -e.get('avg_turnover', 0), e['symbol']))
+    else:
+        rows.sort(key=lambda e: (e.get('score',0), e.get('avg_turnover',0), e['symbol']), reverse=True)
     return [index[r['symbol']] for r in rows[:limit or settings.QUANT_KOREA_CANDIDATE_POOL]]
 
 
