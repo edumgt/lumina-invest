@@ -65,8 +65,6 @@ const GNB_MENUS = {
   sysadmin: {
     label: "<i class='fa-solid fa-gear'></i> 시스템관리",
     items: [
-      { key: "sysadmin-dashboard", icon: "fa-solid fa-server",      label: "서버 대시보드" },
-      { key: "sysadmin-logs",      icon: "fa-solid fa-scroll",      label: "감사 로그" },
       // 2026-10-07 투자 인디케이터 LNB 에서 이동 — 외부 연동 설정은 시스템관리(더보기 오프캔버스)에서
       { key: "indicator-api",       icon: "fa-solid fa-plug",           label: "증권사 API 자동화" },
       { key: "indicator-tradingview", icon: "fa-solid fa-satellite-dish", label: "TradingView 연동 (Webhook·교차검증)" },
