@@ -26,7 +26,8 @@ def test_login_page_shown_when_logged_out():
 
 def test_login_failure_shows_api_error():
     with patch.object(api, "login", side_effect=api.ApiError(401, "이메일 또는 비밀번호가 올바르지 않습니다.")):
-        at = _at().run()
+        at = AppTest.from_string("from streamlit_app.pages import login\nlogin.render()\n", default_timeout=30)
+        at.run()
         at.text_input[0].input("x@y.z"); at.text_input[1].input("pw")
         at.button[0].click().run()
     assert not at.exception and any("올바르지 않습니다" in e.value for e in at.error)
