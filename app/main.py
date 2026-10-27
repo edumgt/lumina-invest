@@ -167,6 +167,10 @@ if os.path.isdir(_public):
         except Exception:
             return False
 
+    @app.get("/favicon.ico", include_in_schema=False)
+    async def favicon():
+        return FileResponse(os.path.join(_public, "favicon.ico"))
+
     @app.get("/", include_in_schema=False)
     async def index(fin_session: Optional[str] = Cookie(default=None, alias=COOKIE_NAME)):
         # 로그인 세션이 살아 있으면 로그인 화면을 거치지 않고 바로 앱으로 보낸다.

@@ -94,6 +94,7 @@ function updateGrid(id, columns, rows, emptyMessage, resetPage = false) {
       paginationPanels: ["rowSummary", "pageSummary"],
       domLayout: "autoHeight", rowHeight: 40, headerHeight: 44,
       suppressMovableColumns: true,
+      scrollbarWidth: parseFloat(css.getPropertyValue("--grid-sb-size")) || 4.6,
       overlayNoRowsTemplate: "<span></span>",
       localeText: { noRowsToShow: "데이터 없음", page: "페이지", of: "/", to: "–", more: "더 보기", firstPage: "첫 페이지", lastPage: "마지막 페이지", nextPage: "다음 페이지", previousPage: "이전 페이지", pageSizeSelectorLabel: "페이지당", filterOoo: "필터…", contains: "포함", notContains: "미포함", equals: "같음", notEqual: "다름", startsWith: "시작", endsWith: "끝", lessThan: "미만", greaterThan: "초과", lessThanOrEqual: "이하", greaterThanOrEqual: "이상", inRange: "범위", blank: "빈 값", notBlank: "값 있음", andCondition: "그리고", orCondition: "또는" },
     });

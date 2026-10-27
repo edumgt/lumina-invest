@@ -384,6 +384,7 @@ async function loadCompanyCompare() {
       getRowId: ({ data }) => data.symbol,
       rowHeight: 38, headerHeight: 54, groupHeaderHeight: 32,
       suppressMovableColumns: true,
+      scrollbarWidth: parseFloat(css.getPropertyValue("--grid-sb-size")) || 4.6,
       localeText: { noRowsToShow: "표시할 종목이 없습니다", loadingOoo: "조회 중…", filterOoo: "필터…", equals: "같음", notEqual: "다름", contains: "포함", notContains: "미포함", startsWith: "시작", endsWith: "끝", lessThan: "미만", greaterThan: "초과", lessThanOrEqual: "이하", greaterThanOrEqual: "이상", inRange: "범위", blank: "빈 값", notBlank: "값 있음", andCondition: "그리고", orCondition: "또는" },
     });
     const render = () => {
